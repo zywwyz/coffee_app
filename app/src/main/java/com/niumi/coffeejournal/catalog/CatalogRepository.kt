@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.map
 interface CatalogRepository {
     fun observeBrands(type: BrandType): Flow<List<Brand>>
     fun observeItems(brandId: String): Flow<List<CatalogItem>>
+    suspend fun getBrand(brandId: String): Brand
     suspend fun getItem(itemId: String): CatalogItem
     suspend fun upsertBrand(brand: Brand)
     suspend fun upsertItem(item: CatalogItem)
@@ -27,6 +28,9 @@ interface CatalogRepository {
 
 class CatalogItemNotFoundException(itemId: String) :
     NoSuchElementException("Catalog item '$itemId' was not found")
+
+class BrandNotFoundException(brandId: String) :
+    NoSuchElementException("Catalog brand '$brandId' was not found")
 
 class RoomCatalogRepository(
     private val brandDao: BrandDao,
@@ -42,6 +46,10 @@ class RoomCatalogRepository(
         catalogItemDao.observeByBrand(brandId).map { entities ->
             entities.map(CatalogItemEntity::toDomain)
         }
+
+    override suspend fun getBrand(brandId: String): Brand =
+        brandDao.get(brandId)?.toDomain()
+            ?: throw BrandNotFoundException(brandId)
 
     override suspend fun getItem(itemId: String): CatalogItem =
         catalogItemDao.get(itemId)?.toDomain()

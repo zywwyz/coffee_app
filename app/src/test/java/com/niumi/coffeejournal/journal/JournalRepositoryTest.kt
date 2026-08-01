@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -74,6 +75,32 @@ class JournalRepositoryTest {
         assertEquals("椰香、柑橘", saved.snapshot.flavorNotes)
         assertEquals("image-current", saved.snapshot.imageAssetId)
         assertEquals(listOf(recordId), store.clearedBySave)
+    }
+
+    @Test
+    fun `save fetches snapshot brand by id without waiting for brand observations`() = runBlocking {
+        val catalog = FakeCatalogRepository(
+            currentItem = item().copy(type = ItemType.PERSONAL_BEAN),
+            lastPriceFen = 990,
+            emitBrands = false,
+        )
+        val store = FakeDrinkStore()
+        val repository = DefaultJournalRepository(catalog, store, FixedClock())
+
+        withTimeout(250) {
+            repository.save(
+                DrinkDraft(
+                    itemType = ItemType.PERSONAL_BEAN,
+                    sourceItemId = ITEM_ID,
+                    brewMethod = null,
+                    ratingHalfStars = null,
+                    actualPriceFen = null,
+                    note = "",
+                ),
+            )
+        }
+
+        assertEquals("示例咖啡", store.saved.single().snapshot.brandName)
     }
 
     @Test
@@ -189,20 +216,19 @@ class JournalRepositoryTest {
     private class FakeCatalogRepository(
         var currentItem: CatalogItem?,
         private val lastPriceFen: Long?,
+        private val emitBrands: Boolean = true,
     ) : CatalogRepository {
-        override fun observeBrands(type: BrandType): Flow<List<Brand>> = flowOf(
-            listOf(
-                Brand(
-                    id = BRAND_ID,
-                    type = BrandType.CHAIN,
-                    name = "示例咖啡",
-                    logoAssetId = null,
-                    maintenanceMode = com.niumi.coffeejournal.core.model.MaintenanceMode.MANUAL_ONLY,
-                    publicSourceUrl = null,
-                ),
-            ).filter { it.type == type },
-        )
+        override fun observeBrands(type: BrandType): Flow<List<Brand>> =
+            if (emitBrands) {
+                flowOf(listOf(brand()).filter { it.type == type })
+            } else {
+                emptyFlow()
+            }
         override fun observeItems(brandId: String): Flow<List<CatalogItem>> = emptyFlow()
+
+        override suspend fun getBrand(brandId: String): Brand =
+            brand().takeIf { it.id == brandId }
+                ?: throw com.niumi.coffeejournal.catalog.BrandNotFoundException(brandId)
 
         override suspend fun getItem(itemId: String): CatalogItem =
             currentItem?.takeIf { it.id == itemId }
@@ -211,6 +237,15 @@ class JournalRepositoryTest {
         override suspend fun upsertBrand(brand: Brand) = Unit
         override suspend fun upsertItem(item: CatalogItem) = Unit
         override suspend fun lastPriceFen(itemId: String): Long? = lastPriceFen
+
+        private fun brand() = Brand(
+            id = BRAND_ID,
+            type = BrandType.CHAIN,
+            name = "示例咖啡",
+            logoAssetId = null,
+            maintenanceMode = com.niumi.coffeejournal.core.model.MaintenanceMode.MANUAL_ONLY,
+            publicSourceUrl = null,
+        )
     }
 
     private class FakeDrinkStore : DrinkStore {

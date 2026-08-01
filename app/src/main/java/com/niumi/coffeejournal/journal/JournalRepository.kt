@@ -6,7 +6,6 @@ import com.niumi.coffeejournal.core.database.CoffeeDatabase
 import com.niumi.coffeejournal.core.database.DataIntegrityException
 import com.niumi.coffeejournal.core.database.DraftRecordEntity
 import com.niumi.coffeejournal.core.database.DrinkRecordEntity
-import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.DrinkDraft
 import com.niumi.coffeejournal.core.model.DrinkRecord
 import com.niumi.coffeejournal.core.model.DrinkSnapshot
@@ -17,7 +16,6 @@ import java.util.GregorianCalendar
 import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 interface JournalRepository {
@@ -117,14 +115,7 @@ class DefaultJournalRepository(
 
     override suspend fun save(draft: DrinkDraft): String {
         val item = catalogRepository.getItem(draft.sourceItemId)
-        val brandType = when (item.type) {
-            ItemType.CHAIN_PRODUCT -> BrandType.CHAIN
-            ItemType.PERSONAL_BEAN -> BrandType.ROASTER
-        }
-        val brand = catalogRepository.observeBrands(brandType)
-            .first()
-            .firstOrNull { it.id == item.brandId }
-            ?: throw NoSuchElementException("Catalog brand '${item.brandId}' was not found")
+        val brand = catalogRepository.getBrand(item.brandId)
         val id = UUID.randomUUID().toString()
         val record = DrinkRecord(
             id = id,

@@ -55,6 +55,7 @@ class CatalogRepositoryTest {
 
         val entity = database.catalogItemDao().get(ITEM_ID)!!
         assertEquals("flat white", entity.normalizedName)
+        assertEquals(brand(), repository.getBrand(BRAND_ID))
         assertEquals(item(name = "  Flat\t WHITE  "), repository.getItem(ITEM_ID))
         assertEquals(listOf(brand()), repository.observeBrands(BrandType.CHAIN).first())
         assertEquals(
@@ -80,6 +81,16 @@ class CatalogRepositoryTest {
             fail("Expected CatalogItemNotFoundException")
         } catch (error: CatalogItemNotFoundException) {
             assertTrue(error.message.orEmpty().contains("missing-item"))
+        }
+    }
+
+    @Test
+    fun `missing brand throws exception containing the id`() = runBlocking {
+        try {
+            repository.getBrand("missing-brand")
+            fail("Expected BrandNotFoundException")
+        } catch (error: BrandNotFoundException) {
+            assertTrue(error.message.orEmpty().contains("missing-brand"))
         }
     }
 
