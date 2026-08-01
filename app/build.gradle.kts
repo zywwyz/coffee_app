@@ -30,6 +30,10 @@ android {
     buildFeatures {
         compose = true
     }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 kotlin {
@@ -58,4 +62,5 @@ dependencies {
     implementation(libs.mlkit.text.recognition.chinese)
 
     testImplementation(libs.junit4)
+    testImplementation(libs.robolectric)
 }
