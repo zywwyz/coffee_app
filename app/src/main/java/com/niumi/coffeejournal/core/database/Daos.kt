@@ -70,6 +70,16 @@ interface DrinkDao {
 
     @Query(
         """
+        SELECT actualPriceFen FROM drink_records
+        WHERE sourceItemId = :sourceItemId AND actualPriceFen IS NOT NULL
+        ORDER BY occurredAtEpochMillis DESC, id DESC
+        LIMIT 1
+        """,
+    )
+    suspend fun lastActualPriceFen(sourceItemId: String): Long?
+
+    @Query(
+        """
         SELECT * FROM drink_records
         WHERE localDate BETWEEN :startLocalDate AND :endLocalDate
         ORDER BY occurredAtEpochMillis DESC
