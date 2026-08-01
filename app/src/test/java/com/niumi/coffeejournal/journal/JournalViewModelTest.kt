@@ -55,10 +55,9 @@ class JournalViewModelTest {
     }
 
     @Test
-    fun `calendar image falls back from product to brand logo to generic`() {
-        assertEquals("product.webp", calendarImage("product.webp", "logo.webp"))
-        assertEquals("logo.webp", calendarImage(null, "logo.webp"))
-        assertEquals(GENERIC_COFFEE_IMAGE, calendarImage(null, null))
+    fun `calendar image uses immutable snapshot path or generic`() {
+        assertEquals("snapshot.webp", calendarImage("snapshot.webp"))
+        assertEquals(GENERIC_COFFEE_IMAGE, calendarImage(null))
     }
 
     @Test
@@ -74,6 +73,19 @@ class JournalViewModelTest {
         assertEquals(3, summary.cupCount)
         assertEquals(2000L, summary.totalSpendFen)
         assertEquals(4.25, summary.averageRatingStars!!, 0.0)
+    }
+
+    @Test
+    fun `month spend saturates instead of overflowing negative`() {
+        val summary = summarizeMonth(
+            listOf(
+                record("max", "2026-08-01", 1, null, price = Long.MAX_VALUE),
+                record("extra", "2026-08-02", 2, null, price = 1),
+            ),
+        )
+
+        assertEquals(Long.MAX_VALUE, summary.totalSpendFen)
+        assertTrue(summary.totalSpendFen >= 0)
     }
 
     @Test
@@ -144,14 +156,13 @@ class JournalViewModelTest {
     }
 
     @Test
-    fun `month resolves asset ids to paths and falls back to valid brand logo`() = runBlocking {
+    fun `month resolves immutable snapshot image without current logo lookup`() = runBlocking {
         val journal = FakeJournalRepository().apply {
-            month.value = listOf(record("drink", "2026-08-05", 100, "product-asset"))
+            month.value = listOf(record("drink", "2026-08-05", 100, "snapshot-logo"))
         }
         val resolver = ImagePathResolver { assetId ->
             when (assetId) {
-                "product-asset" -> null
-                "logo.webp" -> "/private/logo.png"
+                "snapshot-logo" -> "/private/logo-at-save.png"
                 else -> null
             }
         }
@@ -166,8 +177,7 @@ class JournalViewModelTest {
         )
 
         val day = viewModel.uiState.value.days.single { it.localDate == "2026-08-05" }
-        assertEquals("/private/logo.png", day.imagePath)
-        assertEquals("/private/logo.png", day.brandLogoPath)
+        assertEquals("/private/logo-at-save.png", day.imagePath)
     }
 
     private fun record(

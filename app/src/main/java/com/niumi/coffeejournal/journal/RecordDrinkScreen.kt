@@ -56,22 +56,25 @@ fun RecordDrinkScreen(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(
                 selected = state.sourceType == ItemType.CHAIN_PRODUCT,
+                enabled = !state.saving,
                 onClick = { onSourceTypeChange(ItemType.CHAIN_PRODUCT) },
                 label = { Text("连锁产品") },
             )
             FilterChip(
                 selected = state.sourceType == ItemType.PERSONAL_BEAN,
+                enabled = !state.saving,
                 onClick = { onSourceTypeChange(ItemType.PERSONAL_BEAN) },
                 label = { Text("个人豆子") },
             )
         }
-        SelectionRow("选择品牌", brands, state.selectedBrandId, { it.id }, { it.name }, onBrandSelect)
-        SelectionRow("选择产品", items, state.selectedItemId, { it.id }, { it.name }, onItemSelect)
+        SelectionRow("选择品牌", brands, state.selectedBrandId, !state.saving, { it.id }, { it.name }, onBrandSelect)
+        SelectionRow("选择产品", items, state.selectedItemId, !state.saving, { it.id }, { it.name }, onItemSelect)
         Text("评分（支持半星）", style = MaterialTheme.typography.titleMedium)
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             (1..10).forEach { halfStars ->
                 FilterChip(
                     selected = state.ratingHalfStars == halfStars,
+                    enabled = !state.saving,
                     onClick = { onRatingChange(halfStars) },
                     label = { Text("${halfStars / 2.0}") },
                 )
@@ -111,7 +114,7 @@ fun RecordDrinkScreen(
     }
 
     if (state.needsImagePrompt) {
-        MissingImageDialog(onScreenshot, onSelectImage, onSkipImage)
+        MissingImageDialog(!state.saving, onScreenshot, onSelectImage, onSkipImage)
     }
 }
 
@@ -120,6 +123,7 @@ private fun <T> SelectionRow(
     title: String,
     values: List<T>,
     selectedId: String?,
+    enabled: Boolean,
     id: (T) -> String,
     label: (T) -> String,
     onSelect: (String) -> Unit,
@@ -131,6 +135,7 @@ private fun <T> SelectionRow(
             values.forEach { value ->
                 FilterChip(
                     selected = selectedId == id(value),
+                    enabled = enabled,
                     onClick = { onSelect(id(value)) },
                     label = { Text(label(value)) },
                 )
@@ -141,6 +146,7 @@ private fun <T> SelectionRow(
 
 @Composable
 private fun MissingImageDialog(
+    enabled: Boolean,
     onScreenshot: () -> Unit,
     onSelectImage: () -> Unit,
     onSkip: () -> Unit,
@@ -151,10 +157,10 @@ private fun MissingImageDialog(
         text = { Text("官网图片未能下载。可以上传原始屏幕截图，稍后由本机裁剪；也可以选择已裁好的图片，或先使用品牌 Logo。") },
         confirmButton = {
             Column {
-                Button(onClick = onScreenshot) { Text("上传完整截图") }
-                OutlinedButton(onClick = onSelectImage) { Text("选择图片") }
+                Button(onClick = onScreenshot, enabled = enabled) { Text("上传完整截图") }
+                OutlinedButton(onClick = onSelectImage, enabled = enabled) { Text("选择图片") }
             }
         },
-        dismissButton = { TextButton(onClick = onSkip) { Text("暂时跳过") } },
+        dismissButton = { TextButton(onClick = onSkip, enabled = enabled) { Text("暂时跳过") } },
     )
 }

@@ -15,10 +15,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class JournalViewModel(
     private val journalRepository: JournalRepository,
@@ -31,15 +35,36 @@ class JournalViewModel(
     private val scope = coroutineScope ?: viewModelScope
     private val mutableState = MutableStateFlow(JournalUiState.empty(initialYear, initialMonth))
     val uiState: StateFlow<JournalUiState> = mutableState.asStateFlow()
-    private val draftQueue = Channel<DrinkDraft>(Channel.UNLIMITED)
+    private val draftQueue = Channel<DrinkDraft>(Channel.CONFLATED)
+    private val selectionMutex = Mutex()
     private var currentDraft: DrinkDraft? = null
     private var monthJob: Job? = null
     private var brandJob: Job? = null
     private var itemJob: Job? = null
+    private var selectionJob: Job? = null
+    private var selectionGeneration = 0L
+    private var monthGeneration = 0L
+    private var brandGeneration = 0L
+    private var itemGeneration = 0L
 
     init {
         scope.launch {
-            for (draft in draftQueue) journalRepository.saveDraft(draft)
+            for (draft in draftQueue) {
+                try {
+                    val saved = journalRepository.saveDraft(draft)
+                    if (saved && currentDraft?.revisionId == draft.revisionId &&
+                        mutableState.value.editor.errorMessage == AUTOSAVE_ERROR
+                    ) {
+                        mutableState.value = mutableState.value.copy(
+                            editor = mutableState.value.editor.copy(errorMessage = null),
+                        )
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    if (currentDraft?.revisionId == draft.revisionId) setEditorError(AUTOSAVE_ERROR)
+                }
+            }
         }
         observeMonth()
         observeBrands(ItemType.CHAIN_PRODUCT)
@@ -50,6 +75,9 @@ class JournalViewModel(
     fun selectDate(localDate: String?) { mutableState.value = mutableState.value.copy(selectedDate = localDate) }
 
     fun setSourceType(type: ItemType) {
+        if (mutableState.value.editor.saving) return
+        selectionGeneration++
+        selectionJob?.cancel()
         currentDraft = null
         itemJob?.cancel()
         mutableState.value = mutableState.value.copy(
@@ -60,14 +88,19 @@ class JournalViewModel(
     }
 
     fun selectBrand(brandId: String) {
+        if (mutableState.value.editor.saving) return
+        selectionGeneration++
+        selectionJob?.cancel()
         currentDraft = null
         mutableState.value = mutableState.value.copy(
             editor = mutableState.value.editor.copy(selectedBrandId = brandId, selectedItemId = null),
             items = emptyList(),
         )
         itemJob?.cancel()
+        val generation = ++itemGeneration
         itemJob = scope.launch {
             catalogRepository.observeItems(brandId).collect { items ->
+                if (generation != itemGeneration) return@collect
                 mutableState.value = mutableState.value.copy(
                     items = items.filter { it.type == mutableState.value.editor.sourceType },
                 )
@@ -76,39 +109,50 @@ class JournalViewModel(
     }
 
     fun selectItem(type: ItemType, itemId: String) {
-        scope.launch {
-            try {
-                val item = catalogRepository.getItem(itemId)
-                val draft = journalRepository.newDraft(type, itemId)
-                currentDraft = draft
-                mutableState.value = mutableState.value.copy(
-                    editor = mutableState.value.editor.copy(
-                        sourceType = type,
-                        selectedBrandId = item.brandId,
-                        selectedItemId = itemId,
-                        ratingHalfStars = draft.ratingHalfStars,
-                        priceInput = draft.actualPriceFen?.let(::formatFenInput).orEmpty(),
-                        priceValid = true,
-                        actualPriceFen = draft.actualPriceFen,
-                        brewMethod = draft.brewMethod.orEmpty(),
-                        note = draft.note,
-                        needsImagePrompt = item.status == ItemStatus.NEEDS_IMAGE || item.imageAssetId == null,
-                        errorMessage = null,
-                    ),
-                )
-            } catch (error: Exception) {
-                if (error is CancellationException) throw error
-                setEditorError("无法选择该产品")
+        if (mutableState.value.editor.saving) return
+        val generation = ++selectionGeneration
+        selectionJob?.cancel()
+        selectionJob = scope.launch {
+            selectionMutex.withLock {
+                if (generation != selectionGeneration) return@withLock
+                try {
+                    val item = catalogRepository.getItem(itemId)
+                    if (generation != selectionGeneration) return@withLock
+                    val draft = journalRepository.newDraft(type, itemId)
+                    if (generation != selectionGeneration) return@withLock
+                    currentDraft = draft
+                    mutableState.value = mutableState.value.copy(
+                        editor = mutableState.value.editor.copy(
+                            sourceType = type,
+                            selectedBrandId = item.brandId,
+                            selectedItemId = itemId,
+                            ratingHalfStars = draft.ratingHalfStars,
+                            priceInput = draft.actualPriceFen?.let(::formatFenInput).orEmpty(),
+                            priceValid = true,
+                            actualPriceFen = draft.actualPriceFen,
+                            brewMethod = draft.brewMethod.orEmpty(),
+                            note = draft.note,
+                            needsImagePrompt = item.status == ItemStatus.NEEDS_IMAGE || item.imageAssetId == null,
+                            errorMessage = null,
+                        ),
+                    )
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    if (generation == selectionGeneration) setEditorError("无法选择该产品")
+                }
             }
         }
     }
 
     fun setRating(halfStars: Int?) {
+        if (mutableState.value.editor.saving) return
         if (halfStars != null && halfStars !in 1..10) return
         editDraft { it.copy(ratingHalfStars = halfStars) }
     }
 
     fun setPriceInput(input: String) {
+        if (mutableState.value.editor.saving) return
         val fen = input.takeIf { it.isNotBlank() }?.let(::parseYuanToFen)
         val valid = input.isBlank() || fen != null
         mutableState.value = mutableState.value.copy(
@@ -119,7 +163,10 @@ class JournalViewModel(
 
     fun setBrewMethod(value: String) = editDraft { it.copy(brewMethod = value.takeUnless(String::isBlank)) }
     fun setNote(value: String) = editDraft { it.copy(note = value) }
-    fun skipImagePrompt() { mutableState.value = mutableState.value.copy(editor = mutableState.value.editor.copy(needsImagePrompt = false)) }
+    fun skipImagePrompt() {
+        if (mutableState.value.editor.saving) return
+        mutableState.value = mutableState.value.copy(editor = mutableState.value.editor.copy(needsImagePrompt = false))
+    }
 
     fun save() {
         val editor = mutableState.value.editor
@@ -129,16 +176,20 @@ class JournalViewModel(
         scope.launch {
             try {
                 journalRepository.save(draft)
-                currentDraft = null
-                mutableState.value = mutableState.value.copy(
-                    editor = RecordEditorUi(sourceType = editor.sourceType),
-                    saveCompletedToken = mutableState.value.saveCompletedToken + 1,
-                )
+                if (currentDraft?.revisionId == draft.revisionId) {
+                    currentDraft = null
+                    mutableState.value = mutableState.value.copy(
+                        editor = RecordEditorUi(sourceType = editor.sourceType),
+                        saveCompletedToken = mutableState.value.saveCompletedToken + 1,
+                    )
+                }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
-                mutableState.value = mutableState.value.copy(
-                    editor = mutableState.value.editor.copy(saving = false, errorMessage = "保存失败，请重试"),
-                )
+                if (currentDraft?.revisionId == draft.revisionId) {
+                    mutableState.value = mutableState.value.copy(
+                        editor = mutableState.value.editor.copy(saving = false, errorMessage = "保存失败，请重试"),
+                    )
+                }
             }
         }
     }
@@ -147,6 +198,7 @@ class JournalViewModel(
         updateEditor: Boolean = true,
         transform: (DrinkDraft) -> DrinkDraft,
     ) {
+        if (mutableState.value.editor.saving) return
         val updated = currentDraft?.let(transform) ?: return
         currentDraft = updated
         if (updateEditor) {
@@ -164,23 +216,24 @@ class JournalViewModel(
 
     private fun observeMonth() {
         monthJob?.cancel()
+        val generation = ++monthGeneration
         val year = mutableState.value.year
         val month = mutableState.value.month
         monthJob = scope.launch {
             journalRepository.observeMonth(year, month).collect { records ->
-                val paths = records.associate { record ->
-                    record.id to runCatching { imagePathResolver.resolve(record.snapshot.imageAssetId) }.getOrNull()
+                val representatives = representativeRecords(records)
+                val assetIds = representatives.mapNotNull { it.snapshot.imageAssetId }.distinct()
+                val pathsByAssetId = assetIds.associateWith { assetId ->
+                    resultOrNullPreservingCancellation { imagePathResolver.resolve(assetId) }
                 }
-                val logos = records.associate { record ->
-                    record.id to runCatching {
-                        val item = catalogRepository.getItem(record.sourceItemId)
-                        val logoAssetId = catalogRepository.getBrand(item.brandId).logoAssetId
-                        imagePathResolver.resolve(logoAssetId)
-                    }.getOrNull()
+                currentCoroutineContext().ensureActive()
+                if (generation != monthGeneration) return@collect
+                val paths = representatives.associate { record ->
+                    record.id to record.snapshot.imageAssetId?.let(pathsByAssetId::get)
                 }
                 mutableState.value = mutableState.value.copy(
                     records = records,
-                    days = projectMonth(year, month, records, paths, logos),
+                    days = projectMonth(year, month, records, paths),
                     summary = summarizeMonth(records),
                 )
             }
@@ -189,9 +242,11 @@ class JournalViewModel(
 
     private fun observeBrands(type: ItemType) {
         brandJob?.cancel()
+        val generation = ++brandGeneration
         val brandType = if (type == ItemType.CHAIN_PRODUCT) BrandType.CHAIN else BrandType.ROASTER
         brandJob = scope.launch {
             catalogRepository.observeBrands(brandType).collect { brands ->
+                if (generation != brandGeneration) return@collect
                 mutableState.value = mutableState.value.copy(brands = brands)
             }
         }
@@ -215,7 +270,14 @@ class JournalViewModel(
         mutableState.value = mutableState.value.copy(editor = mutableState.value.editor.copy(errorMessage = message))
     }
 
+    override fun onCleared() {
+        draftQueue.close()
+        selectionJob?.cancel()
+        super.onCleared()
+    }
+
     companion object {
+        private const val AUTOSAVE_ERROR = "草稿自动保存失败，请继续编辑重试"
         fun factory(
             journalRepository: JournalRepository,
             catalogRepository: CatalogRepository,
@@ -235,6 +297,15 @@ class JournalViewModel(
         }
     }
 }
+
+private suspend fun <T> resultOrNullPreservingCancellation(block: suspend () -> T): T? =
+    try {
+        block()
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        null
+    }
 
 private fun formatFenInput(fen: Long): String =
     "${fen / 100}.${(fen % 100).toString().padStart(2, '0')}"

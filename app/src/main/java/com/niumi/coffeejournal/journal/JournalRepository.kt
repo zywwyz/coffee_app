@@ -151,7 +151,7 @@ class DefaultJournalRepository(
                 itemName = item.name,
                 origin = item.origin,
                 processing = item.processing,
-                imageAssetId = item.imageAssetId,
+                imageAssetId = item.imageAssetId ?: brand.logoAssetId,
                 roastLevel = item.roastLevel,
                 flavorNotes = item.flavorNotes,
             ),

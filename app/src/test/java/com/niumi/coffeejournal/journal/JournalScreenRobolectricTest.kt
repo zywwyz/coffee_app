@@ -2,12 +2,19 @@ package com.niumi.coffeejournal.journal
 
 import android.graphics.Bitmap
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
+import com.niumi.coffeejournal.core.model.Brand
+import com.niumi.coffeejournal.core.model.BrandType
+import com.niumi.coffeejournal.core.model.CatalogItem
+import com.niumi.coffeejournal.core.model.ItemStatus
+import com.niumi.coffeejournal.core.model.ItemType
+import com.niumi.coffeejournal.core.model.MaintenanceMode
 import java.io.File
 import java.io.FileOutputStream
 import org.junit.Rule
@@ -78,9 +85,9 @@ class JournalScreenRobolectricTest {
         }
 
         compose.waitUntil(5_000) {
-            compose.onAllNodesWithContentDescription("产品图片").fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithContentDescription("咖啡图片").fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithContentDescription("产品图片").assertIsDisplayed()
+        compose.onNodeWithContentDescription("咖啡图片").assertIsDisplayed()
         compose.runOnIdle {
             assert(compose.onAllNodesWithContentDescription("通用咖啡占位图").fetchSemanticsNodes().isEmpty())
         }
@@ -93,7 +100,7 @@ class JournalScreenRobolectricTest {
             empty.copy(
                 days = empty.days.map { day ->
                     if (day.localDate == "2026-08-05") {
-                        day.copy(imagePath = logo.absolutePath, brandLogoPath = logo.absolutePath, drinkCount = 1)
+                        day.copy(imagePath = logo.absolutePath, drinkCount = 1)
                     } else day
                 },
             )
@@ -102,9 +109,34 @@ class JournalScreenRobolectricTest {
         compose.setContent { CoffeeTheme { JournalScreen(state, {}, {}, {}, {}) } }
 
         compose.waitUntil(5_000) {
-            compose.onAllNodesWithContentDescription("品牌 Logo").fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithContentDescription("咖啡图片").fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithContentDescription("品牌 Logo").assertIsDisplayed()
+        compose.onNodeWithContentDescription("咖啡图片").assertIsDisplayed()
+    }
+
+    @Test
+    fun `all editor controls are disabled while saving`() {
+        val brand = Brand("brand", BrandType.CHAIN, "测试品牌", null, MaintenanceMode.MANUAL_ONLY, null)
+        val item = CatalogItem(
+            "item", "brand", ItemType.CHAIN_PRODUCT, "测试产品", null, null, null, null, null, null, ItemStatus.ACTIVE,
+        )
+        compose.setContent {
+            CoffeeTheme {
+                RecordDrinkScreen(
+                    state = RecordEditorUi(selectedBrandId = "brand", selectedItemId = "item", saving = true),
+                    brands = listOf(brand),
+                    items = listOf(item),
+                    onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {},
+                    onRatingChange = {}, onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {},
+                    onSave = {}, onBack = {}, onScreenshot = {}, onSelectImage = {}, onSkipImage = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("个人豆子").assertIsNotEnabled()
+        compose.onNodeWithText("测试品牌").assertIsNotEnabled()
+        compose.onNodeWithText("测试产品").assertIsNotEnabled()
+        compose.onNodeWithText("5.0").assertIsNotEnabled()
     }
 
     private fun temporaryBitmap(prefix: String): File {

@@ -86,6 +86,21 @@ class JournalRepositoryTest {
     }
 
     @Test
+    fun `save snapshots brand logo when product image is missing`() = runBlocking {
+        val catalog = FakeCatalogRepository(item().copy(imageAssetId = null), lastPriceFen = null).apply {
+            currentBrand = currentBrand.copy(logoAssetId = "logo-at-save")
+        }
+        val store = FakeDrinkStore()
+        val repository = DefaultJournalRepository(catalog, store, FixedClock())
+        val draft = repository.newDraft(ItemType.CHAIN_PRODUCT, ITEM_ID)
+
+        repository.save(draft)
+        catalog.currentBrand = catalog.currentBrand.copy(logoAssetId = "logo-later")
+
+        assertEquals("logo-at-save", store.saved.single().snapshot.imageAssetId)
+    }
+
+    @Test
     fun `save fetches snapshot brand by id without waiting for brand observations`() = runBlocking {
         val catalog = FakeCatalogRepository(
             currentItem = item().copy(type = ItemType.PERSONAL_BEAN),
@@ -256,16 +271,25 @@ class JournalRepositoryTest {
         private val lastPriceFen: Long?,
         private val emitBrands: Boolean = true,
     ) : CatalogRepository {
+        var currentBrand = Brand(
+            id = BRAND_ID,
+            type = BrandType.CHAIN,
+            name = "示例咖啡",
+            logoAssetId = null,
+            maintenanceMode = com.niumi.coffeejournal.core.model.MaintenanceMode.MANUAL_ONLY,
+            publicSourceUrl = null,
+        )
+
         override fun observeBrands(type: BrandType): Flow<List<Brand>> =
             if (emitBrands) {
-                flowOf(listOf(brand()).filter { it.type == type })
+                flowOf(listOf(currentBrand).filter { it.type == type })
             } else {
                 emptyFlow()
             }
         override fun observeItems(brandId: String): Flow<List<CatalogItem>> = emptyFlow()
 
         override suspend fun getBrand(brandId: String): Brand =
-            brand().takeIf { it.id == brandId }
+            currentBrand.takeIf { it.id == brandId }
                 ?: throw com.niumi.coffeejournal.catalog.BrandNotFoundException(brandId)
 
         override suspend fun getItem(itemId: String): CatalogItem =
@@ -276,14 +300,6 @@ class JournalRepositoryTest {
         override suspend fun upsertItem(item: CatalogItem) = Unit
         override suspend fun lastPriceFen(itemId: String): Long? = lastPriceFen
 
-        private fun brand() = Brand(
-            id = BRAND_ID,
-            type = BrandType.CHAIN,
-            name = "示例咖啡",
-            logoAssetId = null,
-            maintenanceMode = com.niumi.coffeejournal.core.model.MaintenanceMode.MANUAL_ONLY,
-            publicSourceUrl = null,
-        )
     }
 
     private class FakeDrinkStore : DrinkStore {

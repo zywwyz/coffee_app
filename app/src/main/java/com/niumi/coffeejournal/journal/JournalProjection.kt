@@ -16,7 +16,6 @@ data class CalendarDayUi(
     val dayNumber: Int,
     val inDisplayedMonth: Boolean,
     val imagePath: String?,
-    val brandLogoPath: String?,
     val drinkCount: Int,
 )
 
@@ -67,17 +66,24 @@ data class JournalUiState(
     }
 }
 
-fun calendarImage(productImage: String?, brandLogo: String?): String =
-    productImage ?: brandLogo ?: GENERIC_COFFEE_IMAGE
+fun calendarImage(snapshotImage: String?): String = snapshotImage ?: GENERIC_COFFEE_IMAGE
 
 fun summarizeMonth(records: List<DrinkRecord>): MonthSummaryUi {
     val ratings = records.mapNotNull { it.ratingHalfStars }
     return MonthSummaryUi(
         cupCount = records.size,
-        totalSpendFen = records.mapNotNull { it.actualPriceFen }.sum(),
+        totalSpendFen = records.mapNotNull { it.actualPriceFen }.fold(0L, ::saturatingAdd),
         averageRatingStars = ratings.takeIf { it.isNotEmpty() }?.average()?.div(2.0),
     )
 }
+
+private fun saturatingAdd(total: Long, value: Long): Long =
+    if (Long.MAX_VALUE - total < value) Long.MAX_VALUE else total + value
+
+fun representativeRecords(records: List<DrinkRecord>): List<DrinkRecord> =
+    records.groupBy { it.localDate }.values.mapNotNull { dayRecords ->
+        dayRecords.maxWithOrNull(compareBy<DrinkRecord> { it.occurredAtEpochMillis }.thenBy { it.id })
+    }
 
 fun parseYuanToFen(input: String): Long? {
     val normalized = input.trim()
@@ -96,7 +102,6 @@ fun projectMonth(
     month: Int,
     records: List<DrinkRecord>,
     productImagePathsByRecordId: Map<String, String?> = emptyMap(),
-    brandLogosByRecordId: Map<String, String?> = emptyMap(),
 ): List<CalendarDayUi> {
     require(year > 0 && month in 1..12)
     val first = GregorianCalendar(year, month - 1, 1).apply { isLenient = false }
@@ -114,14 +119,12 @@ fun projectMonth(
         )
         val dayRecords = recordsByDate[localDate].orEmpty()
         val latest = dayRecords.maxWithOrNull(compareBy<DrinkRecord> { it.occurredAtEpochMillis }.thenBy { it.id })
-        val logo = latest?.let { brandLogosByRecordId[it.id] }
         val productImage = latest?.let { productImagePathsByRecordId[it.id] }
         CalendarDayUi(
             localDate = localDate,
             dayNumber = date.get(Calendar.DAY_OF_MONTH),
             inDisplayedMonth = date.get(Calendar.YEAR) == year && date.get(Calendar.MONTH) == month - 1,
-            imagePath = latest?.let { calendarImage(productImage, logo) },
-            brandLogoPath = logo,
+            imagePath = latest?.let { calendarImage(productImage) },
             drinkCount = dayRecords.size,
         )
     }

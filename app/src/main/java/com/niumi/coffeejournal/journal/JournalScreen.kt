@@ -12,10 +12,9 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -115,18 +114,26 @@ fun JournalScreen(
         floatingActionButton = { Button(onClick = onRecordDrink) { Text("记录一杯") } },
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             MonthHeader(state.year, state.month, onPreviousMonth, onNextMonth)
             WeekdayHeader()
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(7),
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                userScrollEnabled = false,
-            ) {
-                items(state.days, key = { it.localDate }) { day ->
-                    CalendarDay(day = day, onClick = { onDayClick(day.localDate) })
+            Column(Modifier.fillMaxWidth()) {
+                state.days.chunked(7).forEach { week ->
+                    Row(Modifier.fillMaxWidth()) {
+                        week.forEach { day ->
+                            CalendarDay(
+                                day = day,
+                                onClick = { onDayClick(day.localDate) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
                 }
             }
             MonthSummary(state.summary)
@@ -165,14 +172,15 @@ private fun WeekdayHeader() {
 }
 
 @Composable
-private fun CalendarDay(day: CalendarDayUi, onClick: () -> Unit) {
+private fun CalendarDay(day: CalendarDayUi, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .aspectRatio(0.82f)
             .padding(2.dp)
             .alpha(if (day.inDisplayedMonth) 1f else 0.38f)
             .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
+            .semantics { contentDescription = "日期 ${day.localDate}" }
             .padding(4.dp),
     ) {
         if (day.drinkCount == 0) {
@@ -180,7 +188,6 @@ private fun CalendarDay(day: CalendarDayUi, onClick: () -> Unit) {
         } else {
             LocalCoffeeImage(
                 imagePath = day.imagePath,
-                brandLogoPath = day.brandLogoPath,
                 modifier = Modifier.matchParentSize().clip(RoundedCornerShape(8.dp)),
             )
             Text(day.dayNumber.toString(), style = MaterialTheme.typography.labelSmall)
@@ -196,19 +203,13 @@ private fun CalendarDay(day: CalendarDayUi, onClick: () -> Unit) {
     }
 }
 
-private data class LoadedCalendarImage(val bitmap: ImageBitmap, val isLogo: Boolean)
-
 @Composable
 private fun LocalCoffeeImage(
     imagePath: String?,
-    brandLogoPath: String?,
     modifier: Modifier = Modifier,
 ) {
-    val loaded by produceState<LoadedCalendarImage?>(null, imagePath, brandLogoPath) {
-        value = withContext(Dispatchers.IO) {
-            decodeCalendarImage(imagePath)?.let { LoadedCalendarImage(it, imagePath == brandLogoPath) }
-                ?: decodeCalendarImage(brandLogoPath)?.let { LoadedCalendarImage(it, true) }
-        }
+    val loaded by produceState<ImageBitmap?>(null, imagePath) {
+        value = withContext(Dispatchers.IO) { decodeCalendarImage(imagePath) }
     }
     val image = loaded
     if (image == null) {
@@ -222,8 +223,8 @@ private fun LocalCoffeeImage(
         }
     } else {
         Image(
-            bitmap = image.bitmap,
-            contentDescription = if (image.isLogo) "品牌 Logo" else "产品图片",
+            bitmap = image,
+            contentDescription = "咖啡图片",
             contentScale = ContentScale.Crop,
             modifier = modifier,
         )
