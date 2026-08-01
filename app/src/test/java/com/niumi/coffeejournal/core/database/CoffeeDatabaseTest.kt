@@ -3,6 +3,7 @@ package com.niumi.coffeejournal.core.database
 import android.content.Context
 import android.database.sqlite.SQLiteConstraintException
 import androidx.room.Room
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -114,6 +115,88 @@ class CoffeeDatabaseTest {
         assertNotNull(database.catalogItemDao().get(secondItem.id))
     }
 
+    @Test
+    fun `image referenced by a drink snapshot cannot be deleted`() = runBlocking {
+        val asset = imageAsset(id = "image-1")
+        database.imageAssetDao().upsert(asset)
+        val record = DrinkRecordEntity(
+            id = "record-1",
+            occurredAtEpochMillis = 1,
+            localDate = "2026-08-01",
+            itemType = "CHAIN_PRODUCT",
+            sourceItemId = "item-1",
+            snapshotBrandName = "Example Coffee",
+            snapshotItemName = "Flat White",
+            snapshotImageAssetId = asset.id,
+        )
+        database.drinkDao().insert(record)
+
+        assertEquals(0, database.imageAssetDao().deleteIfUnreferenced(asset.id))
+        assertNotNull(database.imageAssetDao().get(asset.id))
+        assertNotNull(database.drinkDao().get(record.id))
+    }
+
+    @Test
+    fun `unreferenced image can be deleted`() = runBlocking {
+        val asset = imageAsset(id = "image-1")
+        database.imageAssetDao().upsert(asset)
+
+        assertEquals(1, database.imageAssetDao().deleteIfUnreferenced(asset.id))
+        assertEquals(null, database.imageAssetDao().get(asset.id))
+    }
+
+    @Test
+    fun `catalog update to another items normalized name rolls back`() = runBlocking {
+        val brand = brand(id = "brand-1")
+        database.brandDao().upsert(brand)
+        val original = catalogItem(
+            id = "item-1",
+            brandId = brand.id,
+            normalizedName = "flat white",
+        )
+        val conflicting = catalogItem(
+            id = "item-2",
+            brandId = brand.id,
+            normalizedName = "latte",
+        )
+        database.catalogItemDao().upsert(original)
+        database.catalogItemDao().upsert(conflicting)
+
+        try {
+            database.catalogItemDao().upsert(
+                original.copy(name = "Latte", normalizedName = "latte"),
+            )
+            fail("Expected the unique brand/name index to reject the update")
+        } catch (_: SQLiteConstraintException) {
+            // Expected: the failed update must leave both rows unchanged.
+        }
+
+        assertEquals(original, database.catalogItemDao().get(original.id))
+        assertEquals(conflicting, database.catalogItemDao().get(conflicting.id))
+    }
+
+    @Test
+    fun `latest catalog update uses id as stable timestamp tie breaker`() = runBlocking {
+        val first = catalogUpdate(id = "update-a")
+        val second = catalogUpdate(id = "update-b")
+        database.catalogUpdateDao().insert(first)
+        database.catalogUpdateDao().insert(second)
+
+        assertEquals(second, database.catalogUpdateDao().observeLatest(first.brandId).first())
+    }
+
+    @Test
+    fun `range and latest queries have their composite indices`() {
+        assertEquals(
+            listOf("localDate", "occurredAtEpochMillis"),
+            indexColumns("index_drink_records_localDate_occurredAtEpochMillis"),
+        )
+        assertEquals(
+            listOf("brandId", "fetchedAtEpochMillis"),
+            indexColumns("index_catalog_updates_brandId_fetchedAtEpochMillis"),
+        )
+    }
+
     private fun brand(id: String) = BrandEntity(
         id = id,
         type = "CHAIN",
@@ -135,4 +218,32 @@ class CoffeeDatabaseTest {
         normalizedName = normalizedName,
         status = "ACTIVE",
     )
+
+    private fun imageAsset(id: String) = ImageAssetEntity(
+        id = id,
+        localPath = "images/$id.jpg",
+        sha256 = "sha-$id",
+        kind = "PRODUCT",
+        createdAtEpochMillis = 1,
+    )
+
+    private fun catalogUpdate(id: String) = CatalogUpdateEntity(
+        id = id,
+        brandId = "brand-1",
+        fetchedAtEpochMillis = 1,
+        status = "SUCCESS",
+        sourceUrl = null,
+        errorMessage = null,
+    )
+
+    private fun indexColumns(indexName: String): List<String> = buildList {
+        database.openHelper.readableDatabase
+            .query("PRAGMA index_info(`$indexName`)")
+            .use { cursor ->
+                val nameColumn = cursor.getColumnIndexOrThrow("name")
+                while (cursor.moveToNext()) {
+                    add(cursor.getString(nameColumn))
+                }
+            }
+    }
 }

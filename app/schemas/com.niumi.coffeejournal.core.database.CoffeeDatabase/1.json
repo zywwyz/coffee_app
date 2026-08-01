@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "c8d59f8c9f2b75b89190919ae96cc0cb",
+    "identityHash": "d301a18471d4cdd3bafbd34e399ebeeb",
     "entities": [
       {
         "tableName": "brands",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `type` TEXT NOT NULL, `name` TEXT NOT NULL, `logoAssetId` TEXT, `maintenanceMode` TEXT NOT NULL, `publicSourceUrl` TEXT, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `type` TEXT NOT NULL, `name` TEXT NOT NULL, `logoAssetId` TEXT, `maintenanceMode` TEXT NOT NULL, `publicSourceUrl` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`logoAssetId`) REFERENCES `image_assets`(`id`) ON UPDATE CASCADE ON DELETE RESTRICT )",
         "fields": [
           {
             "fieldPath": "id",
@@ -48,11 +48,35 @@
           "columnNames": [
             "id"
           ]
-        }
+        },
+        "indices": [
+          {
+            "name": "index_brands_logoAssetId",
+            "unique": false,
+            "columnNames": [
+              "logoAssetId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_brands_logoAssetId` ON `${TABLE_NAME}` (`logoAssetId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "image_assets",
+            "onDelete": "RESTRICT",
+            "onUpdate": "CASCADE",
+            "columns": [
+              "logoAssetId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
       },
       {
         "tableName": "catalog_items",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `brandId` TEXT NOT NULL, `type` TEXT NOT NULL, `name` TEXT NOT NULL, `normalizedName` TEXT NOT NULL, `imageAssetId` TEXT, `origin` TEXT, `processing` TEXT, `roastLevel` TEXT, `flavorNotes` TEXT, `brewMethod` TEXT, `status` TEXT NOT NULL, `caffeineMg` REAL, `officialDescription` TEXT, `purchaseDate` TEXT, `roastDate` TEXT, `sourceUrl` TEXT, `sourceFetchedAt` INTEGER, `informationCompleteness` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`brandId`) REFERENCES `brands`(`id`) ON UPDATE CASCADE ON DELETE RESTRICT )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `brandId` TEXT NOT NULL, `type` TEXT NOT NULL, `name` TEXT NOT NULL, `normalizedName` TEXT NOT NULL, `imageAssetId` TEXT, `origin` TEXT, `processing` TEXT, `roastLevel` TEXT, `flavorNotes` TEXT, `brewMethod` TEXT, `status` TEXT NOT NULL, `caffeineMg` REAL, `officialDescription` TEXT, `purchaseDate` TEXT, `roastDate` TEXT, `sourceUrl` TEXT, `sourceFetchedAt` INTEGER, `informationCompleteness` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`id`), FOREIGN KEY(`brandId`) REFERENCES `brands`(`id`) ON UPDATE CASCADE ON DELETE RESTRICT , FOREIGN KEY(`imageAssetId`) REFERENCES `image_assets`(`id`) ON UPDATE CASCADE ON DELETE RESTRICT )",
         "fields": [
           {
             "fieldPath": "id",
@@ -154,7 +178,8 @@
             "fieldPath": "informationCompleteness",
             "columnName": "informationCompleteness",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -173,6 +198,15 @@
             ],
             "orders": [],
             "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_catalog_items_brandId_normalizedName` ON `${TABLE_NAME}` (`brandId`, `normalizedName`)"
+          },
+          {
+            "name": "index_catalog_items_imageAssetId",
+            "unique": false,
+            "columnNames": [
+              "imageAssetId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_catalog_items_imageAssetId` ON `${TABLE_NAME}` (`imageAssetId`)"
           }
         ],
         "foreignKeys": [
@@ -186,12 +220,23 @@
             "referencedColumns": [
               "id"
             ]
+          },
+          {
+            "table": "image_assets",
+            "onDelete": "RESTRICT",
+            "onUpdate": "CASCADE",
+            "columns": [
+              "imageAssetId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
           }
         ]
       },
       {
         "tableName": "drink_records",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `occurredAtEpochMillis` INTEGER NOT NULL, `localDate` TEXT NOT NULL, `itemType` TEXT NOT NULL, `sourceItemId` TEXT NOT NULL, `brewMethod` TEXT, `ratingHalfStars` INTEGER, `actualPriceFen` INTEGER, `note` TEXT, `snapshotBrandName` TEXT NOT NULL, `snapshotItemName` TEXT NOT NULL, `snapshotOrigin` TEXT, `snapshotProcessing` TEXT, `snapshotImageAssetId` TEXT, `snapshotRoastLevel` TEXT, `snapshotFlavorNotes` TEXT, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `occurredAtEpochMillis` INTEGER NOT NULL, `localDate` TEXT NOT NULL, `itemType` TEXT NOT NULL, `sourceItemId` TEXT NOT NULL, `brewMethod` TEXT, `ratingHalfStars` INTEGER, `actualPriceFen` INTEGER, `note` TEXT, `snapshotBrandName` TEXT NOT NULL, `snapshotItemName` TEXT NOT NULL, `snapshotOrigin` TEXT, `snapshotProcessing` TEXT, `snapshotImageAssetId` TEXT, `snapshotRoastLevel` TEXT, `snapshotFlavorNotes` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`snapshotImageAssetId`) REFERENCES `image_assets`(`id`) ON UPDATE CASCADE ON DELETE RESTRICT )",
         "fields": [
           {
             "fieldPath": "id",
@@ -286,7 +331,41 @@
           "columnNames": [
             "id"
           ]
-        }
+        },
+        "indices": [
+          {
+            "name": "index_drink_records_localDate_occurredAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "localDate",
+              "occurredAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_drink_records_localDate_occurredAtEpochMillis` ON `${TABLE_NAME}` (`localDate`, `occurredAtEpochMillis`)"
+          },
+          {
+            "name": "index_drink_records_snapshotImageAssetId",
+            "unique": false,
+            "columnNames": [
+              "snapshotImageAssetId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_drink_records_snapshotImageAssetId` ON `${TABLE_NAME}` (`snapshotImageAssetId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "image_assets",
+            "onDelete": "RESTRICT",
+            "onUpdate": "CASCADE",
+            "columns": [
+              "snapshotImageAssetId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
       },
       {
         "tableName": "image_assets",
@@ -385,7 +464,19 @@
           "columnNames": [
             "id"
           ]
-        }
+        },
+        "indices": [
+          {
+            "name": "index_catalog_updates_brandId_fetchedAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "brandId",
+              "fetchedAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_catalog_updates_brandId_fetchedAtEpochMillis` ON `${TABLE_NAME}` (`brandId`, `fetchedAtEpochMillis`)"
+          }
+        ]
       },
       {
         "tableName": "draft_records",
@@ -445,7 +536,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c8d59f8c9f2b75b89190919ae96cc0cb')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'd301a18471d4cdd3bafbd34e399ebeeb')"
     ]
   }
 }

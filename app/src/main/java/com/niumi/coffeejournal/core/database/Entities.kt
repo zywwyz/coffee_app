@@ -1,11 +1,26 @@
 package com.niumi.coffeejournal.core.database
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.niumi.coffeejournal.core.model.Money
+import com.niumi.coffeejournal.core.model.Rating
 
-@Entity(tableName = "brands")
+@Entity(
+    tableName = "brands",
+    foreignKeys = [
+        ForeignKey(
+            entity = ImageAssetEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["logoAssetId"],
+            onDelete = ForeignKey.RESTRICT,
+            onUpdate = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["logoAssetId"])],
+)
 data class BrandEntity(
     @PrimaryKey val id: String,
     val type: String,
@@ -25,8 +40,18 @@ data class BrandEntity(
             onDelete = ForeignKey.RESTRICT,
             onUpdate = ForeignKey.CASCADE,
         ),
+        ForeignKey(
+            entity = ImageAssetEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["imageAssetId"],
+            onDelete = ForeignKey.RESTRICT,
+            onUpdate = ForeignKey.CASCADE,
+        ),
     ],
-    indices = [Index(value = ["brandId", "normalizedName"], unique = true)],
+    indices = [
+        Index(value = ["brandId", "normalizedName"], unique = true),
+        Index(value = ["imageAssetId"]),
+    ],
 )
 data class CatalogItemEntity(
     @PrimaryKey val id: String,
@@ -47,10 +72,31 @@ data class CatalogItemEntity(
     val roastDate: String? = null,
     val sourceUrl: String? = null,
     val sourceFetchedAt: Long? = null,
-    val informationCompleteness: Int = 0,
-)
+    @ColumnInfo(defaultValue = "0") val informationCompleteness: Int = 0,
+) {
+    init {
+        require(informationCompleteness in 0..100) {
+            "Information completeness must be between 0 and 100"
+        }
+    }
+}
 
-@Entity(tableName = "drink_records")
+@Entity(
+    tableName = "drink_records",
+    foreignKeys = [
+        ForeignKey(
+            entity = ImageAssetEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["snapshotImageAssetId"],
+            onDelete = ForeignKey.RESTRICT,
+            onUpdate = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["localDate", "occurredAtEpochMillis"]),
+        Index(value = ["snapshotImageAssetId"]),
+    ],
+)
 data class DrinkRecordEntity(
     @PrimaryKey val id: String,
     val occurredAtEpochMillis: Long,
@@ -68,7 +114,12 @@ data class DrinkRecordEntity(
     val snapshotImageAssetId: String? = null,
     val snapshotRoastLevel: String? = null,
     val snapshotFlavorNotes: String? = null,
-)
+) {
+    init {
+        ratingHalfStars?.let(::Rating)
+        actualPriceFen?.let(::Money)
+    }
+}
 
 @Entity(
     tableName = "image_assets",
@@ -82,7 +133,10 @@ data class ImageAssetEntity(
     val createdAtEpochMillis: Long,
 )
 
-@Entity(tableName = "catalog_updates")
+@Entity(
+    tableName = "catalog_updates",
+    indices = [Index(value = ["brandId", "fetchedAtEpochMillis"])],
+)
 data class CatalogUpdateEntity(
     @PrimaryKey val id: String,
     val brandId: String,
@@ -102,4 +156,9 @@ data class DraftRecordEntity(
     val actualPriceFen: Long?,
     val note: String,
     val updatedAtEpochMillis: Long,
-)
+) {
+    init {
+        ratingHalfStars?.let(::Rating)
+        actualPriceFen?.let(::Money)
+    }
+}

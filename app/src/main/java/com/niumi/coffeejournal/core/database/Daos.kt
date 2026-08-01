@@ -89,8 +89,18 @@ interface ImageAssetDao {
     @Query("SELECT * FROM image_assets WHERE id = :id")
     suspend fun get(id: String): ImageAssetEntity?
 
-    @Query("DELETE FROM image_assets WHERE id = :id")
-    suspend fun delete(id: String): Int
+    @Query(
+        """
+        DELETE FROM image_assets
+        WHERE id = :id
+          AND NOT EXISTS (SELECT 1 FROM brands WHERE logoAssetId = :id)
+          AND NOT EXISTS (SELECT 1 FROM catalog_items WHERE imageAssetId = :id)
+          AND NOT EXISTS (
+              SELECT 1 FROM drink_records WHERE snapshotImageAssetId = :id
+          )
+        """,
+    )
+    suspend fun deleteIfUnreferenced(id: String): Int
 
     @Query(
         """
@@ -112,7 +122,7 @@ interface CatalogUpdateDao {
         """
         SELECT * FROM catalog_updates
         WHERE brandId = :brandId
-        ORDER BY fetchedAtEpochMillis DESC
+        ORDER BY fetchedAtEpochMillis DESC, id DESC
         LIMIT 1
         """,
     )
