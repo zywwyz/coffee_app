@@ -91,10 +91,18 @@ data class CatalogItemEntity(
             onDelete = ForeignKey.RESTRICT,
             onUpdate = ForeignKey.CASCADE,
         ),
+        ForeignKey(
+            entity = ImageAssetEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["snapshotBrandLogoAssetId"],
+            onDelete = ForeignKey.RESTRICT,
+            onUpdate = ForeignKey.CASCADE,
+        ),
     ],
     indices = [
         Index(value = ["localDate", "occurredAtEpochMillis"]),
         Index(value = ["snapshotImageAssetId"]),
+        Index(value = ["snapshotBrandLogoAssetId"]),
     ],
 )
 data class DrinkRecordEntity(
@@ -112,6 +120,7 @@ data class DrinkRecordEntity(
     val snapshotOrigin: String? = null,
     val snapshotProcessing: String? = null,
     val snapshotImageAssetId: String? = null,
+    val snapshotBrandLogoAssetId: String? = null,
     val snapshotRoastLevel: String? = null,
     val snapshotFlavorNotes: String? = null,
 ) {

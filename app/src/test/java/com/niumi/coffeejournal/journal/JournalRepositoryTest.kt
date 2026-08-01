@@ -86,7 +86,7 @@ class JournalRepositoryTest {
     }
 
     @Test
-    fun `save snapshots brand logo when product image is missing`() = runBlocking {
+    fun `save snapshots product and historical brand logo separately`() = runBlocking {
         val catalog = FakeCatalogRepository(item().copy(imageAssetId = null), lastPriceFen = null).apply {
             currentBrand = currentBrand.copy(logoAssetId = "logo-at-save")
         }
@@ -97,7 +97,8 @@ class JournalRepositoryTest {
         repository.save(draft)
         catalog.currentBrand = catalog.currentBrand.copy(logoAssetId = "logo-later")
 
-        assertEquals("logo-at-save", store.saved.single().snapshot.imageAssetId)
+        assertNull(store.saved.single().snapshot.imageAssetId)
+        assertEquals("logo-at-save", store.saved.single().snapshot.brandLogoAssetId)
     }
 
     @Test
@@ -470,6 +471,7 @@ class RoomDrinkStoreTest {
             snapshotOrigin = snapshot.origin,
             snapshotProcessing = snapshot.processing,
             snapshotImageAssetId = snapshot.imageAssetId,
+            snapshotBrandLogoAssetId = snapshot.brandLogoAssetId,
             snapshotRoastLevel = snapshot.roastLevel,
             snapshotFlavorNotes = snapshot.flavorNotes,
         )

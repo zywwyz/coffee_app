@@ -62,6 +62,7 @@ data class DrinkSnapshot(
     val origin: String?,
     val processing: String?,
     val imageAssetId: String?,
+    val brandLogoAssetId: String? = null,
     val roastLevel: String? = null,
     val flavorNotes: String? = null,
 )

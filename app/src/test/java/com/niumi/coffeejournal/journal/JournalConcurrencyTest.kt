@@ -28,6 +28,64 @@ import org.junit.Test
 
 class JournalConcurrencyTest {
     @Test
+    fun `save is rejected while latest product selection is loading`() = runBlocking {
+        val selectionGate = CompletableDeferred<Unit>()
+        val journal = RaceJournalRepository()
+        val viewModel = viewModel(journal, RaceCatalogRepository(slowGetGate = selectionGate))
+        viewModel.selectItem(ItemType.CHAIN_PRODUCT, "fast")
+
+        viewModel.selectItem(ItemType.CHAIN_PRODUCT, "slow")
+        viewModel.save()
+
+        assertTrue(viewModel.uiState.value.editor.selecting)
+        assertTrue(journal.savedRecords.isEmpty())
+        selectionGate.complete(Unit)
+        yield()
+        assertEquals("slow", viewModel.uiState.value.editor.selectedItemId)
+        assertTrue(!viewModel.uiState.value.editor.selecting)
+
+        viewModel.setNote("B")
+        viewModel.save()
+        yield()
+        assertEquals("revision-slow", journal.savedRecords.single().revisionId)
+    }
+
+    @Test
+    fun `source and brand changes invalidate loading selection without stuck state`() = runBlocking {
+        val sourceGate = CompletableDeferred<Unit>()
+        val sourceViewModel = viewModel(RaceJournalRepository(), RaceCatalogRepository(slowGetGate = sourceGate))
+        sourceViewModel.selectItem(ItemType.CHAIN_PRODUCT, "slow")
+        assertTrue(sourceViewModel.uiState.value.editor.selecting)
+
+        sourceViewModel.setSourceType(ItemType.PERSONAL_BEAN)
+        assertTrue(!sourceViewModel.uiState.value.editor.selecting)
+        sourceGate.complete(Unit)
+        yield()
+        assertEquals(null, sourceViewModel.uiState.value.editor.selectedItemId)
+
+        val brandGate = CompletableDeferred<Unit>()
+        val brandViewModel = viewModel(RaceJournalRepository(), RaceCatalogRepository(slowGetGate = brandGate))
+        brandViewModel.selectItem(ItemType.CHAIN_PRODUCT, "slow")
+        brandViewModel.selectBrand("brand")
+        assertTrue(!brandViewModel.uiState.value.editor.selecting)
+        brandGate.complete(Unit)
+        yield()
+        assertEquals(null, brandViewModel.uiState.value.editor.selectedItemId)
+    }
+
+    @Test
+    fun `latest selection failure clears loading state`() = runBlocking {
+        val viewModel = viewModel(RaceJournalRepository(), RaceCatalogRepository())
+
+        viewModel.selectItem(ItemType.CHAIN_PRODUCT, "failure")
+        yield()
+
+        assertTrue(!viewModel.uiState.value.editor.selecting)
+        assertTrue(!viewModel.uiState.value.editor.saving)
+        assertTrue(viewModel.uiState.value.editor.errorMessage.orEmpty().isNotBlank())
+    }
+
+    @Test
     fun `out of order selection cannot replace the latest item`() = runBlocking {
         val slowGate = CompletableDeferred<Unit>()
         val catalog = RaceCatalogRepository(slowGetGate = slowGate)
@@ -163,6 +221,36 @@ class JournalConcurrencyTest {
         assertEquals(listOf("shared-image"), calls)
     }
 
+    @Test
+    fun `month uses historical logo when product snapshot asset cannot resolve`() = runBlocking {
+        val journal = object : JournalRepository by UnsupportedJournalRepository() {
+            override fun observeMonth(year: Int, month: Int): Flow<List<DrinkRecord>> = flowOf(
+                listOf(
+                    record("drink", "2026-08-01", "missing-product").copy(
+                        snapshot = DrinkSnapshot(
+                            "Brand", "Coffee", null, null, "missing-product", brandLogoAssetId = "historical-logo",
+                        ),
+                    ),
+                ),
+            )
+        }
+        val resolver = ImagePathResolver { assetId ->
+            if (assetId == "historical-logo") "/historical-logo.png" else null
+        }
+
+        val viewModel = JournalViewModel(
+            journal,
+            RaceCatalogRepository(),
+            2026,
+            8,
+            CoroutineScope(Job() + Dispatchers.Unconfined),
+            resolver,
+        )
+
+        val day = viewModel.uiState.value.days.single { it.localDate == "2026-08-01" }
+        assertEquals("/historical-logo.png", day.brandLogoPath)
+    }
+
     private fun viewModel(journal: JournalRepository, catalog: CatalogRepository) = JournalViewModel(
         journal,
         catalog,
@@ -217,6 +305,7 @@ class JournalConcurrencyTest {
         }
         override suspend fun getBrand(brandId: String): Brand = brand()
         override suspend fun getItem(itemId: String): CatalogItem {
+            if (itemId == "failure") error("catalog unavailable")
             if (itemId == "slow") withContext(NonCancellable) { slowGetGate?.await() }
             return item(itemId)
         }

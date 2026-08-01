@@ -93,7 +93,11 @@ class JournalViewModel(
         selectionJob?.cancel()
         currentDraft = null
         mutableState.value = mutableState.value.copy(
-            editor = mutableState.value.editor.copy(selectedBrandId = brandId, selectedItemId = null),
+            editor = mutableState.value.editor.copy(
+                selectedBrandId = brandId,
+                selectedItemId = null,
+                selecting = false,
+            ),
             items = emptyList(),
         )
         itemJob?.cancel()
@@ -112,6 +116,9 @@ class JournalViewModel(
         if (mutableState.value.editor.saving) return
         val generation = ++selectionGeneration
         selectionJob?.cancel()
+        mutableState.value = mutableState.value.copy(
+            editor = mutableState.value.editor.copy(selecting = true, errorMessage = null),
+        )
         selectionJob = scope.launch {
             selectionMutex.withLock {
                 if (generation != selectionGeneration) return@withLock
@@ -133,26 +140,36 @@ class JournalViewModel(
                             brewMethod = draft.brewMethod.orEmpty(),
                             note = draft.note,
                             needsImagePrompt = item.status == ItemStatus.NEEDS_IMAGE || item.imageAssetId == null,
+                            selecting = false,
+                            saving = false,
                             errorMessage = null,
                         ),
                     )
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: Exception) {
-                    if (generation == selectionGeneration) setEditorError("无法选择该产品")
+                    if (generation == selectionGeneration) {
+                        mutableState.value = mutableState.value.copy(
+                            editor = mutableState.value.editor.copy(
+                                selecting = false,
+                                saving = false,
+                                errorMessage = "无法选择该产品",
+                            ),
+                        )
+                    }
                 }
             }
         }
     }
 
     fun setRating(halfStars: Int?) {
-        if (mutableState.value.editor.saving) return
+        if (mutableState.value.editor.saving || mutableState.value.editor.selecting) return
         if (halfStars != null && halfStars !in 1..10) return
         editDraft { it.copy(ratingHalfStars = halfStars) }
     }
 
     fun setPriceInput(input: String) {
-        if (mutableState.value.editor.saving) return
+        if (mutableState.value.editor.saving || mutableState.value.editor.selecting) return
         val fen = input.takeIf { it.isNotBlank() }?.let(::parseYuanToFen)
         val valid = input.isBlank() || fen != null
         mutableState.value = mutableState.value.copy(
@@ -164,14 +181,14 @@ class JournalViewModel(
     fun setBrewMethod(value: String) = editDraft { it.copy(brewMethod = value.takeUnless(String::isBlank)) }
     fun setNote(value: String) = editDraft { it.copy(note = value) }
     fun skipImagePrompt() {
-        if (mutableState.value.editor.saving) return
+        if (mutableState.value.editor.saving || mutableState.value.editor.selecting) return
         mutableState.value = mutableState.value.copy(editor = mutableState.value.editor.copy(needsImagePrompt = false))
     }
 
     fun save() {
         val editor = mutableState.value.editor
         val draft = currentDraft ?: return
-        if (editor.saving || !editor.priceValid) return
+        if (editor.saving || editor.selecting || !editor.priceValid) return
         mutableState.value = mutableState.value.copy(editor = editor.copy(saving = true, errorMessage = null))
         scope.launch {
             try {
@@ -198,7 +215,7 @@ class JournalViewModel(
         updateEditor: Boolean = true,
         transform: (DrinkDraft) -> DrinkDraft,
     ) {
-        if (mutableState.value.editor.saving) return
+        if (mutableState.value.editor.saving || mutableState.value.editor.selecting) return
         val updated = currentDraft?.let(transform) ?: return
         currentDraft = updated
         if (updateEditor) {
@@ -222,7 +239,9 @@ class JournalViewModel(
         monthJob = scope.launch {
             journalRepository.observeMonth(year, month).collect { records ->
                 val representatives = representativeRecords(records)
-                val assetIds = representatives.mapNotNull { it.snapshot.imageAssetId }.distinct()
+                val assetIds = representatives.flatMap { record ->
+                    listOfNotNull(record.snapshot.imageAssetId, record.snapshot.brandLogoAssetId)
+                }.distinct()
                 val pathsByAssetId = assetIds.associateWith { assetId ->
                     resultOrNullPreservingCancellation { imagePathResolver.resolve(assetId) }
                 }
@@ -231,9 +250,12 @@ class JournalViewModel(
                 val paths = representatives.associate { record ->
                     record.id to record.snapshot.imageAssetId?.let(pathsByAssetId::get)
                 }
+                val logoPaths = representatives.associate { record ->
+                    record.id to record.snapshot.brandLogoAssetId?.let(pathsByAssetId::get)
+                }
                 mutableState.value = mutableState.value.copy(
                     records = records,
-                    days = projectMonth(year, month, records, paths),
+                    days = projectMonth(year, month, records, paths, logoPaths),
                     summary = summarizeMonth(records),
                 )
             }

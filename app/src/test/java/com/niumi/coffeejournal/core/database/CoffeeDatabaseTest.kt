@@ -137,6 +137,27 @@ class CoffeeDatabaseTest {
     }
 
     @Test
+    fun `historical brand logo referenced by snapshot cannot be deleted`() = runBlocking {
+        val logo = imageAsset(id = "historical-logo")
+        database.imageAssetDao().upsert(logo)
+        val record = DrinkRecordEntity(
+            id = "record-logo",
+            occurredAtEpochMillis = 1,
+            localDate = "2026-08-01",
+            itemType = "CHAIN_PRODUCT",
+            sourceItemId = "item-1",
+            snapshotBrandName = "Example Coffee",
+            snapshotItemName = "Flat White",
+            snapshotBrandLogoAssetId = logo.id,
+        )
+        database.drinkDao().insert(record)
+
+        assertEquals(1, database.imageAssetDao().referenceCount(logo.id))
+        assertEquals(0, database.imageAssetDao().deleteIfUnreferenced(logo.id))
+        assertEquals(logo.id, database.drinkDao().get(record.id)?.snapshotBrandLogoAssetId)
+    }
+
+    @Test
     fun `unreferenced image can be deleted`() = runBlocking {
         val asset = imageAsset(id = "image-1")
         database.imageAssetDao().upsert(asset)

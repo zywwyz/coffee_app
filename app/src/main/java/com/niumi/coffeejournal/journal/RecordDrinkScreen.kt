@@ -45,12 +45,13 @@ fun RecordDrinkScreen(
     onSelectImage: () -> Unit,
     onSkipImage: () -> Unit,
 ) {
+    val editorBusy = state.saving || state.selecting
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = onBack, enabled = !state.saving) { Text("返回") }
+            TextButton(onClick = onBack, enabled = !editorBusy) { Text("返回") }
             Text("记录一杯", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -74,7 +75,7 @@ fun RecordDrinkScreen(
             (1..10).forEach { halfStars ->
                 FilterChip(
                     selected = state.ratingHalfStars == halfStars,
-                    enabled = !state.saving,
+                    enabled = !editorBusy,
                     onClick = { onRatingChange(halfStars) },
                     label = { Text("${halfStars / 2.0}") },
                 )
@@ -88,14 +89,14 @@ fun RecordDrinkScreen(
             isError = !state.priceValid,
             supportingText = { if (!state.priceValid) Text("请输入最多两位小数的非负金额") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            enabled = !state.saving,
+            enabled = !editorBusy,
         )
         OutlinedTextField(
             value = state.brewMethod,
             onValueChange = onBrewMethodChange,
             modifier = Modifier.fillMaxWidth(),
             label = { Text("冲煮方式") },
-            enabled = !state.saving,
+            enabled = !editorBusy,
         )
         OutlinedTextField(
             value = state.note,
@@ -103,18 +104,26 @@ fun RecordDrinkScreen(
             modifier = Modifier.fillMaxWidth(),
             label = { Text("备注（可选）") },
             minLines = 3,
-            enabled = !state.saving,
+            enabled = !editorBusy,
         )
         state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Button(
             onClick = onSave,
-            enabled = state.selectedItemId != null && state.priceValid && !state.saving,
+            enabled = state.selectedItemId != null && state.priceValid && !editorBusy,
             modifier = Modifier.fillMaxWidth(),
-        ) { Text(if (state.saving) "保存中…" else "保存记录") }
+        ) {
+            Text(
+                when {
+                    state.selecting -> "加载产品…"
+                    state.saving -> "保存中…"
+                    else -> "保存记录"
+                },
+            )
+        }
     }
 
     if (state.needsImagePrompt) {
-        MissingImageDialog(!state.saving, onScreenshot, onSelectImage, onSkipImage)
+        MissingImageDialog(!editorBusy, onScreenshot, onSelectImage, onSkipImage)
     }
 }
 

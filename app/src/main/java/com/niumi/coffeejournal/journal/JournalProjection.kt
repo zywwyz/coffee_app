@@ -16,6 +16,7 @@ data class CalendarDayUi(
     val dayNumber: Int,
     val inDisplayedMonth: Boolean,
     val imagePath: String?,
+    val brandLogoPath: String?,
     val drinkCount: Int,
 )
 
@@ -36,6 +37,7 @@ data class RecordEditorUi(
     val brewMethod: String = "",
     val note: String = "",
     val needsImagePrompt: Boolean = false,
+    val selecting: Boolean = false,
     val saving: Boolean = false,
     val errorMessage: String? = null,
 )
@@ -102,6 +104,7 @@ fun projectMonth(
     month: Int,
     records: List<DrinkRecord>,
     productImagePathsByRecordId: Map<String, String?> = emptyMap(),
+    brandLogoPathsByRecordId: Map<String, String?> = emptyMap(),
 ): List<CalendarDayUi> {
     require(year > 0 && month in 1..12)
     val first = GregorianCalendar(year, month - 1, 1).apply { isLenient = false }
@@ -120,11 +123,13 @@ fun projectMonth(
         val dayRecords = recordsByDate[localDate].orEmpty()
         val latest = dayRecords.maxWithOrNull(compareBy<DrinkRecord> { it.occurredAtEpochMillis }.thenBy { it.id })
         val productImage = latest?.let { productImagePathsByRecordId[it.id] }
+        val brandLogo = latest?.let { brandLogoPathsByRecordId[it.id] }
         CalendarDayUi(
             localDate = localDate,
             dayNumber = date.get(Calendar.DAY_OF_MONTH),
             inDisplayedMonth = date.get(Calendar.YEAR) == year && date.get(Calendar.MONTH) == month - 1,
             imagePath = latest?.let { calendarImage(productImage) },
+            brandLogoPath = brandLogo,
             drinkCount = dayRecords.size,
         )
     }

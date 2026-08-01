@@ -1,6 +1,5 @@
 package com.niumi.coffeejournal.journal
 
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -34,7 +33,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -44,10 +42,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.niumi.coffeejournal.catalog.CatalogRepository
 import com.niumi.coffeejournal.core.image.ImagePathResolver
+import com.niumi.coffeejournal.core.image.CalendarThumbnailLoader
+import com.niumi.coffeejournal.core.image.ThumbnailLoader
 import com.niumi.coffeejournal.core.model.DrinkRecord
 import java.util.Calendar
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 @Composable
 fun JournalFeature(
@@ -110,6 +108,7 @@ fun JournalScreen(
     onDayClick: (String?) -> Unit,
     onRecordDrink: () -> Unit,
 ) {
+    val thumbnailLoader = remember { CalendarThumbnailLoader() }
     Scaffold(
         floatingActionButton = { Button(onClick = onRecordDrink) { Text("记录一杯") } },
     ) { padding ->
@@ -131,6 +130,7 @@ fun JournalScreen(
                                 day = day,
                                 onClick = { onDayClick(day.localDate) },
                                 modifier = Modifier.weight(1f),
+                                thumbnailLoader = thumbnailLoader,
                             )
                         }
                     }
@@ -172,7 +172,12 @@ private fun WeekdayHeader() {
 }
 
 @Composable
-private fun CalendarDay(day: CalendarDayUi, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun CalendarDay(
+    day: CalendarDayUi,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    thumbnailLoader: ThumbnailLoader,
+) {
     Box(
         modifier = modifier
             .aspectRatio(0.82f)
@@ -188,6 +193,8 @@ private fun CalendarDay(day: CalendarDayUi, onClick: () -> Unit, modifier: Modif
         } else {
             LocalCoffeeImage(
                 imagePath = day.imagePath,
+                brandLogoPath = day.brandLogoPath,
+                thumbnailLoader = thumbnailLoader,
                 modifier = Modifier.matchParentSize().clip(RoundedCornerShape(8.dp)),
             )
             Text(day.dayNumber.toString(), style = MaterialTheme.typography.labelSmall)
@@ -206,10 +213,12 @@ private fun CalendarDay(day: CalendarDayUi, onClick: () -> Unit, modifier: Modif
 @Composable
 private fun LocalCoffeeImage(
     imagePath: String?,
+    brandLogoPath: String?,
+    thumbnailLoader: ThumbnailLoader,
     modifier: Modifier = Modifier,
 ) {
-    val loaded by produceState<ImageBitmap?>(null, imagePath) {
-        value = withContext(Dispatchers.IO) { decodeCalendarImage(imagePath) }
+    val loaded by produceState<ImageBitmap?>(null, imagePath, brandLogoPath, thumbnailLoader) {
+        value = thumbnailLoader.load(imagePath) ?: thumbnailLoader.load(brandLogoPath)
     }
     val image = loaded
     if (image == null) {
@@ -229,17 +238,6 @@ private fun LocalCoffeeImage(
             modifier = modifier,
         )
     }
-}
-
-private fun decodeCalendarImage(path: String?): ImageBitmap? {
-    if (path == null) return null
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeFile(path, bounds)
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-    var sampleSize = 1
-    while (bounds.outWidth / sampleSize > 256 || bounds.outHeight / sampleSize > 256) sampleSize *= 2
-    val bitmap = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sampleSize }) ?: return null
-    return bitmap.asImageBitmap()
 }
 
 @Composable

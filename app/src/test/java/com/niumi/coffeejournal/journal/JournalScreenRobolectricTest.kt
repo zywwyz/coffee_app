@@ -96,11 +96,16 @@ class JournalScreenRobolectricTest {
     @Test
     fun `recorded day renders decoded brand logo fallback`() {
         val logo = temporaryBitmap("logo")
+        val corrupt = File.createTempFile("corrupt-product", ".png").apply { writeText("broken") }
         val state = JournalUiState.empty(2026, 8).let { empty ->
             empty.copy(
                 days = empty.days.map { day ->
                     if (day.localDate == "2026-08-05") {
-                        day.copy(imagePath = logo.absolutePath, drinkCount = 1)
+                        day.copy(
+                            imagePath = corrupt.absolutePath,
+                            brandLogoPath = logo.absolutePath,
+                            drinkCount = 1,
+                        )
                     } else day
                 },
             )
@@ -137,6 +142,24 @@ class JournalScreenRobolectricTest {
         compose.onNodeWithText("测试品牌").assertIsNotEnabled()
         compose.onNodeWithText("测试产品").assertIsNotEnabled()
         compose.onNodeWithText("5.0").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `editor and save are disabled while product selection loads`() {
+        compose.setContent {
+            CoffeeTheme {
+                RecordDrinkScreen(
+                    state = RecordEditorUi(selectedItemId = "old", selecting = true),
+                    brands = emptyList(), items = emptyList(),
+                    onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {},
+                    onRatingChange = {}, onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {},
+                    onSave = {}, onBack = {}, onScreenshot = {}, onSelectImage = {}, onSkipImage = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("5.0").assertIsNotEnabled()
+        compose.onNodeWithText("加载产品…").assertIsNotEnabled()
     }
 
     private fun temporaryBitmap(prefix: String): File {

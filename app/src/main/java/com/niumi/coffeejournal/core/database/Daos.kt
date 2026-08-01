@@ -111,6 +111,9 @@ interface ImageAssetDao {
           AND NOT EXISTS (
               SELECT 1 FROM drink_records WHERE snapshotImageAssetId = :id
           )
+          AND NOT EXISTS (
+              SELECT 1 FROM drink_records WHERE snapshotBrandLogoAssetId = :id
+          )
         """,
     )
     suspend fun deleteIfUnreferenced(id: String): Int
@@ -120,7 +123,8 @@ interface ImageAssetDao {
         SELECT
             (SELECT COUNT(*) FROM brands WHERE logoAssetId = :id) +
             (SELECT COUNT(*) FROM catalog_items WHERE imageAssetId = :id) +
-            (SELECT COUNT(*) FROM drink_records WHERE snapshotImageAssetId = :id)
+            (SELECT COUNT(*) FROM drink_records WHERE snapshotImageAssetId = :id) +
+            (SELECT COUNT(*) FROM drink_records WHERE snapshotBrandLogoAssetId = :id)
         """,
     )
     suspend fun referenceCount(id: String): Int

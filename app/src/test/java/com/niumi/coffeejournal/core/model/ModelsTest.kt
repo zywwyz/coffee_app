@@ -65,6 +65,16 @@ class ModelsTest {
     }
 
     @Test
+    fun `snapshot keeps product and brand logo assets independently`() {
+        val snapshot = DrinkSnapshot(
+            "Brand", "Coffee", null, null, "product-image", brandLogoAssetId = "brand-logo",
+        )
+
+        assertEquals("product-image", snapshot.imageAssetId)
+        assertEquals("brand-logo", snapshot.brandLogoAssetId)
+    }
+
+    @Test
     fun catalog_item_rejects_information_completeness_outside_percentage_range() {
         assertThrows(IllegalArgumentException::class.java) {
             catalogItem(informationCompleteness = 101)
