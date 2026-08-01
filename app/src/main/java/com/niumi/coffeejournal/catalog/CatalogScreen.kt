@@ -22,6 +22,7 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -82,7 +83,21 @@ fun CatalogScreen(
     var showNewBrand by remember { mutableStateOf(false) }
     var itemEditor by remember { mutableStateOf<CatalogItem?>(null) }
     var showNewItem by remember { mutableStateOf(false) }
+    var pendingSave by remember { mutableStateOf<PendingCatalogSave?>(null) }
+    var lastHandledSaveToken by remember { mutableStateOf(state.saveCompletedToken) }
     val selectedBrand = state.brandOverviews.firstOrNull { it.brand.id == state.selectedBrandId }?.brand
+
+    LaunchedEffect(state.saveCompletedToken) {
+        if (state.saveCompletedToken > lastHandledSaveToken) {
+            when (pendingSave) {
+                PendingCatalogSave.BRAND -> { showNewBrand = false; brandEditor = null }
+                PendingCatalogSave.ITEM -> { showNewItem = false; itemEditor = null }
+                null -> Unit
+            }
+            pendingSave = null
+            lastHandledSaveToken = state.saveCompletedToken
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Text("我的咖啡豆库", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(16.dp))
@@ -143,8 +158,8 @@ fun CatalogScreen(
             initial = brandEditor,
             type = if (state.tab == CatalogTab.CHAINS) BrandType.CHAIN else BrandType.ROASTER,
             saving = state.saving,
-            onDismiss = { showNewBrand = false; brandEditor = null },
-            onSave = { onSaveBrand(it); showNewBrand = false; brandEditor = null },
+            onDismiss = { showNewBrand = false; brandEditor = null; pendingSave = null },
+            onSave = { pendingSave = PendingCatalogSave.BRAND; onSaveBrand(it) },
             onRequestAsset = onRequestAsset,
         )
     }
@@ -153,8 +168,8 @@ fun CatalogScreen(
             initial = itemEditor,
             brand = selectedBrand,
             saving = state.saving,
-            onDismiss = { showNewItem = false; itemEditor = null },
-            onSave = { onSaveItem(it); showNewItem = false; itemEditor = null },
+            onDismiss = { showNewItem = false; itemEditor = null; pendingSave = null },
+            onSave = { pendingSave = PendingCatalogSave.ITEM; onSaveItem(it) },
             onRequestAsset = onRequestAsset,
         )
     }
@@ -227,13 +242,16 @@ private fun BrandEditorDialog(
         title = if (initial == null) "新增品牌" else "编辑品牌", saving = saving, onDismiss = onDismiss,
         onSave = { onSave(BrandEditor(type, name, logoAssetId, mode, sourceUrl, initial?.id)) },
     ) {
-        Field(name, { name = it }, "品牌名称")
+        Field(name, { name = it }, "品牌名称", enabled = !saving)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AssistChip(onClick = { mode = MaintenanceMode.MANUAL_ONLY }, label = { Text("仅手工维护") })
-            AssistChip(onClick = { mode = MaintenanceMode.PUBLIC_SOURCE }, label = { Text("公开网页更新") })
+            AssistChip(onClick = { mode = MaintenanceMode.MANUAL_ONLY }, label = { Text("仅手工维护") }, enabled = !saving)
+            AssistChip(onClick = { mode = MaintenanceMode.PUBLIC_SOURCE }, label = { Text("公开网页更新") }, enabled = !saving)
         }
-        Field(sourceUrl, { sourceUrl = it }, "公开产品页（可选）")
-        OutlinedButton(onClick = { onRequestAsset(logoAssetId, CatalogAssetKind.BRAND_LOGO) { logoAssetId = it } }) {
+        Field(sourceUrl, { sourceUrl = it }, "公开产品页（可选）", enabled = !saving)
+        OutlinedButton(
+            onClick = { onRequestAsset(logoAssetId, CatalogAssetKind.BRAND_LOGO) { logoAssetId = it } },
+            enabled = !saving,
+        ) {
             Text(if (logoAssetId == null) "选择 Logo" else "更换 Logo")
         }
     }
@@ -259,50 +277,62 @@ private fun ItemEditorDialog(
     var category by remember(initial) { mutableStateOf(initial?.category.orEmpty()) }
     var specification by remember(initial) { mutableStateOf(initial?.specificationDescription.orEmpty()) }
     var status by remember(initial) { mutableStateOf(initial?.status ?: ItemStatus.ACTIVE) }
+    var caffeineError by remember(initial) { mutableStateOf<String?>(null) }
     val type = if (brand.type == BrandType.CHAIN) ItemType.CHAIN_PRODUCT else ItemType.PERSONAL_BEAN
     EditorDialog(
         title = if (initial == null) "新增${if (type == ItemType.PERSONAL_BEAN) "豆子" else "产品"}" else "编辑条目",
         saving = saving, onDismiss = onDismiss,
         onSave = {
+            val caffeineResult = validateCaffeineInput(caffeine)
+            if (caffeineResult is CaffeineInput.Invalid) {
+                caffeineError = "请输入非负的有效咖啡因数值"
+                return@EditorDialog
+            }
+            caffeineError = null
             onSave(
                 ItemEditor(
                     brand.id, type, name, image, origin, processing, roast, flavors, brew, status,
-                    caffeine.toDoubleOrNull(), description, purchaseDate, roastDate, sourceUrl, initial?.id,
+                    (caffeineResult as CaffeineInput.Valid).milligrams,
+                    description, purchaseDate, roastDate, sourceUrl, initial?.id,
                     category, specification,
                 ),
             )
         },
     ) {
-        Field(name, { name = it }, "名称")
-        Field(origin, { origin = it }, "产地（可选）")
-        Field(processing, { processing = it }, "处理法（可选）")
-        Field(roast, { roast = it }, "烘焙度（可选）")
-        Field(flavors, { flavors = it }, "风味描述（可选）")
-        Field(brew, { brew = it }, "默认冲煮方式（可选）")
+        Field(name, { name = it }, "名称", enabled = !saving)
+        Field(origin, { origin = it }, "产地（可选）", enabled = !saving)
+        Field(processing, { processing = it }, "处理法（可选）", enabled = !saving)
+        Field(roast, { roast = it }, "烘焙度（可选）", enabled = !saving)
+        Field(flavors, { flavors = it }, "风味描述（可选）", enabled = !saving)
+        Field(brew, { brew = it }, "默认冲煮方式（可选）", enabled = !saving)
         if (type == ItemType.CHAIN_PRODUCT) {
-            Field(category, { category = it }, "产品分类（可选）")
-            Field(specification, { specification = it }, "规格描述（可选）")
-            Field(caffeine, { caffeine = it }, "咖啡因 mg（可选）")
-            Field(description, { description = it }, "官方描述（可选）")
-            Field(sourceUrl, { sourceUrl = it }, "来源链接（可选）")
+            Field(category, { category = it }, "产品分类（可选）", enabled = !saving)
+            Field(specification, { specification = it }, "规格描述（可选）", enabled = !saving)
+            Field(caffeine, { caffeine = it; caffeineError = null }, "咖啡因 mg（可选）", enabled = !saving)
+            caffeineError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            Field(description, { description = it }, "官方描述（可选）", enabled = !saving)
+            Field(sourceUrl, { sourceUrl = it }, "来源链接（可选）", enabled = !saving)
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("当前状态")
                 listOf(ItemStatus.ACTIVE, ItemStatus.NEEDS_IMAGE, ItemStatus.DISCONTINUED, ItemStatus.ARCHIVED)
                     .forEach { value ->
-                        FilterChip(status == value, { status = value }, label = { Text(statusLabel(value)) })
+                        FilterChip(status == value, { status = value }, label = { Text(statusLabel(value)) }, enabled = !saving)
                     }
             }
         } else {
-            Field(description, { description = it }, "备注（可选）")
-            Field(purchaseDate, { purchaseDate = it }, "购买日期 YYYY-MM-DD（可选）")
-            Field(roastDate, { roastDate = it }, "烘焙日期 YYYY-MM-DD（可选）")
+            Field(description, { description = it }, "备注（可选）", enabled = !saving)
+            Field(purchaseDate, { purchaseDate = it }, "购买日期 YYYY-MM-DD（可选）", enabled = !saving)
+            Field(roastDate, { roastDate = it }, "烘焙日期 YYYY-MM-DD（可选）", enabled = !saving)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CatalogViewModel.BEAN_FILTERS.forEach { value ->
-                    FilterChip(status == value, { status = value }, label = { Text(value.beanStatusLabel()) })
+                    FilterChip(status == value, { status = value }, label = { Text(value.beanStatusLabel()) }, enabled = !saving)
                 }
             }
         }
-        OutlinedButton(onClick = { onRequestAsset(image, CatalogAssetKind.ITEM_IMAGE) { image = it } }) {
+        OutlinedButton(
+            onClick = { onRequestAsset(image, CatalogAssetKind.ITEM_IMAGE) { image = it } },
+            enabled = !saving,
+        ) {
             Text(if (image == null) "选择图片" else "更换图片")
         }
     }
@@ -328,9 +358,14 @@ private fun EditorDialog(
 }
 
 @Composable
-private fun Field(value: String, onChange: (String) -> Unit, label: String) {
-    OutlinedTextField(value, onChange, label = { Text(label) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+private fun Field(value: String, onChange: (String) -> Unit, label: String, enabled: Boolean = true) {
+    OutlinedTextField(
+        value, onChange, label = { Text(label) }, enabled = enabled,
+        singleLine = true, modifier = Modifier.fillMaxWidth(),
+    )
 }
+
+private enum class PendingCatalogSave { BRAND, ITEM }
 
 private fun statusLabel(status: ItemStatus): String = when (status) {
     ItemStatus.ACTIVE -> "在售"

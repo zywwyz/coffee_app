@@ -51,6 +51,7 @@ class CatalogViewModelTest {
         assertTrue(repository.brands.value.any { it.name == "新连锁" })
         assertEquals("埃塞俄比亚", repository.items.value.single().origin)
         assertEquals("asset", repository.items.value.single().imageAssetId)
+        assertEquals(3L, viewModel.uiState.value.saveCompletedToken)
     }
 
     @Test
@@ -63,6 +64,7 @@ class CatalogViewModelTest {
 
         assertEquals("同一分类下已存在同名条目", viewModel.uiState.value.errorMessage)
         assertFalse(viewModel.uiState.value.saving)
+        assertEquals(0L, viewModel.uiState.value.saveCompletedToken)
     }
 
     @Test
@@ -180,6 +182,16 @@ class CatalogViewModelTest {
         yield()
 
         assertEquals("初始化品牌失败，请重试", viewModel.uiState.value.errorMessage)
+    }
+
+    @Test
+    fun `caffeine parser accepts empty and finite nonnegative values only`() {
+        assertEquals(CaffeineInput.Valid(null), validateCaffeineInput(""))
+        assertEquals(CaffeineInput.Valid(0.0), validateCaffeineInput("0"))
+        assertEquals(CaffeineInput.Valid(128.5), validateCaffeineInput("128.5"))
+        listOf("abc", "NaN", "Infinity", "-0.1").forEach { input ->
+            assertEquals(CaffeineInput.Invalid, validateCaffeineInput(input))
+        }
     }
 
     private fun viewModel(repository: FakeCatalogRepository) = CatalogViewModel(

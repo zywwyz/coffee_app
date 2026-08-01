@@ -7,6 +7,7 @@ import androidx.compose.ui.test.performClick
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertEquals
 
 class CatalogScreenTest {
     @get:Rule val compose = createComposeRule()
@@ -26,7 +27,7 @@ class CatalogScreenTest {
 
         compose.onNodeWithText("连锁品牌").assertIsDisplayed()
         compose.onNodeWithText("我的豆子").performClick()
-        compose.runOnIdle { assert(requestedTab == CatalogTab.BEANS) }
+        compose.runOnIdle { assertEquals(CatalogTab.BEANS, requestedTab) }
         compose.onNodeWithText("新增连锁品牌").performClick()
         compose.onNodeWithText("品牌名称").assertIsDisplayed()
         compose.onNodeWithText("选择 Logo").assertIsDisplayed()

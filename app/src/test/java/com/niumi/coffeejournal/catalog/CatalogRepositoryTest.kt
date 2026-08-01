@@ -3,6 +3,8 @@ package com.niumi.coffeejournal.catalog
 import android.content.Context
 import androidx.room.Room
 import com.niumi.coffeejournal.core.database.BrandEntity
+import com.niumi.coffeejournal.core.database.BrandDao
+import com.niumi.coffeejournal.core.database.BrandOverviewRow
 import com.niumi.coffeejournal.core.database.CatalogItemEntity
 import com.niumi.coffeejournal.core.database.CoffeeDatabase
 import com.niumi.coffeejournal.core.database.DataIntegrityException
@@ -198,6 +200,24 @@ class CatalogRepositoryTest {
     }
 
     @Test
+    fun `unique name inserted after precheck is still reported as duplicate`() = runBlocking {
+        val winner = BrandEntity(
+            id = "race-winner", type = "CHAIN", name = "Manner", normalizedName = "manner",
+            logoAssetId = null, maintenanceMode = "MANUAL_ONLY", publicSourceUrl = null,
+        )
+        val racingRepository = RoomCatalogRepository(
+            RacingBrandDao(database.brandDao(), winner), database.catalogItemDao(), database.drinkDao(),
+        )
+
+        try {
+            racingRepository.upsertBrand(brand().copy(id = "race-loser", name = "Manner"))
+            fail("Expected DuplicateCatalogNameException")
+        } catch (error: DuplicateCatalogNameException) {
+            assertTrue(error.message.orEmpty().contains("已存在"))
+        }
+    }
+
+    @Test
     fun `brand overview reports item count and latest confirmed update`() = runBlocking {
         repository.upsertBrand(brand())
         repository.upsertItem(item(name = "拿铁"))
@@ -227,6 +247,31 @@ class CatalogRepositoryTest {
         assertEquals("意式咖啡", repository.getItem(ITEM_ID).category)
         assertEquals("大杯 / 冰", repository.getItem(ITEM_ID).specificationDescription)
         assertEquals("浓缩", repository.getItem(ITEM_ID).brewMethod)
+    }
+
+    @Test
+    fun `missing brand logo foreign key is not reported as duplicate`() = runBlocking {
+        try {
+            repository.upsertBrand(brand().copy(logoAssetId = "missing-logo"))
+            fail("Expected foreign key constraint")
+        } catch (_: android.database.sqlite.SQLiteConstraintException) { }
+    }
+
+    @Test
+    fun `missing item image foreign key is not reported as duplicate`() = runBlocking {
+        repository.upsertBrand(brand())
+        try {
+            repository.upsertItem(item("澳白").copy(imageAssetId = "missing-image"))
+            fail("Expected foreign key constraint")
+        } catch (_: android.database.sqlite.SQLiteConstraintException) { }
+    }
+
+    @Test
+    fun `missing item brand foreign key is not reported as duplicate`() = runBlocking {
+        try {
+            repository.upsertItem(item("澳白").copy(brandId = "missing-brand"))
+            fail("Expected foreign key constraint")
+        } catch (_: android.database.sqlite.SQLiteConstraintException) { }
     }
 
     private fun brand() = Brand(
@@ -266,5 +311,29 @@ class CatalogRepositoryTest {
     private companion object {
         const val BRAND_ID = "brand-1"
         const val ITEM_ID = "item-1"
+    }
+
+    private class RacingBrandDao(
+        private val delegate: BrandDao,
+        private val winner: BrandEntity,
+    ) : BrandDao {
+        private var injected = false
+        override suspend fun insert(brand: BrandEntity) = delegate.insert(brand)
+        override suspend fun update(brand: BrandEntity): Int = delegate.update(brand)
+        override suspend fun insertIgnoringExisting(brands: List<BrandEntity>): List<Long> =
+            delegate.insertIgnoringExisting(brands)
+        override fun observe() = delegate.observe()
+        override fun observeByType(type: String) = delegate.observeByType(type)
+        override suspend fun get(id: String) = delegate.get(id)
+        override suspend fun existsNamedOther(type: String, name: String, id: String): Boolean {
+            if (!injected) {
+                injected = true
+                delegate.insert(winner)
+                return false
+            }
+            return delegate.existsNamedOther(type, name, id)
+        }
+        override fun observeOverviews(type: String): kotlinx.coroutines.flow.Flow<List<BrandOverviewRow>> =
+            delegate.observeOverviews(type)
     }
 }

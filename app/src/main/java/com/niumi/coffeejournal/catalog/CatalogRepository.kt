@@ -83,8 +83,11 @@ class RoomCatalogRepository(
         }
         try {
             brandDao.upsert(brand.toEntity())
-        } catch (_: SQLiteConstraintException) {
-            throw DuplicateCatalogNameException(brand.name)
+        } catch (error: SQLiteConstraintException) {
+            if (brandDao.existsNamedOther(brand.type.name, normalized, brand.id)) {
+                throw DuplicateCatalogNameException(brand.name)
+            }
+            throw error
         }
     }
 
@@ -95,8 +98,11 @@ class RoomCatalogRepository(
         }
         try {
             catalogItemDao.upsert(item.toEntity())
-        } catch (_: SQLiteConstraintException) {
-            throw DuplicateCatalogNameException(item.name)
+        } catch (error: SQLiteConstraintException) {
+            if (catalogItemDao.existsNamedOther(item.brandId, normalized, item.id)) {
+                throw DuplicateCatalogNameException(item.name)
+            }
+            throw error
         }
     }
 

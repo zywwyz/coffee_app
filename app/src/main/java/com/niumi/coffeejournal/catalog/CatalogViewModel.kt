@@ -58,6 +58,7 @@ data class CatalogUiState(
     val beanStatus: ItemStatus = ItemStatus.ACTIVE,
     val saving: Boolean = false,
     val errorMessage: String? = null,
+    val saveCompletedToken: Long = 0,
 ) {
     val visibleItems: List<CatalogItem>
         get() = if (tab == CatalogTab.BEANS) items.filter { it.status == beanStatus } else items
@@ -175,7 +176,10 @@ class CatalogViewModel(
         scope.launch {
             try {
                 action()
-                mutableState.value = mutableState.value.copy(saving = false)
+                mutableState.value = mutableState.value.copy(
+                    saving = false,
+                    saveCompletedToken = mutableState.value.saveCompletedToken + 1,
+                )
             } catch (error: CancellationException) {
                 throw error
             } catch (_: DuplicateCatalogNameException) {
@@ -212,4 +216,15 @@ fun ItemStatus.beanStatusLabel(): String = when (this) {
     ItemStatus.ACTIVE, ItemStatus.NEEDS_IMAGE -> "正在喝"
     ItemStatus.DISCONTINUED -> "已喝完"
     ItemStatus.ARCHIVED -> "归档"
+}
+
+sealed interface CaffeineInput {
+    data class Valid(val milligrams: Double?) : CaffeineInput
+    data object Invalid : CaffeineInput
+}
+
+fun validateCaffeineInput(input: String): CaffeineInput {
+    if (input.isBlank()) return CaffeineInput.Valid(null)
+    val value = input.toDoubleOrNull() ?: return CaffeineInput.Invalid
+    return if (value.isFinite() && value >= 0.0) CaffeineInput.Valid(value) else CaffeineInput.Invalid
 }
