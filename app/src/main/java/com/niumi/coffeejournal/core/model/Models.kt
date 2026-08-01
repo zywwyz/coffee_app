@@ -114,6 +114,8 @@ data class CatalogItem(
     val sourceUrl: String? = null,
     val sourceFetchedAt: Long? = null,
     val informationCompleteness: Int = 0,
+    val category: String? = null,
+    val specificationDescription: String? = null,
 ) {
     init {
         require(informationCompleteness in 0..100) {

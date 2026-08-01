@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.runtime.mutableStateOf
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
@@ -59,6 +60,24 @@ class CatalogScreenRobolectricTest {
         compose.runOnIdle { assert(assetRequested) }
         compose.runOnIdle { screenState.value = screenState.value.copy(saving = true) }
         compose.onNodeWithText("保存中…").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `chain product editor exposes category specification and brew as distinct fields`() {
+        compose.setContent {
+            CoffeeTheme {
+                CatalogScreen(
+                    state = state().copy(selectedBrandId = "brand"),
+                    onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {},
+                    onSaveBrand = {}, onSaveItem = {}, onSetItemStatus = { _, _ -> }, onClearError = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("新增连锁产品").performClick()
+        compose.onNodeWithText("产品分类（可选）").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("规格描述（可选）").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("默认冲煮方式（可选）").performScrollTo().assertIsDisplayed()
     }
 
     private fun state() = CatalogUiState(

@@ -169,6 +169,8 @@ private fun CatalogItemEntity.toDomain() = CatalogItem(
     sourceUrl = sourceUrl,
     sourceFetchedAt = sourceFetchedAt,
     informationCompleteness = informationCompleteness,
+    category = category,
+    specificationDescription = specificationDescription,
 )
 
 private fun CatalogItem.toEntity() = CatalogItemEntity(
@@ -191,6 +193,8 @@ private fun CatalogItem.toEntity() = CatalogItemEntity(
     sourceUrl = sourceUrl,
     sourceFetchedAt = sourceFetchedAt,
     informationCompleteness = informationCompleteness,
+    category = category,
+    specificationDescription = specificationDescription,
 )
 
 fun normalizeCatalogName(raw: String): String {

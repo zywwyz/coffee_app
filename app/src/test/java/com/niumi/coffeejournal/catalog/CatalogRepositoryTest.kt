@@ -213,6 +213,22 @@ class CatalogRepositoryTest {
         assertEquals(1234L, overview.lastUpdatedAtEpochMillis)
     }
 
+    @Test
+    fun `chain category and specification round trip independently from brew method`() = runBlocking {
+        repository.upsertBrand(brand())
+        val product = item(name = "澳白").copy(
+            category = "意式咖啡",
+            specificationDescription = "大杯 / 冰",
+            brewMethod = "浓缩",
+        )
+
+        repository.upsertItem(product)
+
+        assertEquals("意式咖啡", repository.getItem(ITEM_ID).category)
+        assertEquals("大杯 / 冰", repository.getItem(ITEM_ID).specificationDescription)
+        assertEquals("浓缩", repository.getItem(ITEM_ID).brewMethod)
+    }
+
     private fun brand() = Brand(
         id = BRAND_ID,
         type = BrandType.CHAIN,

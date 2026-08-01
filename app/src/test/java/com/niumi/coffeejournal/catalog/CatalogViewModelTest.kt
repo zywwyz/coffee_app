@@ -90,7 +90,11 @@ class CatalogViewModelTest {
     @Test
     fun `editing an item preserves fetched metadata that is not user editable`() = runBlocking {
         val repository = FakeCatalogRepository()
-        val existing = item(ItemStatus.ACTIVE).copy(sourceFetchedAt = 9988, informationCompleteness = 73)
+        val existing = item(ItemStatus.ACTIVE).copy(
+            type = ItemType.CHAIN_PRODUCT,
+            sourceFetchedAt = 9988, informationCompleteness = 73,
+            category = "咖啡", specificationDescription = "中杯 / 热", brewMethod = "浓缩",
+        )
         repository.upsertItem(existing)
         val viewModel = viewModel(repository)
 
@@ -105,6 +109,53 @@ class CatalogViewModelTest {
 
         assertEquals(9988L, repository.items.value.single().sourceFetchedAt)
         assertEquals(73, repository.items.value.single().informationCompleteness)
+        assertEquals("咖啡", repository.items.value.single().category)
+        assertEquals("中杯 / 热", repository.items.value.single().specificationDescription)
+        assertEquals(null, repository.items.value.single().brewMethod)
+    }
+
+    @Test
+    fun `manual chain editor saves category specification and brew independently`() = runBlocking {
+        val repository = FakeCatalogRepository()
+        val viewModel = viewModel(repository)
+
+        viewModel.saveItem(
+            ItemEditor(
+                brandId = "chain", type = ItemType.CHAIN_PRODUCT, name = "澳白", imageAssetId = null,
+                origin = null, processing = null, roastLevel = null, flavorNotes = null,
+                brewMethod = "浓缩", status = ItemStatus.ACTIVE,
+                category = "意式咖啡", specificationDescription = "大杯 / 冰",
+            ),
+        )
+        yield()
+
+        val saved = repository.items.value.single()
+        assertEquals("意式咖啡", saved.category)
+        assertEquals("大杯 / 冰", saved.specificationDescription)
+        assertEquals("浓缩", saved.brewMethod)
+    }
+
+    @Test
+    fun `chain editor can explicitly clear category and specification`() = runBlocking {
+        val repository = FakeCatalogRepository()
+        val existing = item(ItemStatus.ACTIVE).copy(
+            type = ItemType.CHAIN_PRODUCT, category = "咖啡", specificationDescription = "中杯",
+        )
+        repository.upsertItem(existing)
+        val viewModel = viewModel(repository)
+
+        viewModel.saveItem(
+            ItemEditor(
+                brandId = existing.brandId, type = existing.type, name = existing.name,
+                imageAssetId = null, origin = null, processing = null, roastLevel = null,
+                flavorNotes = null, brewMethod = null, status = existing.status, id = existing.id,
+                category = "", specificationDescription = "",
+            ),
+        )
+        yield()
+
+        assertEquals(null, repository.items.value.single().category)
+        assertEquals(null, repository.items.value.single().specificationDescription)
     }
 
     @Test

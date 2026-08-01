@@ -256,6 +256,8 @@ private fun ItemEditorDialog(
     var purchaseDate by remember(initial) { mutableStateOf(initial?.purchaseDate.orEmpty()) }
     var roastDate by remember(initial) { mutableStateOf(initial?.roastDate.orEmpty()) }
     var sourceUrl by remember(initial) { mutableStateOf(initial?.sourceUrl.orEmpty()) }
+    var category by remember(initial) { mutableStateOf(initial?.category.orEmpty()) }
+    var specification by remember(initial) { mutableStateOf(initial?.specificationDescription.orEmpty()) }
     var status by remember(initial) { mutableStateOf(initial?.status ?: ItemStatus.ACTIVE) }
     val type = if (brand.type == BrandType.CHAIN) ItemType.CHAIN_PRODUCT else ItemType.PERSONAL_BEAN
     EditorDialog(
@@ -266,6 +268,7 @@ private fun ItemEditorDialog(
                 ItemEditor(
                     brand.id, type, name, image, origin, processing, roast, flavors, brew, status,
                     caffeine.toDoubleOrNull(), description, purchaseDate, roastDate, sourceUrl, initial?.id,
+                    category, specification,
                 ),
             )
         },
@@ -275,8 +278,10 @@ private fun ItemEditorDialog(
         Field(processing, { processing = it }, "处理法（可选）")
         Field(roast, { roast = it }, "烘焙度（可选）")
         Field(flavors, { flavors = it }, "风味描述（可选）")
-        Field(brew, { brew = it }, "分类 / 冲煮方式（可选）")
+        Field(brew, { brew = it }, "默认冲煮方式（可选）")
         if (type == ItemType.CHAIN_PRODUCT) {
+            Field(category, { category = it }, "产品分类（可选）")
+            Field(specification, { specification = it }, "规格描述（可选）")
             Field(caffeine, { caffeine = it }, "咖啡因 mg（可选）")
             Field(description, { description = it }, "官方描述（可选）")
             Field(sourceUrl, { sourceUrl = it }, "来源链接（可选）")

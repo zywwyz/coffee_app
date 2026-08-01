@@ -46,6 +46,8 @@ data class ItemEditor(
     val roastDate: String? = null,
     val sourceUrl: String? = null,
     val id: String? = null,
+    val category: String? = null,
+    val specificationDescription: String? = null,
 )
 
 data class CatalogUiState(
@@ -137,6 +139,14 @@ class CatalogViewModel(
             sourceUrl = editor.sourceUrl.clean(),
             sourceFetchedAt = existing?.sourceFetchedAt,
             informationCompleteness = existing?.informationCompleteness ?: 0,
+            category = if (editor.type == ItemType.CHAIN_PRODUCT) {
+                if (editor.category == null) existing?.category else editor.category.clean()
+            } else null,
+            specificationDescription = if (editor.type == ItemType.CHAIN_PRODUCT) {
+                if (editor.specificationDescription == null) {
+                    existing?.specificationDescription
+                } else editor.specificationDescription.clean()
+            } else null,
         )
         repository.upsertItem(item)
         selectBrand(editor.brandId)
