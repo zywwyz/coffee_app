@@ -78,7 +78,12 @@ data class DrinkRecord(
     val actualPriceFen: Long?,
     val note: String?,
     val snapshot: DrinkSnapshot,
-)
+) {
+    init {
+        ratingHalfStars?.let(::Rating)
+        actualPriceFen?.let(::Money)
+    }
+}
 
 data class Brand(
     val id: String,
