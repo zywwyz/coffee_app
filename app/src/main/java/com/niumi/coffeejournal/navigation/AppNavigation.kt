@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.niumi.coffeejournal.catalog.CatalogRepository
+import com.niumi.coffeejournal.core.image.ImagePathResolver
 import com.niumi.coffeejournal.journal.JournalFeature
 import com.niumi.coffeejournal.journal.JournalRepository
 import androidx.navigation3.runtime.NavKey
@@ -47,6 +48,7 @@ private val RootDestinations = listOf(
 fun AppNavigation(
     journalRepository: JournalRepository? = null,
     catalogRepository: CatalogRepository? = null,
+    imagePathResolver: ImagePathResolver = ImagePathResolver { null },
 ) {
     val backStack = rememberNavBackStack(Journal)
     val selectedRoot = backStack.last()
@@ -77,7 +79,7 @@ fun AppNavigation(
             entryProvider = entryProvider {
                 entry<Journal> {
                     if (journalRepository != null && catalogRepository != null) {
-                        JournalFeature(journalRepository, catalogRepository)
+                        JournalFeature(journalRepository, catalogRepository, imagePathResolver)
                     } else {
                         RootContent("咖啡日历", "记录今天的咖啡")
                     }

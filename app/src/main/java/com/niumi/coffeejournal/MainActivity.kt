@@ -15,6 +15,7 @@ class MainActivity : ComponentActivity() {
                 AppNavigation(
                     journalRepository = app.journalRepository,
                     catalogRepository = app.catalogRepository,
+                    imagePathResolver = app.imagePathResolver,
                 )
             }
         }

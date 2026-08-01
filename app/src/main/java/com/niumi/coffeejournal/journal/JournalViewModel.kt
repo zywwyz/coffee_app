@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.niumi.coffeejournal.catalog.CatalogRepository
+import com.niumi.coffeejournal.core.image.ImagePathResolver
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.DrinkDraft
 import com.niumi.coffeejournal.core.model.ItemStatus
@@ -25,6 +26,7 @@ class JournalViewModel(
     initialYear: Int,
     initialMonth: Int,
     coroutineScope: CoroutineScope? = null,
+    private val imagePathResolver: ImagePathResolver = ImagePathResolver { null },
 ) : ViewModel() {
     private val scope = coroutineScope ?: viewModelScope
     private val mutableState = MutableStateFlow(JournalUiState.empty(initialYear, initialMonth))
@@ -166,15 +168,19 @@ class JournalViewModel(
         val month = mutableState.value.month
         monthJob = scope.launch {
             journalRepository.observeMonth(year, month).collect { records ->
+                val paths = records.associate { record ->
+                    record.id to runCatching { imagePathResolver.resolve(record.snapshot.imageAssetId) }.getOrNull()
+                }
                 val logos = records.associate { record ->
                     record.id to runCatching {
                         val item = catalogRepository.getItem(record.sourceItemId)
-                        catalogRepository.getBrand(item.brandId).logoAssetId
+                        val logoAssetId = catalogRepository.getBrand(item.brandId).logoAssetId
+                        imagePathResolver.resolve(logoAssetId)
                     }.getOrNull()
                 }
                 mutableState.value = mutableState.value.copy(
                     records = records,
-                    days = projectMonth(year, month, records, logos),
+                    days = projectMonth(year, month, records, paths, logos),
                     summary = summarizeMonth(records),
                 )
             }
@@ -215,10 +221,17 @@ class JournalViewModel(
             catalogRepository: CatalogRepository,
             year: Int,
             month: Int,
+            imagePathResolver: ImagePathResolver,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                JournalViewModel(journalRepository, catalogRepository, year, month) as T
+                JournalViewModel(
+                    journalRepository,
+                    catalogRepository,
+                    year,
+                    month,
+                    imagePathResolver = imagePathResolver,
+                ) as T
         }
     }
 }

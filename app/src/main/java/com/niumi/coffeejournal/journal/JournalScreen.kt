@@ -1,5 +1,7 @@
 package com.niumi.coffeejournal.journal
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,12 +26,17 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -37,13 +44,17 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.niumi.coffeejournal.catalog.CatalogRepository
+import com.niumi.coffeejournal.core.image.ImagePathResolver
 import com.niumi.coffeejournal.core.model.DrinkRecord
 import java.util.Calendar
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun JournalFeature(
     journalRepository: JournalRepository,
     catalogRepository: CatalogRepository,
+    imagePathResolver: ImagePathResolver,
     onScreenshotRequested: () -> Unit = {},
     onImageRequested: () -> Unit = {},
 ) {
@@ -54,6 +65,7 @@ fun JournalFeature(
             catalogRepository,
             today.get(Calendar.YEAR),
             today.get(Calendar.MONTH) + 1,
+            imagePathResolver,
         ),
     )
     val state by journalViewModel.uiState.collectAsStateWithLifecycle()
@@ -166,12 +178,10 @@ private fun CalendarDay(day: CalendarDayUi, onClick: () -> Unit) {
         if (day.drinkCount == 0) {
             Text(day.dayNumber.toString(), modifier = Modifier.align(Alignment.Center))
         } else {
-            Text(
-                text = "☕",
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .semantics { contentDescription = "咖啡图片 ${day.imagePath}" },
-                style = MaterialTheme.typography.headlineMedium,
+            LocalCoffeeImage(
+                imagePath = day.imagePath,
+                brandLogoPath = day.brandLogoPath,
+                modifier = Modifier.matchParentSize().clip(RoundedCornerShape(8.dp)),
             )
             Text(day.dayNumber.toString(), style = MaterialTheme.typography.labelSmall)
             if (day.drinkCount > 1) {
@@ -184,6 +194,51 @@ private fun CalendarDay(day: CalendarDayUi, onClick: () -> Unit) {
             }
         }
     }
+}
+
+private data class LoadedCalendarImage(val bitmap: ImageBitmap, val isLogo: Boolean)
+
+@Composable
+private fun LocalCoffeeImage(
+    imagePath: String?,
+    brandLogoPath: String?,
+    modifier: Modifier = Modifier,
+) {
+    val loaded by produceState<LoadedCalendarImage?>(null, imagePath, brandLogoPath) {
+        value = withContext(Dispatchers.IO) {
+            decodeCalendarImage(imagePath)?.let { LoadedCalendarImage(it, imagePath == brandLogoPath) }
+                ?: decodeCalendarImage(brandLogoPath)?.let { LoadedCalendarImage(it, true) }
+        }
+    }
+    val image = loaded
+    if (image == null) {
+        Box(
+            modifier = modifier
+                .background(MaterialTheme.colorScheme.secondaryContainer)
+                .semantics { contentDescription = "通用咖啡占位图" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("☕", style = MaterialTheme.typography.headlineMedium)
+        }
+    } else {
+        Image(
+            bitmap = image.bitmap,
+            contentDescription = if (image.isLogo) "品牌 Logo" else "产品图片",
+            contentScale = ContentScale.Crop,
+            modifier = modifier,
+        )
+    }
+}
+
+private fun decodeCalendarImage(path: String?): ImageBitmap? {
+    if (path == null) return null
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    var sampleSize = 1
+    while (bounds.outWidth / sampleSize > 256 || bounds.outHeight / sampleSize > 256) sampleSize *= 2
+    val bitmap = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sampleSize }) ?: return null
+    return bitmap.asImageBitmap()
 }
 
 @Composable

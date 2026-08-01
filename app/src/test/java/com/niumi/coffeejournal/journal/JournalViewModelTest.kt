@@ -1,6 +1,7 @@
 package com.niumi.coffeejournal.journal
 
 import com.niumi.coffeejournal.catalog.CatalogRepository
+import com.niumi.coffeejournal.core.image.ImagePathResolver
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.CatalogItem
@@ -42,7 +43,12 @@ class JournalViewModelTest {
             record("last", "2026-08-05", 200, "last.webp"),
         )
 
-        val cell = projectMonth(2026, 8, records).single { it.localDate == "2026-08-05" }
+        val cell = projectMonth(
+            2026,
+            8,
+            records,
+            productImagePathsByRecordId = mapOf("first" to "first.webp", "last" to "last.webp"),
+        ).single { it.localDate == "2026-08-05" }
 
         assertEquals("last.webp", cell.imagePath)
         assertEquals(2, cell.drinkCount)
@@ -135,6 +141,33 @@ class JournalViewModelTest {
         assertTrue(viewModel.uiState.value.editor.needsImagePrompt)
         viewModel.skipImagePrompt()
         assertFalse(viewModel.uiState.value.editor.needsImagePrompt)
+    }
+
+    @Test
+    fun `month resolves asset ids to paths and falls back to valid brand logo`() = runBlocking {
+        val journal = FakeJournalRepository().apply {
+            month.value = listOf(record("drink", "2026-08-05", 100, "product-asset"))
+        }
+        val resolver = ImagePathResolver { assetId ->
+            when (assetId) {
+                "product-asset" -> null
+                "logo.webp" -> "/private/logo.png"
+                else -> null
+            }
+        }
+
+        val viewModel = JournalViewModel(
+            journal,
+            FakeCatalogRepository(),
+            2026,
+            8,
+            CoroutineScope(Job() + Dispatchers.Unconfined),
+            resolver,
+        )
+
+        val day = viewModel.uiState.value.days.single { it.localDate == "2026-08-05" }
+        assertEquals("/private/logo.png", day.imagePath)
+        assertEquals("/private/logo.png", day.brandLogoPath)
     }
 
     private fun record(

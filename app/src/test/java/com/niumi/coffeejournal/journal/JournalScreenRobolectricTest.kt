@@ -1,10 +1,15 @@
 package com.niumi.coffeejournal.journal
 
+import android.graphics.Bitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
+import java.io.File
+import java.io.FileOutputStream
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -53,5 +58,61 @@ class JournalScreenRobolectricTest {
         compose.onNodeWithText("上传完整截图").assertIsDisplayed()
         compose.onNodeWithText("选择图片").assertIsDisplayed()
         compose.onNodeWithText("暂时跳过").assertIsDisplayed()
+    }
+
+    @Test
+    fun `recorded day renders decoded local product image instead of placeholder`() {
+        val image = temporaryBitmap("product")
+        val state = JournalUiState.empty(2026, 8).let { empty ->
+            empty.copy(
+                days = empty.days.map { day ->
+                    if (day.localDate == "2026-08-05") day.copy(imagePath = image.absolutePath, drinkCount = 1) else day
+                },
+            )
+        }
+
+        compose.setContent {
+            CoffeeTheme {
+                JournalScreen(state, {}, {}, {}, {})
+            }
+        }
+
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithContentDescription("产品图片").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithContentDescription("产品图片").assertIsDisplayed()
+        compose.runOnIdle {
+            assert(compose.onAllNodesWithContentDescription("通用咖啡占位图").fetchSemanticsNodes().isEmpty())
+        }
+    }
+
+    @Test
+    fun `recorded day renders decoded brand logo fallback`() {
+        val logo = temporaryBitmap("logo")
+        val state = JournalUiState.empty(2026, 8).let { empty ->
+            empty.copy(
+                days = empty.days.map { day ->
+                    if (day.localDate == "2026-08-05") {
+                        day.copy(imagePath = logo.absolutePath, brandLogoPath = logo.absolutePath, drinkCount = 1)
+                    } else day
+                },
+            )
+        }
+
+        compose.setContent { CoffeeTheme { JournalScreen(state, {}, {}, {}, {}) } }
+
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithContentDescription("品牌 Logo").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithContentDescription("品牌 Logo").assertIsDisplayed()
+    }
+
+    private fun temporaryBitmap(prefix: String): File {
+        val file = File.createTempFile(prefix, ".png")
+        file.deleteOnExit()
+        FileOutputStream(file).use { output ->
+            Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.PNG, 100, output)
+        }
+        return file
     }
 }

@@ -95,6 +95,7 @@ fun projectMonth(
     year: Int,
     month: Int,
     records: List<DrinkRecord>,
+    productImagePathsByRecordId: Map<String, String?> = emptyMap(),
     brandLogosByRecordId: Map<String, String?> = emptyMap(),
 ): List<CalendarDayUi> {
     require(year > 0 && month in 1..12)
@@ -114,11 +115,12 @@ fun projectMonth(
         val dayRecords = recordsByDate[localDate].orEmpty()
         val latest = dayRecords.maxWithOrNull(compareBy<DrinkRecord> { it.occurredAtEpochMillis }.thenBy { it.id })
         val logo = latest?.let { brandLogosByRecordId[it.id] }
+        val productImage = latest?.let { productImagePathsByRecordId[it.id] }
         CalendarDayUi(
             localDate = localDate,
             dayNumber = date.get(Calendar.DAY_OF_MONTH),
             inDisplayedMonth = date.get(Calendar.YEAR) == year && date.get(Calendar.MONTH) == month - 1,
-            imagePath = latest?.let { calendarImage(it.snapshot.imageAssetId, logo) },
+            imagePath = latest?.let { calendarImage(productImage, logo) },
             brandLogoPath = logo,
             drinkCount = dayRecords.size,
         )

@@ -4,6 +4,8 @@ import android.app.Application
 import com.niumi.coffeejournal.catalog.CatalogRepository
 import com.niumi.coffeejournal.catalog.RoomCatalogRepository
 import com.niumi.coffeejournal.core.database.CoffeeDatabase
+import com.niumi.coffeejournal.core.image.ImagePathResolver
+import com.niumi.coffeejournal.core.image.RoomImagePathResolver
 import com.niumi.coffeejournal.journal.DefaultJournalRepository
 import com.niumi.coffeejournal.journal.JournalRepository
 import com.niumi.coffeejournal.journal.RoomDrinkStore
@@ -24,5 +26,9 @@ class CoffeeJournalApp : Application() {
             catalogRepository = catalogRepository,
             drinkStore = RoomDrinkStore(database),
         )
+    }
+
+    val imagePathResolver: ImagePathResolver by lazy {
+        RoomImagePathResolver(database.imageAssetDao())
     }
 }
