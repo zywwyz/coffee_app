@@ -122,6 +122,7 @@ data class CatalogItem(
 }
 
 data class DrinkDraft(
+    val revisionId: String,
     val itemType: ItemType,
     val sourceItemId: String,
     val brewMethod: String?,
@@ -130,6 +131,7 @@ data class DrinkDraft(
     val note: String,
 ) {
     init {
+        require(revisionId.isNotBlank()) { "Draft revision id cannot be blank" }
         ratingHalfStars?.let(::Rating)
         actualPriceFen?.let(::Money)
     }

@@ -65,6 +65,41 @@ class CatalogRepositoryTest {
     }
 
     @Test
+    fun `normalization applies nfkc and collapses unicode whitespace`() = runBlocking {
+        repository.upsertBrand(brand())
+
+        repository.upsertItem(item(name = "\u3000Ｆｌａｔ\u00a0\t  ＷＨＩＴＥ\u3000"))
+
+        assertEquals("flat white", database.catalogItemDao().get(ITEM_ID)?.normalizedName)
+    }
+
+    @Test
+    fun `canonically equivalent accents have the same normalized name`() = runBlocking {
+        repository.upsertBrand(brand())
+        repository.upsertItem(item(name = "Café"))
+        val precomposed = database.catalogItemDao().get(ITEM_ID)?.normalizedName
+
+        repository.upsertItem(item(name = "Cafe\u0301"))
+
+        assertEquals(precomposed, database.catalogItemDao().get(ITEM_ID)?.normalizedName)
+        assertEquals("café", precomposed)
+    }
+
+    @Test
+    fun `empty and unicode-whitespace-only catalog names are rejected`() = runBlocking {
+        repository.upsertBrand(brand())
+
+        listOf("", " \t\n", "\u00a0\u3000").forEach { invalidName ->
+            try {
+                repository.upsertItem(item(name = invalidName))
+                fail("Expected InvalidCatalogNameException for '$invalidName'")
+            } catch (error: InvalidCatalogNameException) {
+                assertTrue(error.message.orEmpty().contains("name", ignoreCase = true))
+            }
+        }
+    }
+
+    @Test
     fun `last price returns newest non-null actual price for item`() = runBlocking {
         database.drinkDao().insert(record("record-old", occurredAt = 1, priceFen = 990))
         database.drinkDao().insert(record("record-new-null", occurredAt = 3, priceFen = null))
@@ -99,10 +134,10 @@ class CatalogRepositoryTest {
         database.brandDao().upsert(
             BrandEntity(
                 id = BRAND_ID,
-                type = "UNRECOGNIZED_TYPE",
+                type = "CHAIN",
                 name = "Broken",
                 logoAssetId = null,
-                maintenanceMode = "MANUAL_ONLY",
+                maintenanceMode = "UNRECOGNIZED_MODE",
                 publicSourceUrl = null,
             ),
         )
@@ -111,8 +146,8 @@ class CatalogRepositoryTest {
             repository.observeBrands(BrandType.CHAIN).first()
             fail("Expected DataIntegrityException")
         } catch (error: DataIntegrityException) {
-            assertTrue(error.message.orEmpty().contains("type"))
-            assertTrue(error.message.orEmpty().contains("UNRECOGNIZED_TYPE"))
+            assertTrue(error.message.orEmpty().contains("maintenanceMode"))
+            assertTrue(error.message.orEmpty().contains("UNRECOGNIZED_MODE"))
         }
     }
 

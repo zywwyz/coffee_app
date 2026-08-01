@@ -82,6 +82,7 @@ class EntitiesTest {
         actualPriceFen: Long? = null,
     ) = DraftRecordEntity(
         id = "draft-1",
+        revisionId = "revision-1",
         itemType = null,
         sourceItemId = null,
         brewMethod = null,

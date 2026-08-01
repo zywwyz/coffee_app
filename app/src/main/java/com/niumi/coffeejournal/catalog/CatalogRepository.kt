@@ -12,6 +12,7 @@ import com.niumi.coffeejournal.core.model.CatalogItem
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
+import java.text.Normalizer
 import java.util.Locale
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -32,14 +33,17 @@ class CatalogItemNotFoundException(itemId: String) :
 class BrandNotFoundException(brandId: String) :
     NoSuchElementException("Catalog brand '$brandId' was not found")
 
+class InvalidCatalogNameException(name: String) :
+    IllegalArgumentException("Catalog item name must contain non-whitespace text: '$name'")
+
 class RoomCatalogRepository(
     private val brandDao: BrandDao,
     private val catalogItemDao: CatalogItemDao,
     private val drinkDao: DrinkDao,
 ) : CatalogRepository {
     override fun observeBrands(type: BrandType): Flow<List<Brand>> =
-        brandDao.observe().map { entities ->
-            entities.map(BrandEntity::toDomain).filter { it.type == type }
+        brandDao.observeByType(type.name).map { entities ->
+            entities.map(BrandEntity::toDomain)
         }
 
     override fun observeItems(brandId: String): Flow<List<CatalogItem>> =
@@ -111,9 +115,7 @@ private fun CatalogItem.toEntity() = CatalogItemEntity(
     brandId = brandId,
     type = type.name,
     name = name,
-    normalizedName = name.trim()
-        .lowercase(Locale.ROOT)
-        .replace(Regex("\\s+"), " "),
+    normalizedName = normalizeCatalogName(name),
     imageAssetId = imageAssetId,
     origin = origin,
     processing = processing,
@@ -129,6 +131,26 @@ private fun CatalogItem.toEntity() = CatalogItemEntity(
     sourceFetchedAt = sourceFetchedAt,
     informationCompleteness = informationCompleteness,
 )
+
+private fun normalizeCatalogName(raw: String): String {
+    val compatible = Normalizer.normalize(raw, Normalizer.Form.NFKC).lowercase(Locale.ROOT)
+    val normalized = StringBuilder()
+    var pendingSpace = false
+    var index = 0
+    while (index < compatible.length) {
+        val codePoint = compatible.codePointAt(index)
+        if (Character.isWhitespace(codePoint) || Character.isSpaceChar(codePoint)) {
+            pendingSpace = normalized.isNotEmpty()
+        } else {
+            if (pendingSpace) normalized.append(' ')
+            normalized.appendCodePoint(codePoint)
+            pendingSpace = false
+        }
+        index += Character.charCount(codePoint)
+    }
+    if (normalized.isEmpty()) throw InvalidCatalogNameException(raw)
+    return normalized.toString()
+}
 
 private inline fun <reified T : Enum<T>> enumValue(field: String, value: String): T =
     try {

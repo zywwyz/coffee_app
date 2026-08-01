@@ -1,6 +1,7 @@
 package com.niumi.coffeejournal.journal
 
 import android.content.Context
+import android.database.sqlite.SQLiteConstraintException
 import androidx.room.Room
 import com.niumi.coffeejournal.catalog.CatalogItemNotFoundException
 import com.niumi.coffeejournal.catalog.CatalogRepository
@@ -19,9 +20,13 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -32,7 +37,8 @@ class JournalRepositoryTest {
     @Test
     fun `new draft carries catalog brew method and last price`() = runBlocking {
         val catalog = FakeCatalogRepository(item(), lastPriceFen = 990)
-        val repository = DefaultJournalRepository(catalog, FakeDrinkStore(), FixedClock())
+        val store = FakeDrinkStore()
+        val repository = DefaultJournalRepository(catalog, store, FixedClock())
 
         val draft = repository.newDraft(ItemType.CHAIN_PRODUCT, ITEM_ID)
 
@@ -42,6 +48,8 @@ class JournalRepositoryTest {
         assertEquals(990L, draft.actualPriceFen)
         assertNull(draft.ratingHalfStars)
         assertEquals("", draft.note)
+        assertTrue(draft.revisionId.isNotBlank())
+        assertEquals(listOf(draft), store.startedDrafts)
     }
 
     @Test
@@ -90,6 +98,7 @@ class JournalRepositoryTest {
         withTimeout(250) {
             repository.save(
                 DrinkDraft(
+                    revisionId = "revision-1",
                     itemType = ItemType.PERSONAL_BEAN,
                     sourceItemId = ITEM_ID,
                     brewMethod = null,
@@ -114,6 +123,7 @@ class JournalRepositoryTest {
 
         repository.save(
             DrinkDraft(
+                revisionId = "revision-1",
                 itemType = ItemType.CHAIN_PRODUCT,
                 sourceItemId = ITEM_ID,
                 brewMethod = null,
@@ -128,6 +138,31 @@ class JournalRepositoryTest {
         assertNull(saved.actualPriceFen)
         assertNull(saved.brewMethod)
         assertNull(saved.note)
+    }
+
+    @Test
+    fun `save timestamps record from one clock reading`() = runBlocking {
+        val store = FakeDrinkStore()
+        val repository = DefaultJournalRepository(
+            FakeCatalogRepository(item(), lastPriceFen = null),
+            store,
+            CrossingClock(),
+        )
+
+        repository.save(
+            DrinkDraft(
+                revisionId = "revision-1",
+                itemType = ItemType.CHAIN_PRODUCT,
+                sourceItemId = ITEM_ID,
+                brewMethod = null,
+                ratingHalfStars = null,
+                actualPriceFen = null,
+                note = "",
+            ),
+        )
+
+        assertEquals(0L, store.saved.single().occurredAtEpochMillis)
+        assertEquals("1970-01-01", store.saved.single().localDate)
     }
 
     @Test
@@ -178,7 +213,7 @@ class JournalRepositoryTest {
         )
         val draft = repository.newDraft(ItemType.CHAIN_PRODUCT, ITEM_ID)
 
-        repository.saveDraft(draft)
+        assertTrue(repository.saveDraft(draft))
         repository.delete("record-1")
 
         assertEquals(listOf(draft), store.savedDrafts)
@@ -209,8 +244,11 @@ class JournalRepositoryTest {
     )
 
     private class FixedClock : Clock {
-        override fun nowEpochMillis(): Long = 1_754_044_800_123
-        override fun todayLocalDate(): String = "2025-08-01"
+        override fun read() = ClockReading(1_754_044_800_123, "2025-08-01")
+    }
+
+    private class CrossingClock : Clock {
+        override fun read() = ClockReading(0L, "1970-01-01")
     }
 
     private class FakeCatalogRepository(
@@ -254,19 +292,25 @@ class JournalRepositoryTest {
         val savedDrafts = mutableListOf<DrinkDraft>()
         val deletedIds = mutableListOf<String>()
         val observedRanges = mutableListOf<Pair<String, String>>()
+        val startedDrafts = mutableListOf<DrinkDraft>()
+
+        override suspend fun startDraft(draft: DrinkDraft) {
+            startedDrafts += draft
+        }
 
         override fun observeRange(startLocalDate: String, endLocalDate: String): Flow<List<DrinkRecord>> {
             observedRanges += startLocalDate to endLocalDate
             return flowOf(emptyList())
         }
 
-        override suspend fun saveRecordAndClearDraft(record: DrinkRecord) {
+        override suspend fun saveRecordAndClearDraft(record: DrinkRecord, revisionId: String) {
             saved += record
             clearedBySave += record.id
         }
 
-        override suspend fun saveDraft(draft: DrinkDraft) {
+        override suspend fun saveDraft(draft: DrinkDraft): Boolean {
             savedDrafts += draft
+            return true
         }
 
         override suspend fun delete(recordId: String) {
@@ -283,48 +327,138 @@ class JournalRepositoryTest {
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class RoomDrinkStoreTest {
-    @Test
-    fun `saving a record inserts it and clears current draft atomically`() = runBlocking {
+    private lateinit var database: CoffeeDatabase
+    private lateinit var store: RoomDrinkStore
+
+    @Before
+    fun setUp() {
         val context = RuntimeEnvironment.getApplication() as Context
-        val database = Room.inMemoryDatabaseBuilder(context, CoffeeDatabase::class.java)
+        database = Room.inMemoryDatabaseBuilder(context, CoffeeDatabase::class.java)
             .allowMainThreadQueries()
             .build()
+        store = RoomDrinkStore(database, FixedStoreClock)
+    }
+
+    @After
+    fun tearDown() = database.close()
+
+    @Test
+    fun `saving a record inserts it and clears current draft atomically`() = runBlocking {
+        val draft = draft("revision-1")
+        val record = record()
+        store.startDraft(draft)
+
+        store.saveRecordAndClearDraft(record, draft.revisionId)
+
+        assertEquals("Flat White", database.drinkDao().get(record.id)?.snapshotItemName)
+        assertNull(database.draftDao().get("current"))
+    }
+
+    @Test
+    fun `late autosave after successful save cannot recreate draft`() = runBlocking {
+        val oldDraft = draft("revision-old")
+        store.startDraft(oldDraft)
+        store.saveRecordAndClearDraft(record(), oldDraft.revisionId)
+
+        assertFalse(store.saveDraft(oldDraft.copy(note = "late autosave")))
+
+        assertNull(database.draftDao().get("current"))
+    }
+
+    @Test
+    fun `saving old revision does not clear a newer draft`() = runBlocking {
+        val oldDraft = draft("revision-old")
+        val newDraft = draft("revision-new", note = "new")
+        store.startDraft(oldDraft)
+        store.startDraft(newDraft)
+
+        store.saveRecordAndClearDraft(record(), oldDraft.revisionId)
+
+        assertEquals("revision-new", database.draftDao().get("current")?.revisionId)
+    }
+
+    @Test
+    fun `old autosave cannot overwrite newer draft`() = runBlocking {
+        val oldDraft = draft("revision-old")
+        val newDraft = draft("revision-new", note = "new")
+        store.startDraft(oldDraft)
+        store.startDraft(newDraft)
+
+        assertFalse(store.saveDraft(oldDraft.copy(note = "stale")))
+
+        val current = database.draftDao().get("current")
+        assertEquals("revision-new", current?.revisionId)
+        assertEquals("new", current?.note)
+    }
+
+    @Test
+    fun `record insert failure rolls back and preserves matching draft`() = runBlocking {
+        val draft = draft("revision-1")
+        val record = record()
+        store.startDraft(draft)
+        database.drinkDao().insert(record.toEntityForTest())
+
         try {
-            val store = RoomDrinkStore(database)
-            val draft = DrinkDraft(
-                itemType = ItemType.CHAIN_PRODUCT,
-                sourceItemId = "item-1",
-                brewMethod = null,
-                ratingHalfStars = null,
-                actualPriceFen = null,
-                note = "",
-            )
-            val record = DrinkRecord(
-                id = "record-1",
-                occurredAtEpochMillis = 1,
-                localDate = "2026-08-01",
-                itemType = ItemType.CHAIN_PRODUCT,
-                sourceItemId = "item-1",
-                brewMethod = null,
-                ratingHalfStars = null,
-                actualPriceFen = null,
-                note = null,
-                snapshot = com.niumi.coffeejournal.core.model.DrinkSnapshot(
-                    brandName = "Example Coffee",
-                    itemName = "Flat White",
-                    origin = null,
-                    processing = null,
-                    imageAssetId = null,
-                ),
-            )
-
-            store.saveDraft(draft)
-            store.saveRecordAndClearDraft(record)
-
-            assertEquals("Flat White", database.drinkDao().get(record.id)?.snapshotItemName)
-            assertNull(database.draftDao().get("current"))
-        } finally {
-            database.close()
+            store.saveRecordAndClearDraft(record, draft.revisionId)
+            fail("Expected duplicate record id to fail")
+        } catch (_: SQLiteConstraintException) {
+            // Expected.
         }
+
+        assertNotNull(database.draftDao().get("current"))
+        assertEquals("revision-1", database.draftDao().get("current")?.revisionId)
+    }
+
+    private fun draft(revisionId: String, note: String = "") = DrinkDraft(
+        revisionId = revisionId,
+        itemType = ItemType.CHAIN_PRODUCT,
+        sourceItemId = "item-1",
+        brewMethod = null,
+        ratingHalfStars = null,
+        actualPriceFen = null,
+        note = note,
+    )
+
+    private fun record() = DrinkRecord(
+        id = "record-1",
+        occurredAtEpochMillis = 1,
+        localDate = "2026-08-01",
+        itemType = ItemType.CHAIN_PRODUCT,
+        sourceItemId = "item-1",
+        brewMethod = null,
+        ratingHalfStars = null,
+        actualPriceFen = null,
+        note = null,
+        snapshot = com.niumi.coffeejournal.core.model.DrinkSnapshot(
+            brandName = "Example Coffee",
+            itemName = "Flat White",
+            origin = null,
+            processing = null,
+            imageAssetId = null,
+        ),
+    )
+
+    private fun DrinkRecord.toEntityForTest() =
+        com.niumi.coffeejournal.core.database.DrinkRecordEntity(
+            id = id,
+            occurredAtEpochMillis = occurredAtEpochMillis,
+            localDate = localDate,
+            itemType = itemType.name,
+            sourceItemId = sourceItemId,
+            brewMethod = brewMethod,
+            ratingHalfStars = ratingHalfStars,
+            actualPriceFen = actualPriceFen,
+            note = note,
+            snapshotBrandName = snapshot.brandName,
+            snapshotItemName = snapshot.itemName,
+            snapshotOrigin = snapshot.origin,
+            snapshotProcessing = snapshot.processing,
+            snapshotImageAssetId = snapshot.imageAssetId,
+            snapshotRoastLevel = snapshot.roastLevel,
+            snapshotFlavorNotes = snapshot.flavorNotes,
+        )
+
+    private object FixedStoreClock : Clock {
+        override fun read() = ClockReading(1, "2026-08-01")
     }
 }

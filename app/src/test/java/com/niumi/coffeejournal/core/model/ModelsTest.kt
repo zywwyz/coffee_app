@@ -131,6 +131,7 @@ class ModelsTest {
         ratingHalfStars: Int? = null,
         actualPriceFen: Long? = null,
     ) = DrinkDraft(
+        revisionId = "revision-1",
         itemType = ItemType.CHAIN_PRODUCT,
         sourceItemId = "item-1",
         brewMethod = null,

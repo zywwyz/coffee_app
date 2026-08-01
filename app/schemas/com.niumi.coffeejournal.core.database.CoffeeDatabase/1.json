@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "d301a18471d4cdd3bafbd34e399ebeeb",
+    "identityHash": "80eb0edf7ae6126a0c398b706c00bf1d",
     "entities": [
       {
         "tableName": "brands",
@@ -480,11 +480,17 @@
       },
       {
         "tableName": "draft_records",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `itemType` TEXT, `sourceItemId` TEXT, `brewMethod` TEXT, `ratingHalfStars` INTEGER, `actualPriceFen` INTEGER, `note` TEXT NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `revisionId` TEXT NOT NULL, `itemType` TEXT, `sourceItemId` TEXT, `brewMethod` TEXT, `ratingHalfStars` INTEGER, `actualPriceFen` INTEGER, `note` TEXT NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
             "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revisionId",
+            "columnName": "revisionId",
             "affinity": "TEXT",
             "notNull": true
           },
@@ -536,7 +542,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'd301a18471d4cdd3bafbd34e399ebeeb')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '80eb0edf7ae6126a0c398b706c00bf1d')"
     ]
   }
 }

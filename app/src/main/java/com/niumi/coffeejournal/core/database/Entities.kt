@@ -149,6 +149,7 @@ data class CatalogUpdateEntity(
 @Entity(tableName = "draft_records")
 data class DraftRecordEntity(
     @PrimaryKey val id: String,
+    val revisionId: String,
     val itemType: String?,
     val sourceItemId: String?,
     val brewMethod: String?,

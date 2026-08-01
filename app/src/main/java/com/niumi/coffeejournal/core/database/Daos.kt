@@ -18,6 +18,9 @@ interface BrandDao {
     @Query("SELECT * FROM brands ORDER BY name")
     fun observe(): Flow<List<BrandEntity>>
 
+    @Query("SELECT * FROM brands WHERE type = :type ORDER BY name")
+    fun observeByType(type: String): Flow<List<BrandEntity>>
+
     @Query("SELECT * FROM brands WHERE id = :id")
     suspend fun get(id: String): BrandEntity?
 }
@@ -149,4 +152,7 @@ interface DraftDao {
 
     @Query("DELETE FROM draft_records WHERE id = :id")
     suspend fun delete(id: String): Int
+
+    @Query("DELETE FROM draft_records WHERE id = :id AND revisionId = :revisionId")
+    suspend fun deleteIfRevision(id: String, revisionId: String): Int
 }
