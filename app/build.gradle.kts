@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.room)
 }
 
 android {
@@ -19,10 +20,6 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-        ksp {
-            arg("room.schemaLocation", "$projectDir/schemas")
-        }
     }
 
     compileOptions {
@@ -37,6 +34,10 @@ android {
 
 kotlin {
     jvmToolchain(17)
+}
+
+room {
+    schemaDirectory("$projectDir/schemas")
 }
 
 dependencies {
