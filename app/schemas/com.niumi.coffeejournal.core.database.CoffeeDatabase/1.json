@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "db30b61d27b6f45919e1230a4af346da",
+    "identityHash": "55326d802d4b08caf603d76cb52819ae",
     "entities": [
       {
         "tableName": "brands",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `type` TEXT NOT NULL, `name` TEXT NOT NULL, `logoAssetId` TEXT, `maintenanceMode` TEXT NOT NULL, `publicSourceUrl` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`logoAssetId`) REFERENCES `image_assets`(`id`) ON UPDATE CASCADE ON DELETE RESTRICT )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `type` TEXT NOT NULL, `name` TEXT NOT NULL, `normalizedName` TEXT NOT NULL, `logoAssetId` TEXT, `maintenanceMode` TEXT NOT NULL, `publicSourceUrl` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`logoAssetId`) REFERENCES `image_assets`(`id`) ON UPDATE CASCADE ON DELETE RESTRICT )",
         "fields": [
           {
             "fieldPath": "id",
@@ -23,6 +23,12 @@
           {
             "fieldPath": "name",
             "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "normalizedName",
+            "columnName": "normalizedName",
             "affinity": "TEXT",
             "notNull": true
           },
@@ -58,6 +64,16 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_brands_logoAssetId` ON `${TABLE_NAME}` (`logoAssetId`)"
+          },
+          {
+            "name": "index_brands_type_normalizedName",
+            "unique": true,
+            "columnNames": [
+              "type",
+              "normalizedName"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_brands_type_normalizedName` ON `${TABLE_NAME}` (`type`, `normalizedName`)"
           }
         ],
         "foreignKeys": [
@@ -567,7 +583,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'db30b61d27b6f45919e1230a4af346da')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '55326d802d4b08caf603d76cb52819ae')"
     ]
   }
 }

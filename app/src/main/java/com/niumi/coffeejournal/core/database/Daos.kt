@@ -12,8 +12,24 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface BrandDao {
-    @Upsert
-    suspend fun upsert(brand: BrandEntity)
+    @Transaction
+    suspend fun upsert(brand: BrandEntity) {
+        if (update(brand) == 0) insert(brand)
+    }
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(brand: BrandEntity)
+
+    @Update(onConflict = OnConflictStrategy.ABORT)
+    suspend fun update(brand: BrandEntity): Int
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnoringExisting(brands: List<BrandEntity>): List<Long>
+
+    @Transaction
+    suspend fun seedIgnoringExisting(brands: List<BrandEntity>) {
+        insertIgnoringExisting(brands)
+    }
 
     @Query("SELECT * FROM brands ORDER BY name")
     fun observe(): Flow<List<BrandEntity>>
@@ -23,7 +39,35 @@ interface BrandDao {
 
     @Query("SELECT * FROM brands WHERE id = :id")
     suspend fun get(id: String): BrandEntity?
+
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM brands WHERE type = :type AND normalizedName = :name AND id != :id)",
+    )
+    suspend fun existsNamedOther(type: String, name: String, id: String): Boolean
+
+    @Query(
+        """
+        SELECT b.*,
+          (SELECT COUNT(*) FROM catalog_items i WHERE i.brandId = b.id) AS itemCount,
+          (SELECT MAX(u.fetchedAtEpochMillis) FROM catalog_updates u
+             WHERE u.brandId = b.id AND u.status = 'CONFIRMED') AS lastUpdatedAtEpochMillis
+        FROM brands b WHERE b.type = :type ORDER BY b.name
+        """,
+    )
+    fun observeOverviews(type: String): Flow<List<BrandOverviewRow>>
 }
+
+data class BrandOverviewRow(
+    val id: String,
+    val type: String,
+    val name: String,
+    val normalizedName: String,
+    val logoAssetId: String?,
+    val maintenanceMode: String,
+    val publicSourceUrl: String?,
+    val itemCount: Int,
+    val lastUpdatedAtEpochMillis: Long?,
+)
 
 @Dao
 interface CatalogItemDao {
@@ -45,6 +89,11 @@ interface CatalogItemDao {
 
     @Query("SELECT * FROM catalog_items WHERE id = :id")
     suspend fun get(id: String): CatalogItemEntity?
+
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM catalog_items WHERE brandId = :brandId AND normalizedName = :name AND id != :id)",
+    )
+    suspend fun existsNamedOther(brandId: String, name: String, id: String): Boolean
 
     @Query(
         """

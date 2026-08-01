@@ -151,6 +151,68 @@ class CatalogRepositoryTest {
         }
     }
 
+    @Test
+    fun `seed inserts exactly five chain brands and is idempotent without overwriting edits`() = runBlocking {
+        repository.ensureSeedBrands()
+        val expected = listOf("% Arabica", "M Stand", "Manner", "Peet's", "瑞幸")
+        assertEquals(expected, repository.observeBrands(BrandType.CHAIN).first().map(Brand::name))
+
+        val luckin = repository.observeBrands(BrandType.CHAIN).first().single { it.name == "瑞幸" }
+        repository.upsertBrand(luckin.copy(name = "我的瑞幸", publicSourceUrl = "https://example.test"))
+        repository.ensureSeedBrands()
+
+        assertEquals(5, repository.observeBrands(BrandType.CHAIN).first().size)
+        assertEquals(
+            "https://example.test",
+            repository.getBrand(luckin.id).publicSourceUrl,
+        )
+        assertEquals("我的瑞幸", repository.getBrand(luckin.id).name)
+    }
+
+    @Test
+    fun `duplicate brand names use nfkc case and unicode whitespace rules`() = runBlocking {
+        repository.upsertBrand(brand().copy(id = "one", name = "Ｍ Stand"))
+
+        try {
+            repository.upsertBrand(brand().copy(id = "two", name = "  m\u00a0 stand "))
+            fail("Expected DuplicateCatalogNameException")
+        } catch (error: DuplicateCatalogNameException) {
+            assertTrue(error.message.orEmpty().contains("已存在"))
+        }
+    }
+
+    @Test
+    fun `database brand upsert cannot silently ignore a unique name race`() = runBlocking {
+        val first = BrandEntity(
+            id = "race-one", type = "CHAIN", name = "Manner", normalizedName = "manner",
+            logoAssetId = null, maintenanceMode = "MANUAL_ONLY", publicSourceUrl = null,
+        )
+        database.brandDao().upsert(first)
+
+        try {
+            database.brandDao().upsert(first.copy(id = "race-two"))
+            fail("Expected unique name constraint")
+        } catch (_: android.database.sqlite.SQLiteConstraintException) {
+            // The repository translates this race into DuplicateCatalogNameException.
+        }
+    }
+
+    @Test
+    fun `brand overview reports item count and latest confirmed update`() = runBlocking {
+        repository.upsertBrand(brand())
+        repository.upsertItem(item(name = "拿铁"))
+        database.catalogUpdateDao().insert(
+            com.niumi.coffeejournal.core.database.CatalogUpdateEntity(
+                id = "update", brandId = BRAND_ID, fetchedAtEpochMillis = 1234,
+                status = "CONFIRMED", sourceUrl = null, errorMessage = null,
+            ),
+        )
+
+        val overview = repository.observeBrandOverviews(BrandType.CHAIN).first().single()
+        assertEquals(1, overview.itemCount)
+        assertEquals(1234L, overview.lastUpdatedAtEpochMillis)
+    }
+
     private fun brand() = Brand(
         id = BRAND_ID,
         type = BrandType.CHAIN,

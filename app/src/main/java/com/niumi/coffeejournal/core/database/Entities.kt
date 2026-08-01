@@ -19,12 +19,16 @@ import com.niumi.coffeejournal.core.model.Rating
             onUpdate = ForeignKey.CASCADE,
         ),
     ],
-    indices = [Index(value = ["logoAssetId"])],
+    indices = [
+        Index(value = ["logoAssetId"]),
+        Index(value = ["type", "normalizedName"], unique = true),
+    ],
 )
 data class BrandEntity(
     @PrimaryKey val id: String,
     val type: String,
     val name: String,
+    val normalizedName: String = name,
     val logoAssetId: String?,
     val maintenanceMode: String,
     val publicSourceUrl: String?,

@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.niumi.coffeejournal.catalog.CatalogRepository
+import com.niumi.coffeejournal.catalog.CatalogFeature
 import com.niumi.coffeejournal.core.image.ImagePathResolver
 import com.niumi.coffeejournal.journal.JournalFeature
 import com.niumi.coffeejournal.journal.JournalRepository
@@ -84,7 +85,10 @@ fun AppNavigation(
                         RootContent("咖啡日历", "记录今天的咖啡")
                     }
                 }
-                entry<Catalog> { RootContent("连锁品牌", "管理连锁产品与个人豆库") }
+                entry<Catalog> {
+                    if (catalogRepository != null) CatalogFeature(catalogRepository)
+                    else RootContent("连锁品牌", "管理连锁产品与个人豆库")
+                }
                 entry<Insights> { RootContent("月度总结", "查看饮用、评分与消费趋势") }
             },
         )

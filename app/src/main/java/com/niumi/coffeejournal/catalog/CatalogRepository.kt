@@ -2,6 +2,7 @@ package com.niumi.coffeejournal.catalog
 
 import com.niumi.coffeejournal.core.database.BrandDao
 import com.niumi.coffeejournal.core.database.BrandEntity
+import com.niumi.coffeejournal.core.database.BrandOverviewRow
 import com.niumi.coffeejournal.core.database.CatalogItemDao
 import com.niumi.coffeejournal.core.database.CatalogItemEntity
 import com.niumi.coffeejournal.core.database.DataIntegrityException
@@ -14,18 +15,28 @@ import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
 import java.text.Normalizer
 import java.util.Locale
+import android.database.sqlite.SQLiteConstraintException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 interface CatalogRepository {
     fun observeBrands(type: BrandType): Flow<List<Brand>>
     fun observeItems(brandId: String): Flow<List<CatalogItem>>
+    fun observeBrandOverviews(type: BrandType): Flow<List<BrandOverview>> =
+        observeBrands(type).map { brands -> brands.map { BrandOverview(it, 0, null) } }
     suspend fun getBrand(brandId: String): Brand
     suspend fun getItem(itemId: String): CatalogItem
     suspend fun upsertBrand(brand: Brand)
     suspend fun upsertItem(item: CatalogItem)
     suspend fun lastPriceFen(itemId: String): Long?
+    suspend fun ensureSeedBrands() = Unit
 }
+
+data class BrandOverview(
+    val brand: Brand,
+    val itemCount: Int,
+    val lastUpdatedAtEpochMillis: Long?,
+)
 
 class CatalogItemNotFoundException(itemId: String) :
     NoSuchElementException("Catalog item '$itemId' was not found")
@@ -35,6 +46,9 @@ class BrandNotFoundException(brandId: String) :
 
 class InvalidCatalogNameException(name: String) :
     IllegalArgumentException("Catalog item name must contain non-whitespace text: '$name'")
+
+class DuplicateCatalogNameException(name: String) :
+    IllegalArgumentException("同一分类下已存在同名条目：$name")
 
 class RoomCatalogRepository(
     private val brandDao: BrandDao,
@@ -51,6 +65,9 @@ class RoomCatalogRepository(
             entities.map(CatalogItemEntity::toDomain)
         }
 
+    override fun observeBrandOverviews(type: BrandType): Flow<List<BrandOverview>> =
+        brandDao.observeOverviews(type.name).map { rows -> rows.map(BrandOverviewRow::toOverview) }
+
     override suspend fun getBrand(brandId: String): Brand =
         brandDao.get(brandId)?.toDomain()
             ?: throw BrandNotFoundException(brandId)
@@ -60,15 +77,45 @@ class RoomCatalogRepository(
             ?: throw CatalogItemNotFoundException(itemId)
 
     override suspend fun upsertBrand(brand: Brand) {
-        brandDao.upsert(brand.toEntity())
+        val normalized = normalizeCatalogName(brand.name)
+        if (brandDao.existsNamedOther(brand.type.name, normalized, brand.id)) {
+            throw DuplicateCatalogNameException(brand.name)
+        }
+        try {
+            brandDao.upsert(brand.toEntity())
+        } catch (_: SQLiteConstraintException) {
+            throw DuplicateCatalogNameException(brand.name)
+        }
     }
 
     override suspend fun upsertItem(item: CatalogItem) {
-        catalogItemDao.upsert(item.toEntity())
+        val normalized = normalizeCatalogName(item.name)
+        if (catalogItemDao.existsNamedOther(item.brandId, normalized, item.id)) {
+            throw DuplicateCatalogNameException(item.name)
+        }
+        try {
+            catalogItemDao.upsert(item.toEntity())
+        } catch (_: SQLiteConstraintException) {
+            throw DuplicateCatalogNameException(item.name)
+        }
     }
 
     override suspend fun lastPriceFen(itemId: String): Long? =
         drinkDao.lastActualPriceFen(itemId)
+
+    override suspend fun ensureSeedBrands() {
+        brandDao.seedIgnoringExisting(seedBrands().map(Brand::toEntity))
+    }
+}
+
+fun seedBrands(): List<Brand> = listOf(
+    "seed-chain-luckin" to "瑞幸",
+    "seed-chain-manner" to "Manner",
+    "seed-chain-mstand" to "M Stand",
+    "seed-chain-peets" to "Peet's",
+    "seed-chain-arabica" to "% Arabica",
+).map { (id, name) ->
+    Brand(id, BrandType.CHAIN, name, null, MaintenanceMode.MANUAL_ONLY, null)
 }
 
 private fun BrandEntity.toDomain() = Brand(
@@ -84,9 +131,23 @@ private fun Brand.toEntity() = BrandEntity(
     id = id,
     type = type.name,
     name = name,
+    normalizedName = normalizeCatalogName(name),
     logoAssetId = logoAssetId,
     maintenanceMode = maintenanceMode.name,
     publicSourceUrl = publicSourceUrl,
+)
+
+private fun BrandOverviewRow.toOverview() = BrandOverview(
+    brand = Brand(
+        id = id,
+        type = enumValue("BrandOverviewRow.type", type),
+        name = name,
+        logoAssetId = logoAssetId,
+        maintenanceMode = enumValue("BrandOverviewRow.maintenanceMode", maintenanceMode),
+        publicSourceUrl = publicSourceUrl,
+    ),
+    itemCount = itemCount,
+    lastUpdatedAtEpochMillis = lastUpdatedAtEpochMillis,
 )
 
 private fun CatalogItemEntity.toDomain() = CatalogItem(
@@ -132,7 +193,7 @@ private fun CatalogItem.toEntity() = CatalogItemEntity(
     informationCompleteness = informationCompleteness,
 )
 
-private fun normalizeCatalogName(raw: String): String {
+fun normalizeCatalogName(raw: String): String {
     val compatible = Normalizer.normalize(raw, Normalizer.Form.NFKC).lowercase(Locale.ROOT)
     val normalized = StringBuilder()
     var pendingSpace = false
