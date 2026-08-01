@@ -13,6 +13,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.niumi.coffeejournal.catalog.CatalogRepository
+import com.niumi.coffeejournal.journal.JournalFeature
+import com.niumi.coffeejournal.journal.JournalRepository
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
@@ -41,7 +44,10 @@ private val RootDestinations = listOf(
 )
 
 @Composable
-fun AppNavigation() {
+fun AppNavigation(
+    journalRepository: JournalRepository? = null,
+    catalogRepository: CatalogRepository? = null,
+) {
     val backStack = rememberNavBackStack(Journal)
     val selectedRoot = backStack.last()
 
@@ -69,7 +75,13 @@ fun AppNavigation() {
             modifier = Modifier.padding(contentPadding),
             onBack = { if (backStack.size > 1) backStack.removeAt(backStack.lastIndex) },
             entryProvider = entryProvider {
-                entry<Journal> { RootContent("咖啡日历", "记录今天的咖啡") }
+                entry<Journal> {
+                    if (journalRepository != null && catalogRepository != null) {
+                        JournalFeature(journalRepository, catalogRepository)
+                    } else {
+                        RootContent("咖啡日历", "记录今天的咖啡")
+                    }
+                }
                 entry<Catalog> { RootContent("连锁品牌", "管理连锁产品与个人豆库") }
                 entry<Insights> { RootContent("月度总结", "查看饮用、评分与消费趋势") }
             },

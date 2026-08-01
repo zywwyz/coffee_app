@@ -10,6 +10,16 @@ import androidx.compose.ui.graphics.Color
 import com.niumi.coffeejournal.ui.theme.Caramel
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
 import com.niumi.coffeejournal.ui.theme.Espresso
+import com.niumi.coffeejournal.catalog.CatalogRepository
+import com.niumi.coffeejournal.core.model.Brand
+import com.niumi.coffeejournal.core.model.BrandType
+import com.niumi.coffeejournal.core.model.CatalogItem
+import com.niumi.coffeejournal.core.model.DrinkDraft
+import com.niumi.coffeejournal.core.model.DrinkRecord
+import com.niumi.coffeejournal.core.model.ItemType
+import com.niumi.coffeejournal.journal.JournalRepository
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -50,5 +60,32 @@ class AppNavigationTest {
             assertEquals(Caramel, colors.secondaryContainer)
             assertEquals(Espresso, colors.onSecondaryContainer)
         }
+    }
+
+    @Test
+    fun repositories_replace_journal_placeholder_with_calendar_feature() {
+        compose.setContent {
+            CoffeeTheme { AppNavigation(FakeJournalRepository, FakeCatalogRepository) }
+        }
+
+        compose.onNodeWithText("记录一杯").assertIsDisplayed()
+    }
+
+    private object FakeJournalRepository : JournalRepository {
+        override fun observeMonth(year: Int, month: Int): Flow<List<DrinkRecord>> = flowOf(emptyList())
+        override suspend fun newDraft(type: ItemType, itemId: String): DrinkDraft = error("unused")
+        override suspend fun save(draft: DrinkDraft): String = error("unused")
+        override suspend fun saveDraft(draft: DrinkDraft) = true
+        override suspend fun delete(recordId: String) = Unit
+    }
+
+    private object FakeCatalogRepository : CatalogRepository {
+        override fun observeBrands(type: BrandType): Flow<List<Brand>> = flowOf(emptyList())
+        override fun observeItems(brandId: String): Flow<List<CatalogItem>> = flowOf(emptyList())
+        override suspend fun getBrand(brandId: String): Brand = error("unused")
+        override suspend fun getItem(itemId: String): CatalogItem = error("unused")
+        override suspend fun upsertBrand(brand: Brand) = Unit
+        override suspend fun upsertItem(item: CatalogItem) = Unit
+        override suspend fun lastPriceFen(itemId: String): Long? = null
     }
 }

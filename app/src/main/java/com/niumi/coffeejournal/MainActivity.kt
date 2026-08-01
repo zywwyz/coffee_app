@@ -9,9 +9,13 @@ import com.niumi.coffeejournal.ui.theme.CoffeeTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val app = application as CoffeeJournalApp
         setContent {
             CoffeeTheme {
-                AppNavigation()
+                AppNavigation(
+                    journalRepository = app.journalRepository,
+                    catalogRepository = app.catalogRepository,
+                )
             }
         }
     }
