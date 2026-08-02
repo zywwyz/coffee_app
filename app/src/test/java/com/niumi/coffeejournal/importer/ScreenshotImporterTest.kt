@@ -6,6 +6,7 @@ import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.core.image.ImageStore
 import android.net.Uri
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -60,12 +61,118 @@ class ScreenshotImporterTest {
                 TextBlock("实付 9.90", CropRect(20, 150, 140, 180)),
                 TextBlock("燕麦澳白", CropRect(20, 500, 180, 540)),
                 TextBlock("到手 12.80", CropRect(20, 550, 160, 580)),
-            ),
+            ), imageWidth = 1080, imageHeight = 2400,
         )
 
         assertEquals(listOf("生椰拿铁", "燕麦澳白"), candidates.map { it.productName })
         assertEquals(listOf(990L, 1280L), candidates.map { it.actualPriceFen })
         assertTrue(candidates.all { it.proposedCrop != null })
+    }
+
+    @Test
+    fun `vertical cards include image region and stay within neighboring rows`() {
+        val candidates = normalizeScreenshotCandidates(
+            listOf(
+                TextBlock("生椰拿铁", CropRect(120, 720, 420, 770)),
+                TextBlock("实付 9.90", CropRect(120, 790, 300, 830)),
+                TextBlock("燕麦澳白", CropRect(120, 1640, 420, 1690)),
+                TextBlock("到手 12.80", CropRect(120, 1710, 330, 1750)),
+            ),
+            imageWidth = 1080,
+            imageHeight = 2400,
+        )
+
+        val first = candidates[0].proposedCrop!!
+        val second = candidates[1].proposedCrop!!
+        assertTrue(first.top < 500)
+        assertTrue(first.bottom < second.top)
+        assertTrue(first.right <= 1080 && second.bottom <= 2400)
+    }
+
+    @Test
+    fun `two column products get separate card crops with image area above labels`() {
+        val candidates = normalizeScreenshotCandidates(
+            listOf(
+                TextBlock("左侧拿铁", CropRect(90, 720, 390, 770)),
+                TextBlock("实付 9.90", CropRect(90, 790, 280, 830)),
+                TextBlock("右侧澳白", CropRect(650, 720, 950, 770)),
+                TextBlock("到手 12.80", CropRect(650, 790, 860, 830)),
+            ),
+            imageWidth = 1080,
+            imageHeight = 1600,
+        )
+
+        val left = candidates[0].proposedCrop!!
+        val right = candidates[1].proposedCrop!!
+        assertTrue(left.top < 500 && right.top < 500)
+        assertTrue(left.right <= right.left)
+        assertTrue(left.contains(CropRect(90, 720, 390, 770)))
+        assertTrue(right.contains(CropRect(650, 720, 950, 770)))
+    }
+
+    @Test
+    fun `session threads image dimensions into distinct candidate crops`() = runBlocking {
+        val session = ScreenshotImportSession(
+            recognizer = ScreenshotTextRecognizer {
+                listOf(
+                    TextBlock("左侧拿铁", CropRect(90, 720, 390, 770)),
+                    TextBlock("实付 9.90", CropRect(90, 790, 280, 830)),
+                    TextBlock("右侧澳白", CropRect(650, 720, 950, 770)),
+                    TextBlock("到手 12.80", CropRect(650, 790, 860, 830)),
+                )
+            },
+            imageStore = RecordingImageStore(),
+        )
+
+        val preparation = session.prepare(Uri.parse("content://private/two-column"), 1080, 1600)
+
+        assertEquals(2, preparation.candidates.size)
+        assertTrue(preparation.candidates[0].proposedCrop != preparation.candidates[1].proposedCrop)
+    }
+
+    @Test
+    fun `failed catalog association deletes newly stored unreferenced asset`() = runBlocking {
+        val store = RecordingImageStore()
+
+        val associated = associateImportedAsset(
+            imageStore = store,
+            selection = ImportedAssetSelection("asset"),
+            association = { throw IllegalStateException("catalog failed") },
+        )
+
+        assertFalse(associated)
+        assertEquals(listOf("asset"), store.deletedAssets)
+    }
+
+    @Test
+    fun `cancellation remains cancellation even when cleanup fails`() = runBlocking {
+        val store = RecordingImageStore(deleteFailure = IllegalStateException("disk failed"))
+
+        try {
+            associateImportedAsset(
+                imageStore = store,
+                selection = ImportedAssetSelection("asset"),
+                association = { throw CancellationException("screen closed") },
+            )
+            throw AssertionError("Expected cancellation")
+        } catch (error: CancellationException) {
+            assertEquals("screen closed", error.message)
+        }
+        assertEquals(listOf("asset"), store.deletedAssets)
+    }
+
+    @Test
+    fun `association failure remains a safe false result when cleanup itself fails`() = runBlocking {
+        val store = RecordingImageStore(deleteFailure = IllegalStateException("disk failed"))
+
+        val associated = associateImportedAsset(
+            imageStore = store,
+            selection = ImportedAssetSelection("asset"),
+            association = { false },
+        )
+
+        assertFalse(associated)
+        assertEquals(listOf("asset"), store.deletedAssets)
     }
 
     @Test
@@ -81,7 +188,7 @@ class ScreenshotImporterTest {
     }
 
     @Test
-    fun `cancelling review writes no image and confirmation writes crop once`() = runBlocking {
+    fun `cancelling review writes no image and confirmed crop remains retryable until review closes`() = runBlocking {
         val store = RecordingImageStore()
         val session = ScreenshotImportSession(
             recognizer = ScreenshotTextRecognizer { listOf(TextBlock("实付 9.90", CropRect(0, 0, 40, 20))) },
@@ -89,25 +196,38 @@ class ScreenshotImporterTest {
         )
         val uri = Uri.parse("content://private/source-screen")
 
-        session.prepare(uri)
+        session.prepare(uri, 100, 100)
         session.cancel()
         assertEquals(0, store.cropImports)
         assertFalse(session.toString().contains(uri.toString()))
 
-        session.prepare(uri)
+        session.prepare(uri, 100, 100)
         val result = session.confirm("生椰拿铁", "9.90", CropRect(1, 2, 20, 30), ImageKind.PRODUCT)
         assertEquals(1, store.cropImports)
         assertEquals("asset", result.imageAssetId)
+        session.confirm("生椰拿铁", "9.90", CropRect(1, 2, 20, 30), ImageKind.PRODUCT)
+        assertEquals(2, store.cropImports)
+        session.cancel()
         assertFalse(session.toString().contains(uri.toString()))
     }
 
-    private class RecordingImageStore : ImageStore {
+    private class RecordingImageStore(
+        private val deleteFailure: Exception? = null,
+    ) : ImageStore {
         var cropImports = 0
+        val deletedAssets = mutableListOf<String>()
         override suspend fun importCropped(source: Uri, crop: CropRect, kind: ImageKind): ImageAsset {
             cropImports++
             return ImageAsset("asset", "/private/images/asset.webp", "sha", kind)
         }
         override suspend fun importWhole(source: Uri, kind: ImageKind): ImageAsset = error("unexpected")
-        override suspend fun deleteIfUnreferenced(assetId: String): Boolean = false
+        override suspend fun deleteIfUnreferenced(assetId: String): Boolean {
+            deletedAssets += assetId
+            deleteFailure?.let { throw it }
+            return true
+        }
     }
 }
+
+private fun CropRect.contains(other: CropRect): Boolean =
+    left <= other.left && top <= other.top && right >= other.right && bottom >= other.bottom

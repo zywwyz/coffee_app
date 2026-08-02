@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
+import kotlinx.coroutines.async
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -164,13 +165,35 @@ class JournalViewModelTest {
         )
         viewModel.selectItem(ItemType.CHAIN_PRODUCT, "item")
 
-        viewModel.attachImportedImage("new-asset", 1_288L)
-        yield()
+        assertTrue(viewModel.attachImportedImage("new-asset", 1_288L))
 
         assertEquals("new-asset", catalog.savedItem?.imageAssetId)
         assertEquals(ItemStatus.ACTIVE, catalog.savedItem?.status)
         assertEquals("12.88", viewModel.uiState.value.editor.priceInput)
         assertFalse(viewModel.uiState.value.editor.needsImagePrompt)
+    }
+
+    @Test
+    fun `save is blocked during delayed image attach then snapshot reads imported image`() = runBlocking {
+        val catalog = DelayedCatalogRepository(item().copy(imageAssetId = null, status = ItemStatus.NEEDS_IMAGE))
+        val journal = SnapshotJournalRepository(catalog)
+        val viewModel = JournalViewModel(
+            journal, catalog, 2026, 8, CoroutineScope(Job() + Dispatchers.Unconfined),
+        )
+        viewModel.selectItem(ItemType.CHAIN_PRODUCT, "item")
+
+        val attaching = async { viewModel.attachImportedImage("new-asset", null) }
+        catalog.upsertStarted.await()
+        viewModel.save()
+        assertEquals(0, journal.saveCalls)
+        assertTrue(viewModel.uiState.value.editor.attachingImage)
+
+        catalog.releaseUpsert.complete(Unit)
+        assertTrue(attaching.await())
+        viewModel.save()
+
+        assertEquals(1, journal.saveCalls)
+        assertEquals("new-asset", journal.savedSnapshotImage)
     }
 
     @Test
@@ -264,16 +287,49 @@ class JournalViewModelTest {
     }
 
     private inner class FakeCatalogRepository(
-        private val item: CatalogItem = item(),
+        item: CatalogItem = item(),
     ) : CatalogRepository {
+        private var currentItem = item
         var savedItem: CatalogItem? = null
         private val brand = Brand("brand", BrandType.CHAIN, "瑞幸", "logo.webp", com.niumi.coffeejournal.core.model.MaintenanceMode.MANUAL_ONLY, null)
         override fun observeBrands(type: BrandType): Flow<List<Brand>> = flowOf(listOf(brand.copy(type = type)))
-        override fun observeItems(brandId: String): Flow<List<CatalogItem>> = flowOf(listOf(item))
+        override fun observeItems(brandId: String): Flow<List<CatalogItem>> = flowOf(listOf(currentItem))
         override suspend fun getBrand(brandId: String): Brand = brand
-        override suspend fun getItem(itemId: String): CatalogItem = item
+        override suspend fun getItem(itemId: String): CatalogItem = currentItem
         override suspend fun upsertBrand(brand: Brand) = Unit
-        override suspend fun upsertItem(item: CatalogItem) { savedItem = item }
+        override suspend fun upsertItem(item: CatalogItem) { savedItem = item; currentItem = item }
         override suspend fun lastPriceFen(itemId: String): Long? = 990
+    }
+
+    private inner class DelayedCatalogRepository(initial: CatalogItem) : CatalogRepository {
+        private var current = initial
+        val upsertStarted = CompletableDeferred<Unit>()
+        val releaseUpsert = CompletableDeferred<Unit>()
+        private val brand = Brand("brand", BrandType.CHAIN, "瑞幸", null, com.niumi.coffeejournal.core.model.MaintenanceMode.MANUAL_ONLY, null)
+        override fun observeBrands(type: BrandType): Flow<List<Brand>> = flowOf(listOf(brand))
+        override fun observeItems(brandId: String): Flow<List<CatalogItem>> = flowOf(listOf(current))
+        override suspend fun getBrand(brandId: String): Brand = brand
+        override suspend fun getItem(itemId: String): CatalogItem = current
+        override suspend fun upsertBrand(brand: Brand) = Unit
+        override suspend fun upsertItem(item: CatalogItem) {
+            upsertStarted.complete(Unit)
+            releaseUpsert.await()
+            current = item
+        }
+        override suspend fun lastPriceFen(itemId: String): Long? = null
+    }
+
+    private class SnapshotJournalRepository(private val catalog: CatalogRepository) : JournalRepository {
+        var saveCalls = 0
+        var savedSnapshotImage: String? = null
+        override fun observeMonth(year: Int, month: Int): Flow<List<DrinkRecord>> = flowOf(emptyList())
+        override suspend fun newDraft(type: ItemType, itemId: String) = DrinkDraft("revision", type, itemId, null, null, null, "")
+        override suspend fun save(draft: DrinkDraft): String {
+            saveCalls++
+            savedSnapshotImage = catalog.getItem(draft.sourceItemId).imageAssetId
+            return "record"
+        }
+        override suspend fun saveDraft(draft: DrinkDraft): Boolean = true
+        override suspend fun delete(recordId: String) = Unit
     }
 }

@@ -18,7 +18,9 @@ import androidx.compose.runtime.setValue
 import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.core.image.ImageStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class ImageImportMode { ASK, SCREENSHOT, WHOLE_IMAGE }
 
@@ -31,8 +33,25 @@ data class ImportedAssetSelection(
 typealias AssetImportRequester = (
     ImageKind,
     ImageImportMode,
-    (ImportedAssetSelection) -> Unit,
+    suspend (ImportedAssetSelection) -> Boolean,
 ) -> Unit
+
+suspend fun associateImportedAsset(
+    imageStore: ImageStore,
+    selection: ImportedAssetSelection,
+    association: suspend (ImportedAssetSelection) -> Boolean,
+): Boolean = try {
+    if (association(selection)) true else {
+        runCatching { imageStore.deleteIfUnreferenced(selection.assetId) }
+        false
+    }
+} catch (error: CancellationException) {
+    withContext(NonCancellable) { runCatching { imageStore.deleteIfUnreferenced(selection.assetId) } }
+    throw error
+} catch (_: Exception) {
+    runCatching { imageStore.deleteIfUnreferenced(selection.assetId) }
+    false
+}
 
 @Composable
 fun ImageImportHost(
@@ -44,12 +63,14 @@ fun ImageImportHost(
     var selectedScreenshot by remember { mutableStateOf<Uri?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var importingWhole by remember { mutableStateOf(false) }
+    var associating by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     fun clearRequest() {
         pending = null
         selectedScreenshot = null
         importingWhole = false
+        associating = false
     }
 
     val screenshotPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -64,8 +85,14 @@ fun ImageImportHost(
             scope.launch {
                 try {
                     val asset = imageStore.importWhole(uri, request.kind)
-                    request.onSelected(ImportedAssetSelection(asset.id))
-                    clearRequest()
+                    val selection = ImportedAssetSelection(asset.id)
+                    associating = true
+                    if (associateImportedAsset(imageStore, selection, request.onSelected)) {
+                        clearRequest()
+                    } else {
+                        errorMessage = "图片未能关联到条目，已清理本次导入，请重试"
+                        clearRequest()
+                    }
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: Exception) {
@@ -96,8 +123,16 @@ fun ImageImportHost(
             imageStore = imageStore,
             kind = request.kind,
             onConfirmed = { result ->
-                request.onSelected(ImportedAssetSelection(result.imageAssetId, result.productName, result.actualPriceFen))
-                clearRequest()
+                associating = true
+                val selection = ImportedAssetSelection(result.imageAssetId, result.productName, result.actualPriceFen)
+                if (associateImportedAsset(imageStore, selection, request.onSelected)) {
+                    clearRequest()
+                    true
+                } else {
+                    associating = false
+                    errorMessage = "图片未能关联到产品，已清理本次裁剪，可调整后重试"
+                    false
+                }
             },
             onCancel = ::clearRequest,
         )
@@ -122,11 +157,11 @@ fun ImageImportHost(
             },
         )
     }
-    if (importingWhole) {
+    if (importingWhole || associating) {
         AlertDialog(
             onDismissRequest = {},
             confirmButton = {},
-            title = { Text("正在保存图片") },
+            title = { Text(if (associating) "正在关联产品图片" else "正在保存图片") },
             text = { CircularProgressIndicator() },
         )
     }
@@ -143,5 +178,5 @@ fun ImageImportHost(
 private data class PendingImport(
     val kind: ImageKind,
     val mode: ImageImportMode,
-    val onSelected: (ImportedAssetSelection) -> Unit,
+    val onSelected: suspend (ImportedAssetSelection) -> Boolean,
 )

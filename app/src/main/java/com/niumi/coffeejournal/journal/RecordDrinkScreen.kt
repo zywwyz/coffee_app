@@ -45,7 +45,7 @@ fun RecordDrinkScreen(
     onSelectImage: () -> Unit,
     onSkipImage: () -> Unit,
 ) {
-    val editorBusy = state.saving || state.selecting
+    val editorBusy = state.saving || state.selecting || state.attachingImage
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -115,6 +115,7 @@ fun RecordDrinkScreen(
             Text(
                 when {
                     state.selecting -> "加载产品…"
+                    state.attachingImage -> "正在关联图片…"
                     state.saving -> "保存中…"
                     else -> "保存记录"
                 },

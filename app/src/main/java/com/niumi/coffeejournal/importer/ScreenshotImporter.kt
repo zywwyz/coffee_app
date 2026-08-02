@@ -45,11 +45,13 @@ class ScreenshotImportSession(
 ) {
     private var selectedSource: Uri? = null
 
-    suspend fun prepare(source: Uri): ScreenshotReviewPreparation {
+    suspend fun prepare(source: Uri, imageWidth: Int, imageHeight: Int): ScreenshotReviewPreparation {
+        require(imageWidth > 0 && imageHeight > 0)
         selectedSource = source
         val blocks = recognizer.recognize(source)
-        val primary = normalizeScreenshot(blocks)
-        return ScreenshotReviewPreparation(primary, normalizeScreenshotCandidates(blocks).ifEmpty { listOf(primary) })
+        val candidates = normalizeScreenshotCandidates(blocks, imageWidth, imageHeight)
+        val primary = candidates.firstOrNull() ?: normalizeScreenshot(blocks)
+        return ScreenshotReviewPreparation(primary, candidates.ifEmpty { listOf(primary) })
     }
 
     fun cancel() {
@@ -68,7 +70,6 @@ class ScreenshotImportSession(
         val price = actualPriceYuan.trim().takeIf(String::isNotEmpty)?.let(::parseYuanAmountToFen)
         require(actualPriceYuan.isBlank() || price != null) { "Actual price is invalid" }
         val asset = imageStore.importCropped(source, crop, kind)
-        selectedSource = null
         return ConfirmedScreenshotImport(name, price, asset.id)
     }
 
@@ -128,26 +129,39 @@ fun normalizeScreenshot(blocks: List<TextBlock>): ScreenshotCandidate {
     return ScreenshotCandidate(
         productName = nameBlock?.text?.trim(),
         actualPriceFen = selectedPrice?.fen,
-        proposedCrop = proposedCrop(nameBlock, selectedPrice?.block),
+        proposedCrop = null,
         lowConfidenceFields = low,
     )
 }
 
-fun normalizeScreenshotCandidates(blocks: List<TextBlock>): List<ScreenshotCandidate> {
+fun normalizeScreenshotCandidates(
+    blocks: List<TextBlock>,
+    imageWidth: Int = blocks.maxOfOrNull { it.bounds.right }?.coerceAtLeast(1) ?: 1,
+    imageHeight: Int = blocks.maxOfOrNull { it.bounds.bottom }?.coerceAtLeast(1) ?: 1,
+): List<ScreenshotCandidate> {
+    require(imageWidth > 0 && imageHeight > 0)
     val prices = extractPriceCandidates(blocks).filter { it.priority > 0 }
-    return extractNameBlocks(blocks).map { name ->
-        val center = (name.bounds.top + name.bounds.bottom) / 2
+    val anchors = extractNameBlocks(blocks).map { name ->
+        val centerX = (name.bounds.left + name.bounds.right) / 2
+        val centerY = (name.bounds.top + name.bounds.bottom) / 2
         val nearest = prices.minByOrNull {
-            kotlin.math.abs(center - (it.block.bounds.top + it.block.bounds.bottom) / 2)
+            val priceX = (it.block.bounds.left + it.block.bounds.right) / 2
+            val priceY = (it.block.bounds.top + it.block.bounds.bottom) / 2
+            val dx = centerX.toLong() - priceX
+            val dy = centerY.toLong() - priceY
+            dx * dx + dy * dy
         }
+        CandidateAnchor(name, nearest)
+    }
+    return anchors.map { anchor ->
         ScreenshotCandidate(
-            productName = name.text.trim(),
-            actualPriceFen = nearest?.fen,
-            proposedCrop = proposedCrop(name, nearest?.block),
+            productName = anchor.name.text.trim(),
+            actualPriceFen = anchor.price?.fen,
+            proposedCrop = inferCardCrop(anchor, anchors, imageWidth, imageHeight),
             lowConfidenceFields = buildSet {
                 add("productName")
                 add("proposedCrop")
-                if (nearest == null || nearest.priority < 2) add("actualPriceFen")
+                if (anchor.price == null || anchor.price.priority < 2) add("actualPriceFen")
             },
         )
     }
@@ -194,18 +208,70 @@ fun parseYuanAmountToFen(raw: String): Long? = try {
 
 private data class PriceCandidate(val fen: Long, val priority: Int, val block: TextBlock)
 
-private fun proposedCrop(name: TextBlock?, price: TextBlock?): CropRect? {
-    val selected = listOfNotNull(name, price)
-    if (selected.isEmpty()) return null
-    val left = selected.minOf { it.bounds.left }
-    val top = selected.minOf { it.bounds.top }
-    val right = selected.maxOf { it.bounds.right }
-    val bottom = selected.maxOf { it.bounds.bottom }
-    val padding = selected.maxOf { it.bounds.height }.coerceAtLeast(1) * 2
-    return CropRect(
-        (left - padding).coerceAtLeast(0),
-        (top - padding * 2).coerceAtLeast(0),
-        right + padding,
-        bottom + padding,
-    )
+private data class CandidateAnchor(val name: TextBlock, val price: PriceCandidate?) {
+    val bounds: CropRect = union(listOfNotNull(name, price?.block).map(TextBlock::bounds))
+    val centerX: Int get() = (bounds.left + bounds.right) / 2
+    val centerY: Int get() = (bounds.top + bounds.bottom) / 2
 }
+
+private fun inferCardCrop(
+    current: CandidateAnchor,
+    all: List<CandidateAnchor>,
+    imageWidth: Int,
+    imageHeight: Int,
+): CropRect {
+    val sameRow = all.filter { other ->
+        other !== current && kotlin.math.abs(other.centerY - current.centerY) <=
+            maxOf(other.bounds.height, current.bounds.height) * 2
+    }
+    val leftNeighbor = sameRow.filter { it.centerX < current.centerX }.maxByOrNull(CandidateAnchor::centerX)
+    val rightNeighbor = sameRow.filter { it.centerX > current.centerX }.minByOrNull(CandidateAnchor::centerX)
+    val halfCellWidth = when {
+        leftNeighbor != null -> (current.centerX - leftNeighbor.centerX) / 2
+        rightNeighbor != null -> (rightNeighbor.centerX - current.centerX) / 2
+        else -> maxOf(current.bounds.width, imageWidth / 4)
+    }.coerceAtLeast(current.bounds.width / 2)
+    val cellLeft = leftNeighbor?.let { (it.centerX + current.centerX) / 2 }
+        ?: (current.centerX - halfCellWidth).coerceAtLeast(0)
+    val cellRight = rightNeighbor?.let { (it.centerX + current.centerX) / 2 }
+        ?: (current.centerX + halfCellWidth).coerceAtMost(imageWidth)
+
+    val sameColumn = all.filter { other ->
+        other !== current && kotlin.math.abs(other.centerX - current.centerX) <=
+            maxOf(other.bounds.width, current.bounds.width) * 3 / 2
+    }
+    val above = sameColumn.filter { it.centerY < current.centerY }.maxByOrNull(CandidateAnchor::centerY)
+    val below = sameColumn.filter { it.centerY > current.centerY }.minByOrNull(CandidateAnchor::centerY)
+    val verticalHalfCell = when {
+        above != null -> (current.centerY - above.centerY) / 2
+        below != null -> (below.centerY - current.centerY) / 2
+        else -> maxOf(current.bounds.width, imageHeight / 5)
+    }.coerceAtLeast(current.bounds.height)
+    val cellTop = above?.let { (it.centerY + current.centerY) / 2 }
+        ?: (current.centerY - verticalHalfCell).coerceAtLeast(0)
+    val cellBottom = below?.let { (it.centerY + current.centerY) / 2 }
+        ?: (current.centerY + verticalHalfCell).coerceAtMost(imageHeight)
+
+    val gutterX = (imageWidth / 100).coerceAtLeast(2)
+    val gutterY = (imageHeight / 200).coerceAtLeast(2)
+    return CropRect(
+        (cellLeft + gutterX).coerceAtMost(current.bounds.left),
+        (cellTop + gutterY).coerceAtMost(current.bounds.top),
+        (cellRight - gutterX).coerceAtLeast(current.bounds.right),
+        (cellBottom - gutterY).coerceAtLeast(current.bounds.bottom),
+    ).clampTo(imageWidth, imageHeight)
+}
+
+private fun union(rects: List<CropRect>): CropRect = CropRect(
+    rects.minOf(CropRect::left),
+    rects.minOf(CropRect::top),
+    rects.maxOf(CropRect::right),
+    rects.maxOf(CropRect::bottom),
+)
+
+private fun CropRect.clampTo(imageWidth: Int, imageHeight: Int): CropRect = CropRect(
+    left.coerceIn(0, imageWidth - 1),
+    top.coerceIn(0, imageHeight - 1),
+    right.coerceIn(left.coerceIn(0, imageWidth - 1) + 1, imageWidth),
+    bottom.coerceIn(top.coerceIn(0, imageHeight - 1) + 1, imageHeight),
+)

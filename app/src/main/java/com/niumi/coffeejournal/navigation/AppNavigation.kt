@@ -118,7 +118,10 @@ private fun AppNavigationContent(
                                 com.niumi.coffeejournal.catalog.CatalogAssetKind.BEAN_PACKAGE -> ImageKind.BEAN_PACKAGE
                             }
                             val mode = if (imageKind == ImageKind.PRODUCT) ImageImportMode.ASK else ImageImportMode.WHOLE_IMAGE
-                            assetImportRequester(imageKind, mode) { callback(it) }
+                            assetImportRequester(imageKind, mode) { selection ->
+                                callback(selection)
+                                true
+                            }
                         }
                     }
                     else RootContent("连锁品牌", "管理连锁产品与个人豆库")

@@ -75,7 +75,7 @@ class JournalViewModel(
     fun selectDate(localDate: String?) { mutableState.value = mutableState.value.copy(selectedDate = localDate) }
 
     fun setSourceType(type: ItemType) {
-        if (mutableState.value.editor.saving) return
+        if (mutableState.value.editor.saving || mutableState.value.editor.attachingImage) return
         selectionGeneration++
         selectionJob?.cancel()
         currentDraft = null
@@ -88,7 +88,7 @@ class JournalViewModel(
     }
 
     fun selectBrand(brandId: String) {
-        if (mutableState.value.editor.saving) return
+        if (mutableState.value.editor.saving || mutableState.value.editor.attachingImage) return
         selectionGeneration++
         selectionJob?.cancel()
         currentDraft = null
@@ -113,7 +113,7 @@ class JournalViewModel(
     }
 
     fun selectItem(type: ItemType, itemId: String) {
-        if (mutableState.value.editor.saving) return
+        if (mutableState.value.editor.saving || mutableState.value.editor.attachingImage) return
         val generation = ++selectionGeneration
         selectionJob?.cancel()
         mutableState.value = mutableState.value.copy(
@@ -163,13 +163,13 @@ class JournalViewModel(
     }
 
     fun setRating(halfStars: Int?) {
-        if (mutableState.value.editor.saving || mutableState.value.editor.selecting) return
+        if (mutableState.value.editor.saving || mutableState.value.editor.selecting || mutableState.value.editor.attachingImage) return
         if (halfStars != null && halfStars !in 1..10) return
         editDraft { it.copy(ratingHalfStars = halfStars) }
     }
 
     fun setPriceInput(input: String) {
-        if (mutableState.value.editor.saving || mutableState.value.editor.selecting) return
+        if (mutableState.value.editor.saving || mutableState.value.editor.selecting || mutableState.value.editor.attachingImage) return
         val fen = input.takeIf { it.isNotBlank() }?.let(::parseYuanToFen)
         val valid = input.isBlank() || fen != null
         mutableState.value = mutableState.value.copy(
@@ -181,50 +181,66 @@ class JournalViewModel(
     fun setBrewMethod(value: String) = editDraft { it.copy(brewMethod = value.takeUnless(String::isBlank)) }
     fun setNote(value: String) = editDraft { it.copy(note = value) }
     fun skipImagePrompt() {
-        if (mutableState.value.editor.saving || mutableState.value.editor.selecting) return
+        if (mutableState.value.editor.saving || mutableState.value.editor.selecting || mutableState.value.editor.attachingImage) return
         mutableState.value = mutableState.value.copy(editor = mutableState.value.editor.copy(needsImagePrompt = false))
     }
 
-    fun attachImportedImage(assetId: String, actualPriceFen: Long?) {
-        val selectedItemId = mutableState.value.editor.selectedItemId ?: return
-        scope.launch {
-            try {
-                val item = catalogRepository.getItem(selectedItemId)
-                catalogRepository.upsertItem(
-                    item.copy(
-                        imageAssetId = assetId,
-                        status = if (item.status == ItemStatus.NEEDS_IMAGE) ItemStatus.ACTIVE else item.status,
-                    ),
-                )
-                if (mutableState.value.editor.selectedItemId != selectedItemId) return@launch
-                val updatedDraft = currentDraft?.let { draft ->
-                    if (actualPriceFen == null) draft else draft.copy(actualPriceFen = actualPriceFen)
-                }
-                if (updatedDraft != null) {
-                    currentDraft = updatedDraft
-                    draftQueue.trySend(updatedDraft)
-                }
-                mutableState.value = mutableState.value.copy(
-                    editor = mutableState.value.editor.copy(
-                        actualPriceFen = actualPriceFen ?: mutableState.value.editor.actualPriceFen,
-                        priceInput = actualPriceFen?.let(::formatFenInput) ?: mutableState.value.editor.priceInput,
-                        priceValid = true,
-                        needsImagePrompt = false,
-                        errorMessage = null,
-                    ),
-                )
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                setEditorError("图片已导入，但关联产品失败，请重试")
+    suspend fun attachImportedImage(assetId: String, actualPriceFen: Long?): Boolean {
+        val editor = mutableState.value.editor
+        val selectedItemId = editor.selectedItemId ?: return false
+        if (editor.saving || editor.selecting || editor.attachingImage) return false
+        mutableState.value = mutableState.value.copy(
+            editor = editor.copy(attachingImage = true, errorMessage = null),
+        )
+        return try {
+            val item = catalogRepository.getItem(selectedItemId)
+            catalogRepository.upsertItem(
+                item.copy(
+                    imageAssetId = assetId,
+                    status = if (item.status == ItemStatus.NEEDS_IMAGE) ItemStatus.ACTIVE else item.status,
+                ),
+            )
+            val associated = catalogRepository.getItem(selectedItemId)
+            check(associated.imageAssetId == assetId) { "Catalog image association was not persisted" }
+            check(mutableState.value.editor.selectedItemId == selectedItemId) { "Catalog selection changed" }
+            val updatedDraft = currentDraft?.let { draft ->
+                if (actualPriceFen == null) draft else draft.copy(actualPriceFen = actualPriceFen)
             }
+            if (updatedDraft != null) {
+                currentDraft = updatedDraft
+                draftQueue.trySend(updatedDraft)
+            }
+            mutableState.value = mutableState.value.copy(
+                editor = mutableState.value.editor.copy(
+                    actualPriceFen = actualPriceFen ?: mutableState.value.editor.actualPriceFen,
+                    priceInput = actualPriceFen?.let(::formatFenInput) ?: mutableState.value.editor.priceInput,
+                    priceValid = true,
+                    needsImagePrompt = false,
+                    attachingImage = false,
+                    errorMessage = null,
+                ),
+            )
+            true
+        } catch (error: CancellationException) {
+            mutableState.value = mutableState.value.copy(
+                editor = mutableState.value.editor.copy(attachingImage = false),
+            )
+            throw error
+        } catch (_: Exception) {
+            mutableState.value = mutableState.value.copy(
+                editor = mutableState.value.editor.copy(
+                    attachingImage = false,
+                    errorMessage = "图片关联产品失败，请重试",
+                ),
+            )
+            false
         }
     }
 
     fun save() {
         val editor = mutableState.value.editor
         val draft = currentDraft ?: return
-        if (editor.saving || editor.selecting || !editor.priceValid) return
+        if (editor.saving || editor.selecting || editor.attachingImage || !editor.priceValid) return
         mutableState.value = mutableState.value.copy(editor = editor.copy(saving = true, errorMessage = null))
         scope.launch {
             try {
@@ -251,7 +267,7 @@ class JournalViewModel(
         updateEditor: Boolean = true,
         transform: (DrinkDraft) -> DrinkDraft,
     ) {
-        if (mutableState.value.editor.saving || mutableState.value.editor.selecting) return
+        if (mutableState.value.editor.saving || mutableState.value.editor.selecting || mutableState.value.editor.attachingImage) return
         val updated = currentDraft?.let(transform) ?: return
         currentDraft = updated
         if (updateEditor) {

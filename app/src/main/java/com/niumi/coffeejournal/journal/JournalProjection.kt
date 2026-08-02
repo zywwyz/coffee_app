@@ -38,6 +38,7 @@ data class RecordEditorUi(
     val note: String = "",
     val needsImagePrompt: Boolean = false,
     val selecting: Boolean = false,
+    val attachingImage: Boolean = false,
     val saving: Boolean = false,
     val errorMessage: String? = null,
 )

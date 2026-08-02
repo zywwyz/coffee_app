@@ -8,6 +8,7 @@ import android.net.Uri
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +44,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -72,7 +75,12 @@ data class ImportReviewUiState(
     val errorMessage: String? = null,
 )
 
-data class DetectedCandidateUi(val name: String, val actualPriceYuan: String)
+data class DetectedCandidateUi(
+    val name: String,
+    val actualPriceYuan: String,
+    val proposedCrop: CropRect,
+    val lowConfidenceFields: Set<String>,
+)
 
 @Composable
 fun ImportReviewScreen(
@@ -80,7 +88,7 @@ fun ImportReviewScreen(
     recognizer: ScreenshotTextRecognizer,
     imageStore: ImageStore,
     kind: ImageKind,
-    onConfirmed: (ConfirmedScreenshotImport) -> Unit,
+    onConfirmed: suspend (ConfirmedScreenshotImport) -> Boolean,
     onCancel: () -> Unit,
 ) {
     val session = remember(source, recognizer, imageStore) { ScreenshotImportSession(recognizer, imageStore) }
@@ -99,7 +107,7 @@ fun ImportReviewScreen(
                 lowConfidenceFields = setOf("productName", "actualPriceFen", "proposedCrop"),
             )
             val prepared = try {
-                session.prepare(source)
+                session.prepare(source, preview.width, preview.height)
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
@@ -120,7 +128,12 @@ fun ImportReviewScreen(
                 lowConfidenceFields = candidate.lowConfidenceFields,
                 detectedCandidates = prepared.candidates.mapNotNull { detected ->
                     detected.productName?.let { name ->
-                        DetectedCandidateUi(name, detected.actualPriceFen?.let(::formatFen).orEmpty())
+                        DetectedCandidateUi(
+                            name = name,
+                            actualPriceYuan = detected.actualPriceFen?.let(::formatFen).orEmpty(),
+                            proposedCrop = detected.proposedCrop ?: CropRect(0, 0, preview.width, preview.height),
+                            lowConfidenceFields = detected.lowConfidenceFields,
+                        )
                     }
                 }.distinctBy { it.name to it.actualPriceYuan },
                 loading = false,
@@ -138,13 +151,27 @@ fun ImportReviewScreen(
         onNameChange = { state = state.copy(productName = it, lowConfidenceFields = state.lowConfidenceFields - "productName") },
         onPriceChange = { state = state.copy(actualPriceYuan = it, lowConfidenceFields = state.lowConfidenceFields - "actualPriceFen") },
         onCropChange = { state = state.copy(crop = it, lowConfidenceFields = state.lowConfidenceFields - "proposedCrop") },
+        onCandidateSelect = { candidate ->
+            state = state.copy(
+                productName = candidate.name,
+                actualPriceYuan = candidate.actualPriceYuan,
+                crop = candidate.proposedCrop,
+                lowConfidenceFields = candidate.lowConfidenceFields,
+            )
+        },
         onConfirm = {
             if (!state.saving && !state.loading) scope.launch {
                 state = state.copy(saving = true, errorMessage = null)
                 try {
                     val result = session.confirm(state.productName, state.actualPriceYuan, state.crop, kind)
-                    state = ImportReviewUiState()
-                    onConfirmed(result)
+                    if (onConfirmed(result)) {
+                        state = ImportReviewUiState()
+                    } else {
+                        state = state.copy(
+                            saving = false,
+                            errorMessage = "图片未能关联到产品，请调整裁剪后重试",
+                        )
+                    }
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: IllegalArgumentException) {
@@ -166,6 +193,7 @@ fun ImportReviewContent(
     onCropChange: (CropRect) -> Unit,
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
+    onCandidateSelect: (DetectedCandidateUi) -> Unit = {},
 ) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
@@ -185,7 +213,7 @@ fun ImportReviewContent(
                 }
                 Text("正在本机识别截图…")
             } else {
-                CropPreview(state)
+                CropPreview(state, onCropChange)
                 if (state.lowConfidenceFields.isNotEmpty()) {
                     Text(
                         "识别结果需要确认",
@@ -199,10 +227,7 @@ fun ImportReviewContent(
                         state.detectedCandidates.forEach { candidate ->
                             FilterChip(
                                 selected = state.productName == candidate.name,
-                                onClick = {
-                                    onNameChange(candidate.name)
-                                    if (candidate.actualPriceYuan.isNotEmpty()) onPriceChange(candidate.actualPriceYuan)
-                                },
+                                onClick = { onCandidateSelect(candidate) },
                                 label = { Text(listOf(candidate.name, candidate.actualPriceYuan.takeIf(String::isNotEmpty)?.let { "¥$it" }).filterNotNull().joinToString(" · ")) },
                                 enabled = !state.saving,
                             )
@@ -241,7 +266,7 @@ fun ImportReviewContent(
 }
 
 @Composable
-private fun CropPreview(state: ImportReviewUiState) {
+private fun CropPreview(state: ImportReviewUiState, onCropChange: (CropRect) -> Unit = {}) {
     val ratio = if (state.imageWidth > 0 && state.imageHeight > 0) {
         (state.imageWidth.toFloat() / state.imageHeight).coerceIn(0.55f, 1.5f)
     } else 0.75f
@@ -253,19 +278,224 @@ private fun CropPreview(state: ImportReviewUiState) {
         state.preview?.let {
             Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
         }
-        Canvas(Modifier.fillMaxSize()) {
-            if (state.imageWidth <= 0 || state.imageHeight <= 0) return@Canvas
-            val scale = minOf(size.width / state.imageWidth, size.height / state.imageHeight)
-            val offsetX = (size.width - state.imageWidth * scale) / 2f
-            val offsetY = (size.height - state.imageHeight * scale) / 2f
-            val left = offsetX + state.crop.left * scale
-            val top = offsetY + state.crop.top * scale
-            val right = offsetX + state.crop.right * scale
-            val bottom = offsetY + state.crop.bottom * scale
-            drawRect(Color(0x88000000), Offset(offsetX, offsetY), androidx.compose.ui.geometry.Size(state.imageWidth * scale, (state.crop.top * scale).coerceAtLeast(0f)))
-            drawRect(cropColor, Offset(left, top), androidx.compose.ui.geometry.Size((right - left).coerceAtLeast(1f), (bottom - top).coerceAtLeast(1f)), style = androidx.compose.ui.graphics.drawscope.Stroke(3.dp.toPx()))
+        CropOverlay(state.imageWidth, state.imageHeight, state.crop, cropColor, onCropChange)
+    }
+}
+
+@Composable
+private fun CropOverlay(
+    imageWidth: Int,
+    imageHeight: Int,
+    crop: CropRect,
+    cropColor: Color,
+    onCropChange: (CropRect) -> Unit,
+) {
+    val currentCrop by rememberUpdatedState(crop)
+    val currentOnCropChange by rememberUpdatedState(onCropChange)
+    Canvas(
+        Modifier.fillMaxSize()
+            .semantics { contentDescription = "可拖动裁剪框" }
+            .pointerInput(imageWidth, imageHeight) {
+                var handle: CropDragHandle? = null
+                var gestureCrop = currentCrop
+                detectDragGestures(
+                    onDragStart = { position ->
+                        if (imageWidth > 0 && imageHeight > 0) {
+                            gestureCrop = currentCrop
+                            handle = hitTestCropHandle(
+                                position.x,
+                                position.y,
+                                gestureCrop,
+                                PreviewCoordinateTransform(
+                                    size.width.toFloat(), size.height.toFloat(), imageWidth, imageHeight,
+                                ),
+                                24.dp.toPx(),
+                            )
+                        }
+                    },
+                    onDragEnd = { handle = null },
+                    onDragCancel = { handle = null },
+                    onDrag = { change, amount ->
+                        handle?.let { active ->
+                            gestureCrop = applyCropDrag(
+                                gestureCrop,
+                                active,
+                                amount.x,
+                                amount.y,
+                                PreviewCoordinateTransform(
+                                    size.width.toFloat(), size.height.toFloat(), imageWidth, imageHeight,
+                                ),
+                                minimumSizePx = 48,
+                            )
+                            currentOnCropChange(gestureCrop)
+                            change.consume()
+                        }
+                    },
+                )
+            },
+    ) {
+        if (imageWidth <= 0 || imageHeight <= 0) return@Canvas
+        val transform = PreviewCoordinateTransform(size.width, size.height, imageWidth, imageHeight)
+        val topLeft = transform.imageToDisplay(crop.left.toFloat(), crop.top.toFloat())
+        val bottomRight = transform.imageToDisplay(crop.right.toFloat(), crop.bottom.toFloat())
+        drawRect(
+            Color(0x88000000),
+            Offset(transform.offsetX, transform.offsetY),
+            androidx.compose.ui.geometry.Size(imageWidth * transform.scale, (crop.top * transform.scale).coerceAtLeast(0f)),
+        )
+        drawRect(
+            Color(0x88000000),
+            Offset(transform.offsetX, bottomRight.y),
+            androidx.compose.ui.geometry.Size(imageWidth * transform.scale, (transform.offsetY + imageHeight * transform.scale - bottomRight.y).coerceAtLeast(0f)),
+        )
+        drawRect(
+            Color(0x88000000),
+            Offset(transform.offsetX, topLeft.y),
+            androidx.compose.ui.geometry.Size((topLeft.x - transform.offsetX).coerceAtLeast(0f), (bottomRight.y - topLeft.y).coerceAtLeast(0f)),
+        )
+        drawRect(
+            Color(0x88000000),
+            Offset(bottomRight.x, topLeft.y),
+            androidx.compose.ui.geometry.Size((transform.offsetX + imageWidth * transform.scale - bottomRight.x).coerceAtLeast(0f), (bottomRight.y - topLeft.y).coerceAtLeast(0f)),
+        )
+        drawRect(
+            cropColor,
+            Offset(topLeft.x, topLeft.y),
+            androidx.compose.ui.geometry.Size(
+                (bottomRight.x - topLeft.x).coerceAtLeast(1f),
+                (bottomRight.y - topLeft.y).coerceAtLeast(1f),
+            ),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(3.dp.toPx()),
+        )
+    }
+}
+
+data class ImagePoint(val x: Float, val y: Float)
+
+data class PreviewCoordinateTransform(
+    val containerWidth: Float,
+    val containerHeight: Float,
+    val imageWidth: Int,
+    val imageHeight: Int,
+) {
+    init {
+        require(containerWidth > 0f && containerHeight > 0f && imageWidth > 0 && imageHeight > 0)
+    }
+
+    val scale: Float = minOf(containerWidth / imageWidth, containerHeight / imageHeight)
+    val offsetX: Float = (containerWidth - imageWidth * scale) / 2f
+    val offsetY: Float = (containerHeight - imageHeight * scale) / 2f
+
+    fun displayToImage(x: Float, y: Float) = ImagePoint(
+        ((x - offsetX) / scale).coerceIn(0f, imageWidth.toFloat()),
+        ((y - offsetY) / scale).coerceIn(0f, imageHeight.toFloat()),
+    )
+
+    fun imageToDisplay(x: Float, y: Float) = ImagePoint(offsetX + x * scale, offsetY + y * scale)
+}
+
+enum class CropDragHandle {
+    MOVE, LEFT, RIGHT, TOP, BOTTOM, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT,
+}
+
+fun hitTestCropHandle(
+    displayX: Float,
+    displayY: Float,
+    crop: CropRect,
+    transform: PreviewCoordinateTransform,
+    edgeThresholdDisplayPx: Float,
+): CropDragHandle? {
+    val topLeft = transform.imageToDisplay(crop.left.toFloat(), crop.top.toFloat())
+    val bottomRight = transform.imageToDisplay(crop.right.toFloat(), crop.bottom.toFloat())
+    val nearLeft = kotlin.math.abs(displayX - topLeft.x) <= edgeThresholdDisplayPx
+    val nearRight = kotlin.math.abs(displayX - bottomRight.x) <= edgeThresholdDisplayPx
+    val nearTop = kotlin.math.abs(displayY - topLeft.y) <= edgeThresholdDisplayPx
+    val nearBottom = kotlin.math.abs(displayY - bottomRight.y) <= edgeThresholdDisplayPx
+    val withinX = displayX in (topLeft.x - edgeThresholdDisplayPx)..(bottomRight.x + edgeThresholdDisplayPx)
+    val withinY = displayY in (topLeft.y - edgeThresholdDisplayPx)..(bottomRight.y + edgeThresholdDisplayPx)
+    return when {
+        nearLeft && nearTop -> CropDragHandle.TOP_LEFT
+        nearRight && nearTop -> CropDragHandle.TOP_RIGHT
+        nearLeft && nearBottom -> CropDragHandle.BOTTOM_LEFT
+        nearRight && nearBottom -> CropDragHandle.BOTTOM_RIGHT
+        nearLeft && withinY -> CropDragHandle.LEFT
+        nearRight && withinY -> CropDragHandle.RIGHT
+        nearTop && withinX -> CropDragHandle.TOP
+        nearBottom && withinX -> CropDragHandle.BOTTOM
+        displayX in topLeft.x..bottomRight.x && displayY in topLeft.y..bottomRight.y -> CropDragHandle.MOVE
+        else -> null
+    }
+}
+
+fun applyCropDrag(
+    crop: CropRect,
+    handle: CropDragHandle,
+    displayDeltaX: Float,
+    displayDeltaY: Float,
+    transform: PreviewCoordinateTransform,
+    minimumSizePx: Int,
+): CropRect {
+    require(minimumSizePx > 0)
+    val normalized = normalizeCropForDrag(crop, handle, transform, minimumSizePx)
+    val dx = (displayDeltaX / transform.scale).toInt()
+    val dy = (displayDeltaY / transform.scale).toInt()
+    if (handle == CropDragHandle.MOVE) {
+        val left = (normalized.left + dx).coerceIn(0, transform.imageWidth - normalized.width)
+        val top = (normalized.top + dy).coerceIn(0, transform.imageHeight - normalized.height)
+        return CropRect(left, top, left + normalized.width, top + normalized.height)
+    }
+    val minimumWidth = minimumSizePx.coerceAtMost(transform.imageWidth)
+    val minimumHeight = minimumSizePx.coerceAtMost(transform.imageHeight)
+    var left = normalized.left
+    var top = normalized.top
+    var right = normalized.right
+    var bottom = normalized.bottom
+    if (handle in setOf(CropDragHandle.LEFT, CropDragHandle.TOP_LEFT, CropDragHandle.BOTTOM_LEFT)) {
+        left = (left + dx).coerceIn(0, right - minimumWidth)
+    }
+    if (handle in setOf(CropDragHandle.RIGHT, CropDragHandle.TOP_RIGHT, CropDragHandle.BOTTOM_RIGHT)) {
+        right = (right + dx).coerceIn(left + minimumWidth, transform.imageWidth)
+    }
+    if (handle in setOf(CropDragHandle.TOP, CropDragHandle.TOP_LEFT, CropDragHandle.TOP_RIGHT)) {
+        top = (top + dy).coerceIn(0, bottom - minimumHeight)
+    }
+    if (handle in setOf(CropDragHandle.BOTTOM, CropDragHandle.BOTTOM_LEFT, CropDragHandle.BOTTOM_RIGHT)) {
+        bottom = (bottom + dy).coerceIn(top + minimumHeight, transform.imageHeight)
+    }
+    return CropRect(left, top, right, bottom)
+}
+
+private fun normalizeCropForDrag(
+    crop: CropRect,
+    handle: CropDragHandle,
+    transform: PreviewCoordinateTransform,
+    minimumSizePx: Int,
+): CropRect {
+    val minimumWidth = minimumSizePx.coerceAtMost(transform.imageWidth)
+    val minimumHeight = minimumSizePx.coerceAtMost(transform.imageHeight)
+    var left = crop.left.coerceIn(0, transform.imageWidth - 1)
+    var right = crop.right.coerceIn(left + 1, transform.imageWidth)
+    var top = crop.top.coerceIn(0, transform.imageHeight - 1)
+    var bottom = crop.bottom.coerceIn(top + 1, transform.imageHeight)
+    if (right - left < minimumWidth) {
+        if (handle in setOf(CropDragHandle.LEFT, CropDragHandle.TOP_LEFT, CropDragHandle.BOTTOM_LEFT)) {
+            left = (right - minimumWidth).coerceAtLeast(0)
+            right = (left + minimumWidth).coerceAtMost(transform.imageWidth)
+        } else {
+            right = (left + minimumWidth).coerceAtMost(transform.imageWidth)
+            left = (right - minimumWidth).coerceAtLeast(0)
         }
     }
+    if (bottom - top < minimumHeight) {
+        if (handle in setOf(CropDragHandle.TOP, CropDragHandle.TOP_LEFT, CropDragHandle.TOP_RIGHT)) {
+            top = (bottom - minimumHeight).coerceAtLeast(0)
+            bottom = (top + minimumHeight).coerceAtMost(transform.imageHeight)
+        } else {
+            bottom = (top + minimumHeight).coerceAtMost(transform.imageHeight)
+            top = (bottom - minimumHeight).coerceAtLeast(0)
+        }
+    }
+    return CropRect(left, top, right, bottom)
 }
 
 @Composable
