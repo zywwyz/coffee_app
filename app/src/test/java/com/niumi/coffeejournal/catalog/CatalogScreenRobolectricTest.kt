@@ -16,6 +16,7 @@ import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.MaintenanceMode
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
+import com.niumi.coffeejournal.importer.ImportedAssetSelection
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -186,6 +187,32 @@ class CatalogScreenRobolectricTest {
         compose.waitForIdle()
         compose.runOnIdle {
             org.junit.Assert.assertEquals(0, compose.onAllNodesWithText("新增产品").fetchSemanticsNodes().size)
+        }
+    }
+
+    @Test
+    fun `confirmed product image selection is included in saved catalog item`() {
+        var submitted: ItemEditor? = null
+        compose.setContent {
+            CoffeeTheme {
+                CatalogScreen(
+                    state = state().copy(selectedBrandId = "brand"),
+                    onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {}, onSaveBrand = {},
+                    onSaveItem = { submitted = it }, onSetItemStatus = { _, _ -> }, onClearError = {},
+                    onRequestAsset = { _, kind, callback ->
+                        org.junit.Assert.assertEquals(CatalogAssetKind.CHAIN_PRODUCT_IMAGE, kind)
+                        callback(ImportedAssetSelection("real-product-image", "截图候选名", 990))
+                    },
+                )
+            }
+        }
+        compose.onNodeWithText("新增连锁产品").performClick()
+        compose.onNodeWithText("选择图片").performScrollTo().performClick()
+        compose.onNodeWithText("保存").performClick()
+
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals("real-product-image", submitted?.imageAssetId)
+            org.junit.Assert.assertEquals("截图候选名", submitted?.name)
         }
     }
 

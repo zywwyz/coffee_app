@@ -16,6 +16,12 @@ import androidx.compose.ui.unit.dp
 import com.niumi.coffeejournal.catalog.CatalogRepository
 import com.niumi.coffeejournal.catalog.CatalogFeature
 import com.niumi.coffeejournal.core.image.ImagePathResolver
+import com.niumi.coffeejournal.core.image.ImageKind
+import com.niumi.coffeejournal.core.image.ImageStore
+import com.niumi.coffeejournal.importer.AssetImportRequester
+import com.niumi.coffeejournal.importer.ImageImportHost
+import com.niumi.coffeejournal.importer.ImageImportMode
+import com.niumi.coffeejournal.importer.ScreenshotTextRecognizer
 import com.niumi.coffeejournal.journal.JournalFeature
 import com.niumi.coffeejournal.journal.JournalRepository
 import androidx.navigation3.runtime.NavKey
@@ -50,6 +56,24 @@ fun AppNavigation(
     journalRepository: JournalRepository? = null,
     catalogRepository: CatalogRepository? = null,
     imagePathResolver: ImagePathResolver = ImagePathResolver { null },
+    imageStore: ImageStore? = null,
+    screenshotTextRecognizer: ScreenshotTextRecognizer? = null,
+) {
+    if (imageStore != null && screenshotTextRecognizer != null) {
+        ImageImportHost(imageStore, screenshotTextRecognizer) { requester ->
+            AppNavigationContent(journalRepository, catalogRepository, imagePathResolver, requester)
+        }
+    } else {
+        AppNavigationContent(journalRepository, catalogRepository, imagePathResolver)
+    }
+}
+
+@Composable
+private fun AppNavigationContent(
+    journalRepository: JournalRepository?,
+    catalogRepository: CatalogRepository?,
+    imagePathResolver: ImagePathResolver,
+    assetImportRequester: AssetImportRequester = { _, _, _ -> },
 ) {
     val backStack = rememberNavBackStack(Journal)
     val selectedRoot = backStack.last()
@@ -80,13 +104,23 @@ fun AppNavigation(
             entryProvider = entryProvider {
                 entry<Journal> {
                     if (journalRepository != null && catalogRepository != null) {
-                        JournalFeature(journalRepository, catalogRepository, imagePathResolver)
+                        JournalFeature(journalRepository, catalogRepository, imagePathResolver, assetImportRequester)
                     } else {
                         RootContent("咖啡日历", "记录今天的咖啡")
                     }
                 }
                 entry<Catalog> {
-                    if (catalogRepository != null) CatalogFeature(catalogRepository)
+                    if (catalogRepository != null) {
+                        CatalogFeature(catalogRepository) { _, kind, callback ->
+                            val imageKind = when (kind) {
+                                com.niumi.coffeejournal.catalog.CatalogAssetKind.BRAND_LOGO -> ImageKind.BRAND_LOGO
+                                com.niumi.coffeejournal.catalog.CatalogAssetKind.CHAIN_PRODUCT_IMAGE -> ImageKind.PRODUCT
+                                com.niumi.coffeejournal.catalog.CatalogAssetKind.BEAN_PACKAGE -> ImageKind.BEAN_PACKAGE
+                            }
+                            val mode = if (imageKind == ImageKind.PRODUCT) ImageImportMode.ASK else ImageImportMode.WHOLE_IMAGE
+                            assetImportRequester(imageKind, mode) { callback(it) }
+                        }
+                    }
                     else RootContent("连锁品牌", "管理连锁产品与个人豆库")
                 }
                 entry<Insights> { RootContent("月度总结", "查看饮用、评分与消费趋势") }

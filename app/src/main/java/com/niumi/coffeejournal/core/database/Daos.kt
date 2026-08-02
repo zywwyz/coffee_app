@@ -148,8 +148,14 @@ interface ImageAssetDao {
     @Upsert
     suspend fun upsert(asset: ImageAssetEntity)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnoringExisting(asset: ImageAssetEntity): Long
+
     @Query("SELECT * FROM image_assets WHERE id = :id")
     suspend fun get(id: String): ImageAssetEntity?
+
+    @Query("SELECT * FROM image_assets WHERE sha256 = :sha256 LIMIT 1")
+    suspend fun getBySha256(sha256: String): ImageAssetEntity?
 
     @Query(
         """

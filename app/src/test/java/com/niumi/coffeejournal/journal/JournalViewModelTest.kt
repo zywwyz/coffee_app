@@ -156,6 +156,24 @@ class JournalViewModelTest {
     }
 
     @Test
+    fun `confirmed screenshot image is saved on product and fills actual price`() = runBlocking {
+        val catalog = FakeCatalogRepository(item = item().copy(imageAssetId = null, status = ItemStatus.NEEDS_IMAGE))
+        val viewModel = JournalViewModel(
+            FakeJournalRepository(), catalog, 2026, 8,
+            CoroutineScope(Job() + Dispatchers.Unconfined),
+        )
+        viewModel.selectItem(ItemType.CHAIN_PRODUCT, "item")
+
+        viewModel.attachImportedImage("new-asset", 1_288L)
+        yield()
+
+        assertEquals("new-asset", catalog.savedItem?.imageAssetId)
+        assertEquals(ItemStatus.ACTIVE, catalog.savedItem?.status)
+        assertEquals("12.88", viewModel.uiState.value.editor.priceInput)
+        assertFalse(viewModel.uiState.value.editor.needsImagePrompt)
+    }
+
+    @Test
     fun `month resolves immutable snapshot image without current logo lookup`() = runBlocking {
         val journal = FakeJournalRepository().apply {
             month.value = listOf(record("drink", "2026-08-05", 100, "snapshot-logo"))
@@ -248,13 +266,14 @@ class JournalViewModelTest {
     private inner class FakeCatalogRepository(
         private val item: CatalogItem = item(),
     ) : CatalogRepository {
+        var savedItem: CatalogItem? = null
         private val brand = Brand("brand", BrandType.CHAIN, "瑞幸", "logo.webp", com.niumi.coffeejournal.core.model.MaintenanceMode.MANUAL_ONLY, null)
         override fun observeBrands(type: BrandType): Flow<List<Brand>> = flowOf(listOf(brand.copy(type = type)))
         override fun observeItems(brandId: String): Flow<List<CatalogItem>> = flowOf(listOf(item))
         override suspend fun getBrand(brandId: String): Brand = brand
         override suspend fun getItem(itemId: String): CatalogItem = item
         override suspend fun upsertBrand(brand: Brand) = Unit
-        override suspend fun upsertItem(item: CatalogItem) = Unit
+        override suspend fun upsertItem(item: CatalogItem) { savedItem = item }
         override suspend fun lastPriceFen(itemId: String): Long? = 990
     }
 }

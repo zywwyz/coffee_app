@@ -185,6 +185,42 @@ class JournalViewModel(
         mutableState.value = mutableState.value.copy(editor = mutableState.value.editor.copy(needsImagePrompt = false))
     }
 
+    fun attachImportedImage(assetId: String, actualPriceFen: Long?) {
+        val selectedItemId = mutableState.value.editor.selectedItemId ?: return
+        scope.launch {
+            try {
+                val item = catalogRepository.getItem(selectedItemId)
+                catalogRepository.upsertItem(
+                    item.copy(
+                        imageAssetId = assetId,
+                        status = if (item.status == ItemStatus.NEEDS_IMAGE) ItemStatus.ACTIVE else item.status,
+                    ),
+                )
+                if (mutableState.value.editor.selectedItemId != selectedItemId) return@launch
+                val updatedDraft = currentDraft?.let { draft ->
+                    if (actualPriceFen == null) draft else draft.copy(actualPriceFen = actualPriceFen)
+                }
+                if (updatedDraft != null) {
+                    currentDraft = updatedDraft
+                    draftQueue.trySend(updatedDraft)
+                }
+                mutableState.value = mutableState.value.copy(
+                    editor = mutableState.value.editor.copy(
+                        actualPriceFen = actualPriceFen ?: mutableState.value.editor.actualPriceFen,
+                        priceInput = actualPriceFen?.let(::formatFenInput) ?: mutableState.value.editor.priceInput,
+                        priceValid = true,
+                        needsImagePrompt = false,
+                        errorMessage = null,
+                    ),
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                setEditorError("图片已导入，但关联产品失败，请重试")
+            }
+        }
+    }
+
     fun save() {
         val editor = mutableState.value.editor
         val draft = currentDraft ?: return

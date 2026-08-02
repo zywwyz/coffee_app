@@ -39,13 +39,14 @@ import com.niumi.coffeejournal.core.model.CatalogItem
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
+import com.niumi.coffeejournal.importer.ImportedAssetSelection
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-enum class CatalogAssetKind { BRAND_LOGO, ITEM_IMAGE }
+enum class CatalogAssetKind { BRAND_LOGO, CHAIN_PRODUCT_IMAGE, BEAN_PACKAGE }
 
-typealias CatalogAssetPicker = (String?, CatalogAssetKind, (String?) -> Unit) -> Unit
+typealias CatalogAssetPicker = (String?, CatalogAssetKind, (ImportedAssetSelection?) -> Unit) -> Unit
 
 @Composable
 fun CatalogFeature(
@@ -249,7 +250,7 @@ private fun BrandEditorDialog(
         }
         Field(sourceUrl, { sourceUrl = it }, "公开产品页（可选）", enabled = !saving)
         OutlinedButton(
-            onClick = { onRequestAsset(logoAssetId, CatalogAssetKind.BRAND_LOGO) { logoAssetId = it } },
+            onClick = { onRequestAsset(logoAssetId, CatalogAssetKind.BRAND_LOGO) { logoAssetId = it?.assetId } },
             enabled = !saving,
         ) {
             Text(if (logoAssetId == null) "选择 Logo" else "更换 Logo")
@@ -330,7 +331,17 @@ private fun ItemEditorDialog(
             }
         }
         OutlinedButton(
-            onClick = { onRequestAsset(image, CatalogAssetKind.ITEM_IMAGE) { image = it } },
+            onClick = {
+                val assetKind = if (type == ItemType.CHAIN_PRODUCT) {
+                    CatalogAssetKind.CHAIN_PRODUCT_IMAGE
+                } else {
+                    CatalogAssetKind.BEAN_PACKAGE
+                }
+                onRequestAsset(image, assetKind) { selection ->
+                    image = selection?.assetId
+                    if (name.isBlank()) name = selection?.suggestedName.orEmpty()
+                }
+            },
             enabled = !saving,
         ) {
             Text(if (image == null) "选择图片" else "更换图片")

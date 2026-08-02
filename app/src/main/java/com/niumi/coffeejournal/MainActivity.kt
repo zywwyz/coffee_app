@@ -16,6 +16,8 @@ class MainActivity : ComponentActivity() {
                     journalRepository = app.journalRepository,
                     catalogRepository = app.catalogRepository,
                     imagePathResolver = app.imagePathResolver,
+                    imageStore = app.imageStore,
+                    screenshotTextRecognizer = app.screenshotTextRecognizer,
                 )
             }
         }

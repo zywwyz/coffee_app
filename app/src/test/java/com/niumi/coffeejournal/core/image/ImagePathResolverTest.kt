@@ -55,7 +55,9 @@ class ImagePathResolverTest {
         private val assets: Map<String, ImageAssetEntity>,
     ) : ImageAssetDao {
         override suspend fun upsert(asset: ImageAssetEntity) = Unit
+        override suspend fun insertIgnoringExisting(asset: ImageAssetEntity): Long = -1
         override suspend fun get(id: String): ImageAssetEntity? = assets[id]
+        override suspend fun getBySha256(sha256: String): ImageAssetEntity? = assets.values.firstOrNull { it.sha256 == sha256 }
         override suspend fun deleteIfUnreferenced(id: String): Int = 0
         override suspend fun referenceCount(id: String): Int = 0
     }

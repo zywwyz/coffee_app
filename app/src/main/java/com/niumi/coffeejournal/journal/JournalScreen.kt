@@ -45,6 +45,9 @@ import com.niumi.coffeejournal.core.image.ImagePathResolver
 import com.niumi.coffeejournal.core.image.CalendarThumbnailLoader
 import com.niumi.coffeejournal.core.image.ThumbnailLoader
 import com.niumi.coffeejournal.core.model.DrinkRecord
+import com.niumi.coffeejournal.core.image.ImageKind
+import com.niumi.coffeejournal.importer.AssetImportRequester
+import com.niumi.coffeejournal.importer.ImageImportMode
 import java.util.Calendar
 
 @Composable
@@ -52,8 +55,7 @@ fun JournalFeature(
     journalRepository: JournalRepository,
     catalogRepository: CatalogRepository,
     imagePathResolver: ImagePathResolver,
-    onScreenshotRequested: () -> Unit = {},
-    onImageRequested: () -> Unit = {},
+    assetImportRequester: AssetImportRequester = { _, _, _ -> },
 ) {
     val today = remember { Calendar.getInstance() }
     val journalViewModel: JournalViewModel = viewModel(
@@ -85,8 +87,16 @@ fun JournalFeature(
             onNoteChange = journalViewModel::setNote,
             onSave = journalViewModel::save,
             onBack = { editorOpen = false },
-            onScreenshot = onScreenshotRequested,
-            onSelectImage = onImageRequested,
+            onScreenshot = {
+                assetImportRequester(ImageKind.PRODUCT, ImageImportMode.SCREENSHOT) { selection ->
+                    journalViewModel.attachImportedImage(selection.assetId, selection.actualPriceFen)
+                }
+            },
+            onSelectImage = {
+                assetImportRequester(ImageKind.PRODUCT, ImageImportMode.WHOLE_IMAGE) { selection ->
+                    journalViewModel.attachImportedImage(selection.assetId, null)
+                }
+            },
             onSkipImage = journalViewModel::skipImagePrompt,
         )
     } else {
