@@ -223,6 +223,7 @@ class CatalogViewModelTest {
         val images = RecordingImageStore()
         val viewModel = viewModel(repository, images)
 
+        assertTrue(viewModel.retainAssetLease("editor", null))
         assertTrue(viewModel.stageAsset("editor", null, "new-image"))
         viewModel.discardAssetLease("editor")
         yield()
@@ -232,10 +233,25 @@ class CatalogViewModelTest {
     }
 
     @Test
+    fun `selection arriving after retained editor lease is discarded is rejected`() = runBlocking {
+        val repository = FakeCatalogRepository()
+        val images = RecordingImageStore()
+        val viewModel = viewModel(repository, images)
+
+        assertTrue(viewModel.retainAssetLease("picker", null))
+        viewModel.discardAssetLease("picker")
+        yield()
+
+        assertFalse(viewModel.stageAsset("picker", null, "late-image"))
+        assertTrue(images.deleteAttempts.isEmpty())
+    }
+
+    @Test
     fun `failed save retains staged lease then cancel cleans it`() = runBlocking {
         val repository = FakeCatalogRepository().apply { failItemSave = true }
         val images = RecordingImageStore()
         val viewModel = viewModel(repository, images)
+        assertTrue(viewModel.retainAssetLease("editor", null))
         assertTrue(viewModel.stageAsset("editor", null, "new-image"))
 
         viewModel.saveItem(editor(imageAssetId = "new-image", assetLeaseId = "editor"))
@@ -256,6 +272,7 @@ class CatalogViewModelTest {
         }
         val images = RecordingImageStore()
         val viewModel = viewModel(repository, images)
+        assertTrue(viewModel.retainAssetLease("editor", null))
         assertTrue(viewModel.stageAsset("editor", null, "new-image"))
 
         viewModel.saveItem(editor(imageAssetId = "new-image", assetLeaseId = "editor"))
@@ -273,6 +290,7 @@ class CatalogViewModelTest {
         val repository = FakeCatalogRepository().apply { itemSaveGate = CompletableDeferred() }
         val images = RecordingImageStore()
         val viewModel = viewModel(repository, images)
+        assertTrue(viewModel.retainAssetLease("editor", "old-image"))
         assertTrue(viewModel.stageAsset("editor", "old-image", "new-image"))
 
         viewModel.saveItem(editor(imageAssetId = "new-image", assetLeaseId = "editor"))
@@ -293,6 +311,7 @@ class CatalogViewModelTest {
         repository.upsertItem(old)
         val images = RecordingImageStore()
         val viewModel = viewModel(repository, images)
+        assertTrue(viewModel.retainAssetLease("editor", "old-image"))
         assertTrue(viewModel.stageAsset("editor", "old-image", "new-image"))
         assertTrue(images.deleteAttempts.isEmpty())
 
@@ -314,6 +333,7 @@ class CatalogViewModelTest {
         val images = RecordingImageStore(protectedAssets = setOf("historical-old"))
         val viewModel = viewModel(repository, images)
 
+        assertTrue(viewModel.retainAssetLease("editor", "historical-old"))
         assertTrue(viewModel.stageAsset("editor", "historical-old", "first-stage"))
         assertTrue(viewModel.stageAsset("editor", "historical-old", "second-stage"))
         assertEquals(listOf("first-stage"), images.deleteAttempts)

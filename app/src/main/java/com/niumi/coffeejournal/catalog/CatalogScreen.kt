@@ -69,8 +69,7 @@ fun CatalogFeature(
     updateSources: CatalogSourceProvider? = null,
     updateGateway: CatalogUpdateGateway? = null,
     onRequestAsset: CatalogAssetPicker = { _, _, _ -> },
-    onUpdateScreenshotFallback: (Brand) -> Unit = {},
-    onUpdateManualFallback: (Brand) -> Unit = {},
+    onRequestScreenshotAsset: CatalogAssetPicker,
 ) {
     val catalogViewModel: CatalogViewModel = viewModel(factory = CatalogViewModel.factory(repository, imageStore))
     val state by catalogViewModel.uiState.collectAsStateWithLifecycle()
@@ -88,6 +87,8 @@ fun CatalogFeature(
         onSetItemStatus = catalogViewModel::setItemStatus,
         onClearError = catalogViewModel::clearError,
         onRequestAsset = onRequestAsset,
+        onRequestScreenshotAsset = onRequestScreenshotAsset,
+        onRetainAssetLease = catalogViewModel::retainAssetLease,
         onStageAsset = catalogViewModel::stageAsset,
         onDiscardAssetLease = catalogViewModel::discardAssetLease,
         updateState = updateState,
@@ -95,8 +96,6 @@ fun CatalogFeature(
         onToggleUpdateSelection = { updateViewModel?.toggleSelected(it) },
         onConfirmUpdate = { updateViewModel?.confirmSelected() },
         onDismissUpdate = { updateViewModel?.dismiss() },
-        onUpdateScreenshotFallback = { brand -> onUpdateScreenshotFallback(brand); updateViewModel?.dismiss() },
-        onUpdateManualFallback = { brand -> onUpdateManualFallback(brand); updateViewModel?.dismiss() },
     )
 }
 
@@ -111,6 +110,10 @@ fun CatalogScreen(
     onSetItemStatus: (CatalogItem, ItemStatus) -> Unit,
     onClearError: () -> Unit,
     onRequestAsset: CatalogAssetPicker = { _, _, _ -> },
+    onRequestScreenshotAsset: CatalogAssetPicker = { _, _, _ ->
+        error("Screenshot asset importer is not configured")
+    },
+    onRetainAssetLease: suspend (String, String?) -> Boolean = { _, _ -> true },
     onStageAsset: suspend (String, String?, String) -> Boolean = { _, _, _ -> true },
     onDiscardAssetLease: (String) -> Unit = {},
     updateState: CatalogUpdateUiState = CatalogUpdateUiState(),
@@ -118,13 +121,12 @@ fun CatalogScreen(
     onToggleUpdateSelection: (String) -> Unit = {},
     onConfirmUpdate: () -> Unit = {},
     onDismissUpdate: () -> Unit = {},
-    onUpdateScreenshotFallback: (Brand) -> Unit = {},
-    onUpdateManualFallback: (Brand) -> Unit = {},
 ) {
     var brandEditor by remember { mutableStateOf<Brand?>(null) }
     var showNewBrand by remember { mutableStateOf(false) }
     var itemEditor by remember { mutableStateOf<CatalogItem?>(null) }
     var showNewItem by remember { mutableStateOf(false) }
+    var pendingScreenshotImport by remember { mutableStateOf<PendingScreenshotImport?>(null) }
     var pendingSave by remember { mutableStateOf<PendingCatalogSave?>(null) }
     var lastHandledSaveToken by remember { mutableStateOf(state.saveCompletedToken) }
     val selectedBrand = state.brandOverviews.firstOrNull { it.brand.id == state.selectedBrandId }?.brand
@@ -205,20 +207,32 @@ fun CatalogScreen(
             onDismiss = { showNewBrand = false; brandEditor = null; pendingSave = null },
             onSave = { pendingSave = PendingCatalogSave.BRAND; onSaveBrand(it) },
             onRequestAsset = onRequestAsset,
+            onRetainAssetLease = onRetainAssetLease,
             onStageAsset = onStageAsset,
             onDiscardAssetLease = onDiscardAssetLease,
         )
     }
-    if ((showNewItem || itemEditor != null) && selectedBrand != null) {
+    val editorBrand = selectedBrand?.takeIf {
+        pendingScreenshotImport == null || pendingScreenshotImport?.brandId == it.id
+    }
+    if ((showNewItem || itemEditor != null) && editorBrand != null) {
         ItemEditorDialog(
             initial = itemEditor,
-            brand = selectedBrand,
+            brand = editorBrand,
             saving = state.saving,
-            onDismiss = { showNewItem = false; itemEditor = null; pendingSave = null },
+            onDismiss = {
+                showNewItem = false
+                itemEditor = null
+                pendingSave = null
+                pendingScreenshotImport = null
+            },
             onSave = { pendingSave = PendingCatalogSave.ITEM; onSaveItem(it) },
             onRequestAsset = onRequestAsset,
+            onRequestScreenshotAsset = onRequestScreenshotAsset,
+            onRetainAssetLease = onRetainAssetLease,
             onStageAsset = onStageAsset,
             onDiscardAssetLease = onDiscardAssetLease,
+            initialScreenshotRequest = pendingScreenshotImport,
         )
     }
     state.errorMessage?.let { message ->
@@ -235,14 +249,16 @@ fun CatalogScreen(
         onConfirm = onConfirmUpdate,
         onDismiss = onDismissUpdate,
         onScreenshot = { brand ->
+            onDismissUpdate()
             onSelectBrand(brand.id)
+            pendingScreenshotImport = PendingScreenshotImport(brand.id, UUID.randomUUID().toString())
             showNewItem = true
-            onUpdateScreenshotFallback(brand)
         },
         onManual = { brand ->
+            onDismissUpdate()
             onSelectBrand(brand.id)
+            pendingScreenshotImport = null
             showNewItem = true
-            onUpdateManualFallback(brand)
         },
     )
 }
@@ -302,10 +318,7 @@ private fun CatalogUpdateDialog(
                 }
             },
             confirmButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = { brand?.let(onScreenshot) }, enabled = brand != null) { Text("上传截图") }
-                    TextButton(onClick = { brand?.let(onManual) }, enabled = brand != null) { Text("手工录入") }
-                }
+                CatalogFallbackActions(brand, onScreenshot, onManual)
             },
             dismissButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
         )
@@ -347,6 +360,18 @@ private fun CatalogUpdateDialog(
                 dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
             )
         }
+    }
+}
+
+@Composable
+internal fun CatalogFallbackActions(
+    brand: Brand?,
+    onScreenshot: (Brand) -> Unit,
+    onManual: (Brand) -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        TextButton(onClick = { brand?.let(onScreenshot) }, enabled = brand != null) { Text("上传截图") }
+        TextButton(onClick = { brand?.let(onManual) }, enabled = brand != null) { Text("手工录入") }
     }
 }
 
@@ -409,6 +434,7 @@ private fun ItemCard(
 private fun BrandEditorDialog(
     initial: Brand?, type: BrandType, saving: Boolean,
     onDismiss: () -> Unit, onSave: (BrandEditor) -> Unit, onRequestAsset: CatalogAssetPicker,
+    onRetainAssetLease: suspend (String, String?) -> Boolean,
     onStageAsset: suspend (String, String?, String) -> Boolean,
     onDiscardAssetLease: (String) -> Unit,
 ) {
@@ -418,6 +444,7 @@ private fun BrandEditorDialog(
     var sourceUrl by remember(initial) { mutableStateOf(initial?.publicSourceUrl.orEmpty()) }
     var mode by remember(initial) { mutableStateOf(initial?.maintenanceMode ?: MaintenanceMode.MANUAL_ONLY) }
     DisposableEffect(leaseId) { onDispose { onDiscardAssetLease(leaseId) } }
+    LaunchedEffect(leaseId) { onRetainAssetLease(leaseId, initial?.logoAssetId) }
     EditorDialog(
         title = if (initial == null) "新增品牌" else "编辑品牌", saving = saving,
         onDismiss = { onDiscardAssetLease(leaseId); onDismiss() },
@@ -449,8 +476,11 @@ private fun BrandEditorDialog(
 private fun ItemEditorDialog(
     initial: CatalogItem?, brand: Brand, saving: Boolean,
     onDismiss: () -> Unit, onSave: (ItemEditor) -> Unit, onRequestAsset: CatalogAssetPicker,
+    onRequestScreenshotAsset: CatalogAssetPicker,
+    onRetainAssetLease: suspend (String, String?) -> Boolean,
     onStageAsset: suspend (String, String?, String) -> Boolean,
     onDiscardAssetLease: (String) -> Unit,
+    initialScreenshotRequest: PendingScreenshotImport?,
 ) {
     val leaseId = remember(initial) { UUID.randomUUID().toString() }
     var name by remember(initial) { mutableStateOf(initial?.name.orEmpty()) }
@@ -470,7 +500,25 @@ private fun ItemEditorDialog(
     var status by remember(initial) { mutableStateOf(initial?.status ?: ItemStatus.ACTIVE) }
     var caffeineError by remember(initial) { mutableStateOf<String?>(null) }
     val type = if (brand.type == BrandType.CHAIN) ItemType.CHAIN_PRODUCT else ItemType.PERSONAL_BEAN
-    DisposableEffect(leaseId) { onDispose { onDiscardAssetLease(leaseId) } }
+    val importSession = remember(leaseId) {
+        CatalogScreenshotImportSession(
+            leaseId = leaseId,
+            previousAssetId = initial?.imageAssetId,
+            retain = onRetainAssetLease,
+            stage = onStageAsset,
+            discard = onDiscardAssetLease,
+            applyToEditor = { selection ->
+                image = selection.assetId
+                if (name.isBlank()) name = selection.suggestedName.orEmpty()
+            },
+        )
+    }
+    DisposableEffect(importSession) { onDispose(importSession::close) }
+    LaunchedEffect(leaseId, initialScreenshotRequest?.token) {
+        if (initialScreenshotRequest != null) {
+            importSession.startScreenshot(onRequestScreenshotAsset)
+        } else importSession.retain()
+    }
     EditorDialog(
         title = if (initial == null) "新增${if (type == ItemType.PERSONAL_BEAN) "豆子" else "产品"}" else "编辑条目",
         saving = saving, onDismiss = { onDiscardAssetLease(leaseId); onDismiss() },
@@ -528,13 +576,7 @@ private fun ItemEditorDialog(
                 } else {
                     CatalogAssetKind.BEAN_PACKAGE
                 }
-                onRequestAsset(image, assetKind) { selection ->
-                    if (onStageAsset(leaseId, initial?.imageAssetId, selection.assetId)) {
-                        image = selection.assetId
-                        if (name.isBlank()) name = selection.suggestedName.orEmpty()
-                        true
-                    } else false
-                }
+                onRequestAsset(image, assetKind, importSession::accept)
             },
             enabled = !saving,
         ) {
@@ -571,6 +613,8 @@ private fun Field(value: String, onChange: (String) -> Unit, label: String, enab
 }
 
 private enum class PendingCatalogSave { BRAND, ITEM }
+
+private data class PendingScreenshotImport(val brandId: String, val token: String)
 
 private fun statusLabel(status: ItemStatus): String = when (status) {
     ItemStatus.ACTIVE -> "在售"

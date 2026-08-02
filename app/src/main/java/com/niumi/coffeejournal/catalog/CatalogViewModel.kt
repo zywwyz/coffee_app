@@ -205,15 +205,23 @@ class CatalogViewModel(
     ): Boolean {
         val store = imageStore ?: return false
         val replacedStaged = leaseMutex.withLock {
-            check(assetLeases[leaseId]?.committing != true) { "Cannot replace an asset during save" }
-            val previous = assetLeases.put(
-                leaseId,
-                StagedAssetLease(stagedAssetId, persistedAssetId),
-            )
-            previous?.stagedAssetId?.takeIf { it != stagedAssetId }
+            val lease = assetLeases[leaseId] ?: return false
+            check(!lease.committing) { "Cannot replace an asset during save" }
+            val previous = lease.stagedAssetId?.takeIf { it != stagedAssetId }
+            lease.stagedAssetId = stagedAssetId
+            previous
         }
         replacedStaged?.let { runCatching { store.deleteIfUnreferenced(it) } }
         return true
+    }
+
+    suspend fun retainAssetLease(leaseId: String, persistedAssetId: String?): Boolean {
+        if (imageStore == null) return false
+        return leaseMutex.withLock {
+            if (assetLeases.containsKey(leaseId)) return@withLock false
+            assetLeases[leaseId] = StagedAssetLease(null, persistedAssetId)
+            true
+        }
     }
 
     fun discardAssetLease(leaseId: String) {
@@ -227,7 +235,9 @@ class CatalogViewModel(
                     assetLeases.remove(leaseId)
                 }
             } ?: return@launch
-            imageStore?.let { store -> runCatching { store.deleteIfUnreferenced(lease.stagedAssetId) } }
+            lease.stagedAssetId?.let { staged ->
+                imageStore?.let { store -> runCatching { store.deleteIfUnreferenced(staged) } }
+            }
         }
     }
 
@@ -241,7 +251,7 @@ class CatalogViewModel(
             }
             imageStore?.let { store ->
                 abandoned.forEach { lease ->
-                    runCatching { store.deleteIfUnreferenced(lease.stagedAssetId) }
+                    lease.stagedAssetId?.let { runCatching { store.deleteIfUnreferenced(it) } }
                 }
             }
         }
@@ -252,7 +262,7 @@ class CatalogViewModel(
         if (leaseId == null) return
         leaseMutex.withLock {
             val lease = assetLeases[leaseId] ?: return@withLock
-            check(lease.stagedAssetId == committedAssetId) {
+            check(lease.stagedAssetId == committedAssetId || lease.stagedAssetId == null && committedAssetId == lease.persistedAssetId) {
                 "Committed asset does not match staged lease"
             }
             lease.committing = true
@@ -267,7 +277,9 @@ class CatalogViewModel(
             if (lease.discardRequested) assetLeases.remove(leaseId) else null
         }
         abandoned?.let { lease ->
-            imageStore?.let { store -> runCatching { store.deleteIfUnreferenced(lease.stagedAssetId) } }
+            lease.stagedAssetId?.let { staged ->
+                imageStore?.let { store -> runCatching { store.deleteIfUnreferenced(staged) } }
+            }
         }
     }
 
@@ -331,7 +343,7 @@ class CatalogViewModel(
 }
 
 private data class StagedAssetLease(
-    val stagedAssetId: String,
+    var stagedAssetId: String?,
     val persistedAssetId: String?,
     var committing: Boolean = false,
     var discardRequested: Boolean = false,

@@ -15,6 +15,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.niumi.coffeejournal.catalog.CatalogRepository
 import com.niumi.coffeejournal.catalog.CatalogFeature
+import com.niumi.coffeejournal.catalog.CatalogAssetKind
+import com.niumi.coffeejournal.catalog.CatalogAssetPicker
 import com.niumi.coffeejournal.core.image.ImagePathResolver
 import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.core.image.ImageStore
@@ -142,6 +144,7 @@ private fun AppNavigationContent(
                                 val mode = if (imageKind == ImageKind.PRODUCT) ImageImportMode.ASK else ImageImportMode.WHOLE_IMAGE
                                 assetImportRequester(imageKind, mode, null) { selection -> callback(selection) }
                             },
+                            onRequestScreenshotAsset = catalogScreenshotAssetPicker(assetImportRequester),
                         )
                     }
                     else RootContent("连锁品牌", "管理连锁产品与个人豆库")
@@ -151,6 +154,12 @@ private fun AppNavigationContent(
         )
     }
 }
+
+internal fun catalogScreenshotAssetPicker(requester: AssetImportRequester): CatalogAssetPicker =
+    { previousAssetId, kind, callback ->
+        require(kind == CatalogAssetKind.CHAIN_PRODUCT_IMAGE)
+        requester(ImageKind.PRODUCT, ImageImportMode.SCREENSHOT, previousAssetId, callback)
+    }
 
 @Composable
 private fun RootContent(title: String, subtitle: String) {

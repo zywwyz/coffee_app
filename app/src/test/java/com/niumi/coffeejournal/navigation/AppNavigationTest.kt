@@ -17,6 +17,10 @@ import com.niumi.coffeejournal.core.model.CatalogItem
 import com.niumi.coffeejournal.core.model.DrinkDraft
 import com.niumi.coffeejournal.core.model.DrinkRecord
 import com.niumi.coffeejournal.core.model.ItemType
+import com.niumi.coffeejournal.core.image.ImageKind
+import com.niumi.coffeejournal.importer.ImageImportMode
+import com.niumi.coffeejournal.importer.ImportedAssetSelection
+import kotlinx.coroutines.runBlocking
 import com.niumi.coffeejournal.journal.JournalRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -69,6 +73,25 @@ class AppNavigationTest {
         }
 
         compose.onNodeWithText("记录一杯").assertIsDisplayed()
+    }
+
+    @Test
+    fun catalog_screenshot_picker_wires_product_screenshot_mode_directly() {
+        var requestKind: ImageKind? = null
+        var requestMode: ImageImportMode? = null
+        var calls = 0
+        val picker = catalogScreenshotAssetPicker { kind, mode, _, callback ->
+            calls++
+            requestKind = kind
+            requestMode = mode
+            runBlocking { callback(ImportedAssetSelection("asset")) }
+        }
+
+        picker(null, com.niumi.coffeejournal.catalog.CatalogAssetKind.CHAIN_PRODUCT_IMAGE) { true }
+
+        assertEquals(1, calls)
+        assertEquals(ImageKind.PRODUCT, requestKind)
+        assertEquals(ImageImportMode.SCREENSHOT, requestMode)
     }
 
     private object FakeJournalRepository : JournalRepository {

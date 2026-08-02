@@ -8,6 +8,7 @@ import com.niumi.coffeejournal.catalog.BrandOverview
 import com.niumi.coffeejournal.catalog.CatalogScreen
 import com.niumi.coffeejournal.catalog.CatalogTab
 import com.niumi.coffeejournal.catalog.CatalogUiState
+import com.niumi.coffeejournal.catalog.CatalogFallbackActions
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.ItemStatus
@@ -51,29 +52,25 @@ class CatalogUpdateUiRobolectricTest {
     }
 
     @Test
-    fun `parse failure offers screenshot and manual fallback buttons`() {
-        var screenshot = false
-        var manual = false
+    fun `screenshot and manual fallback actions stay distinct`() {
+        var screenshot = 0
+        var manual = 0
         compose.setContent {
             CoffeeTheme {
-                CatalogScreen(
-                    state = catalogState(), onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {},
-                    onSaveBrand = {}, onSaveItem = {}, onSetItemStatus = { _, _ -> }, onClearError = {},
-                    updateState = CatalogUpdateUiState(
-                        phase = UpdatePhase.FAILURE, brandId = "brand", brandName = "瑞幸",
-                        failureKind = FailureKind.PARSE_CHANGED, message = "官网结构变化",
-                    ),
-                    onUpdateBrand = {}, onToggleUpdateSelection = {}, onConfirmUpdate = {},
-                    onDismissUpdate = {}, onUpdateScreenshotFallback = { screenshot = true },
-                    onUpdateManualFallback = { manual = true },
+                CatalogFallbackActions(
+                    brand = brand(),
+                    onScreenshot = { screenshot++ },
+                    onManual = { manual++ },
                 )
             }
         }
 
         compose.onNodeWithText("上传截图").performClick()
-        compose.runOnIdle { assertTrue(screenshot) }
         compose.onNodeWithText("手工录入").performClick()
-        compose.runOnIdle { assertTrue(manual) }
+        compose.runOnIdle {
+            assertEquals(1, screenshot)
+            assertEquals(1, manual)
+        }
     }
 
     private fun catalogState() = CatalogUiState(
@@ -91,6 +88,4 @@ class CatalogUpdateUiRobolectricTest {
             ),
         ),
     )
-
-    private fun assertTrue(value: Boolean) = org.junit.Assert.assertTrue(value)
 }

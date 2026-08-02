@@ -71,6 +71,7 @@ class CatalogAssetLeaseRoomTest {
             coroutineScope = scope, leaseCleanupScope = scope,
         )
 
+        assertTrue(viewModel.retainAssetLease("editor", "old-image"))
         assertTrue(viewModel.stageAsset("editor", "old-image", "new-image"))
         assertTrue(images.deleteAttempts.isEmpty())
         viewModel.saveItem(
