@@ -1,13 +1,17 @@
 package com.niumi.coffeejournal.importer
 
 import android.graphics.Bitmap
+import android.net.Uri
 import com.niumi.coffeejournal.core.image.CropRect
 import com.niumi.coffeejournal.core.image.ImageAsset
 import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.core.image.ImageStore
-import android.net.Uri
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -216,6 +220,55 @@ class ScreenshotImporterTest {
     }
 
     @Test
+    fun `cancellation waits for underlying recognition terminal before cleanup`() = runBlocking {
+        val bitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
+        val started = CompletableDeferred<Unit>()
+        val terminal = CompletableDeferred<List<TextBlock>>()
+        var closeCount = 0
+        var cancellationObserved = false
+        var propagatedCancellation: CancellationException? = null
+        val recognizer = SampledBitmapScreenshotTextRecognizer(
+            decoder = ScreenshotBitmapDecoder { DecodedScreenshotBitmap(bitmap, 100, 100) },
+            sessionFactory = BitmapTextRecognitionSessionFactory {
+                object : BitmapTextRecognitionSession {
+                    override suspend fun recognize(bitmap: Bitmap): List<TextBlock> {
+                        started.complete(Unit)
+                        return terminal.await()
+                    }
+                    override fun close() {
+                        closeCount++
+                        error("close failed")
+                    }
+                }
+            },
+        )
+        val job = launch(Dispatchers.Default) {
+            try {
+                recognizer.recognize(Uri.parse("content://large/pending-task"))
+            } catch (error: CancellationException) {
+                cancellationObserved = true
+                propagatedCancellation = error
+                throw error
+            }
+        }
+
+        started.await()
+        job.cancel()
+        repeat(20) { yield() }
+        assertFalse(bitmap.isRecycled)
+        assertEquals(0, closeCount)
+        assertFalse(job.isCompleted)
+
+        terminal.complete(emptyList())
+        job.join()
+        assertTrue(job.isCancelled)
+        assertTrue(cancellationObserved)
+        assertTrue(bitmap.isRecycled)
+        assertEquals(1, closeCount)
+        assertEquals("close failed", propagatedCancellation?.suppressed?.single()?.message)
+    }
+
+    @Test
     fun `failed catalog association deletes newly stored unreferenced asset`() = runBlocking {
         val store = RecordingImageStore()
 
@@ -227,6 +280,21 @@ class ScreenshotImporterTest {
 
         assertFalse(associated)
         assertEquals(listOf("asset"), store.deletedAssets)
+    }
+
+    @Test
+    fun `accepted staged association leaves the new asset owned by the editor`() = runBlocking {
+        val store = RecordingImageStore()
+
+        val associated = associateImportedAsset(
+            imageStore = store,
+            selection = ImportedAssetSelection("asset"),
+            previousAssetId = null,
+            association = { true },
+        )
+
+        assertTrue(associated)
+        assertTrue(store.deletedAssets.isEmpty())
     }
 
     @Test

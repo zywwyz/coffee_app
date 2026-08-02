@@ -17,6 +17,7 @@ import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.MaintenanceMode
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
 import com.niumi.coffeejournal.importer.ImportedAssetSelection
+import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -201,7 +202,11 @@ class CatalogScreenRobolectricTest {
                     onSaveItem = { submitted = it }, onSetItemStatus = { _, _ -> }, onClearError = {},
                     onRequestAsset = { _, kind, callback ->
                         org.junit.Assert.assertEquals(CatalogAssetKind.CHAIN_PRODUCT_IMAGE, kind)
-                        callback(ImportedAssetSelection("real-product-image", "截图候选名", 990))
+                        runBlocking {
+                            org.junit.Assert.assertTrue(
+                                callback(ImportedAssetSelection("real-product-image", "截图候选名", 990)),
+                            )
+                        }
                     },
                 )
             }
@@ -214,6 +219,46 @@ class CatalogScreenRobolectricTest {
             org.junit.Assert.assertEquals("real-product-image", submitted?.imageAssetId)
             org.junit.Assert.assertEquals("截图候选名", submitted?.name)
         }
+    }
+
+    @Test
+    fun `disposing an editor releases its staged image lease`() {
+        val showCatalog = mutableStateOf(true)
+        var stagedLeaseId: String? = null
+        var discardedLeaseId: String? = null
+        compose.setContent {
+            CoffeeTheme {
+                if (showCatalog.value) {
+                    CatalogScreen(
+                        state = state().copy(selectedBrandId = "brand"),
+                        onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {},
+                        onSaveBrand = {}, onSaveItem = {}, onSetItemStatus = { _, _ -> },
+                        onClearError = {},
+                        onStageAsset = { leaseId, _, _ ->
+                            stagedLeaseId = leaseId
+                            true
+                        },
+                        onDiscardAssetLease = { discardedLeaseId = it },
+                        onRequestAsset = { _, _, callback ->
+                            runBlocking {
+                                org.junit.Assert.assertTrue(
+                                    callback(ImportedAssetSelection("staged-image", null, null)),
+                                )
+                            }
+                        },
+                    )
+                }
+            }
+        }
+
+        compose.onNodeWithText("新增连锁产品").performClick()
+        compose.onNodeWithText("选择图片").performScrollTo().performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertNotNull(stagedLeaseId)
+            showCatalog.value = false
+        }
+        compose.waitForIdle()
+        compose.runOnIdle { org.junit.Assert.assertEquals(stagedLeaseId, discardedLeaseId) }
     }
 
     private fun state() = CatalogUiState(

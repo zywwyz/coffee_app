@@ -18,6 +18,9 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -59,10 +62,14 @@ class SampledBitmapScreenshotTextRecognizer(
             decoded.bitmap.recycle()
             throw error
         }
+        var primaryFailure: Throwable? = null
         return try {
             val scaleX = decoded.orientedWidth.toDouble() / decoded.bitmap.width
             val scaleY = decoded.orientedHeight.toDouble() / decoded.bitmap.height
-            session.recognize(decoded.bitmap).map { block ->
+            val callerJob = currentCoroutineContext()[Job]
+            val recognized = withContext(NonCancellable) { session.recognize(decoded.bitmap) }
+            callerJob?.ensureActive()
+            recognized.map { block ->
                 val left = (block.bounds.left * scaleX).roundToInt().coerceIn(0, decoded.orientedWidth - 1)
                 val top = (block.bounds.top * scaleY).roundToInt().coerceIn(0, decoded.orientedHeight - 1)
                 block.copy(
@@ -74,9 +81,16 @@ class SampledBitmapScreenshotTextRecognizer(
                     ),
                 )
             }
+        } catch (error: Throwable) {
+            primaryFailure = error
+            throw error
         } finally {
             try {
-                session.close()
+                try {
+                    session.close()
+                } catch (cleanupError: Throwable) {
+                    primaryFailure?.addSuppressed(cleanupError) ?: throw cleanupError
+                }
             } finally {
                 decoded.bitmap.recycle()
             }

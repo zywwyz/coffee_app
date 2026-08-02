@@ -3,6 +3,7 @@ package com.niumi.coffeejournal.catalog
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.niumi.coffeejournal.core.image.ImageStore
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.CatalogItem
@@ -12,11 +13,19 @@ import com.niumi.coffeejournal.core.model.MaintenanceMode
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 enum class CatalogTab { CHAINS, BEANS }
 
@@ -27,6 +36,7 @@ data class BrandEditor(
     val maintenanceMode: MaintenanceMode,
     val publicSourceUrl: String?,
     val id: String? = null,
+    val assetLeaseId: String? = null,
 )
 
 data class ItemEditor(
@@ -48,6 +58,7 @@ data class ItemEditor(
     val id: String? = null,
     val category: String? = null,
     val specificationDescription: String? = null,
+    val assetLeaseId: String? = null,
 )
 
 data class CatalogUiState(
@@ -66,7 +77,9 @@ data class CatalogUiState(
 
 class CatalogViewModel(
     private val repository: CatalogRepository,
+    private val imageStore: ImageStore? = null,
     coroutineScope: CoroutineScope? = null,
+    private val leaseCleanupScope: CoroutineScope = DEFAULT_LEASE_CLEANUP_SCOPE,
     private val idGenerator: () -> String = { UUID.randomUUID().toString() },
 ) : ViewModel() {
     private val scope = coroutineScope ?: viewModelScope
@@ -74,6 +87,8 @@ class CatalogViewModel(
     val uiState: StateFlow<CatalogUiState> = mutableState.asStateFlow()
     private var brandsJob: Job? = null
     private var itemsJob: Job? = null
+    private val leaseMutex = Mutex()
+    private val assetLeases = mutableMapOf<String, StagedAssetLease>()
 
     init {
         scope.launch {
@@ -116,13 +131,23 @@ class CatalogViewModel(
     fun saveBrand(editor: BrandEditor) = saveAction {
         val name = editor.name.trim()
         if (name.isEmpty()) throw InvalidCatalogNameException(editor.name)
-        repository.upsertBrand(
-            Brand(
-                id = editor.id ?: idGenerator(), type = editor.type, name = name,
-                logoAssetId = editor.logoAssetId, maintenanceMode = editor.maintenanceMode,
-                publicSourceUrl = editor.publicSourceUrl?.trim()?.takeIf(String::isNotEmpty),
-            ),
-        )
+        beginAssetCommit(editor.assetLeaseId, editor.logoAssetId)
+        try {
+            repository.upsertBrand(
+                Brand(
+                    id = editor.id ?: idGenerator(), type = editor.type, name = name,
+                    logoAssetId = editor.logoAssetId, maintenanceMode = editor.maintenanceMode,
+                    publicSourceUrl = editor.publicSourceUrl?.trim()?.takeIf(String::isNotEmpty),
+                ),
+            )
+        } catch (error: Throwable) {
+            withContext(NonCancellable) { failAssetCommit(editor.assetLeaseId) }
+            throw error
+        }
+        withContext(NonCancellable) {
+            commitAssetLease(editor.assetLeaseId, editor.logoAssetId)
+        }
+        currentCoroutineContext().ensureActive()
     }
 
     fun saveItem(editor: ItemEditor) = saveAction {
@@ -149,7 +174,17 @@ class CatalogViewModel(
                 } else editor.specificationDescription.clean()
             } else null,
         )
-        repository.upsertItem(item)
+        beginAssetCommit(editor.assetLeaseId, editor.imageAssetId)
+        try {
+            repository.upsertItem(item)
+        } catch (error: Throwable) {
+            withContext(NonCancellable) { failAssetCommit(editor.assetLeaseId) }
+            throw error
+        }
+        withContext(NonCancellable) {
+            commitAssetLease(editor.assetLeaseId, editor.imageAssetId)
+        }
+        currentCoroutineContext().ensureActive()
         selectBrand(editor.brandId)
     }
 
@@ -159,6 +194,87 @@ class CatalogViewModel(
 
     fun clearError() {
         mutableState.value = mutableState.value.copy(errorMessage = null)
+    }
+
+    suspend fun stageAsset(
+        leaseId: String,
+        persistedAssetId: String?,
+        stagedAssetId: String,
+    ): Boolean {
+        val store = imageStore ?: return false
+        val replacedStaged = leaseMutex.withLock {
+            check(assetLeases[leaseId]?.committing != true) { "Cannot replace an asset during save" }
+            val previous = assetLeases.put(
+                leaseId,
+                StagedAssetLease(stagedAssetId, persistedAssetId),
+            )
+            previous?.stagedAssetId?.takeIf { it != stagedAssetId }
+        }
+        replacedStaged?.let { runCatching { store.deleteIfUnreferenced(it) } }
+        return true
+    }
+
+    fun discardAssetLease(leaseId: String) {
+        leaseCleanupScope.launch {
+            val lease = leaseMutex.withLock {
+                val current = assetLeases[leaseId] ?: return@withLock null
+                if (current.committing) {
+                    current.discardRequested = true
+                    null
+                } else {
+                    assetLeases.remove(leaseId)
+                }
+            } ?: return@launch
+            imageStore?.let { store -> runCatching { store.deleteIfUnreferenced(lease.stagedAssetId) } }
+        }
+    }
+
+    override fun onCleared() {
+        leaseCleanupScope.launch {
+            val abandoned = leaseMutex.withLock {
+                val disposable = assetLeases.values.filterNot { it.committing }
+                assetLeases.entries.removeAll { (_, lease) -> !lease.committing }
+                assetLeases.values.forEach { it.discardRequested = true }
+                disposable
+            }
+            imageStore?.let { store ->
+                abandoned.forEach { lease ->
+                    runCatching { store.deleteIfUnreferenced(lease.stagedAssetId) }
+                }
+            }
+        }
+        super.onCleared()
+    }
+
+    private suspend fun beginAssetCommit(leaseId: String?, committedAssetId: String?) {
+        if (leaseId == null) return
+        leaseMutex.withLock {
+            val lease = assetLeases[leaseId] ?: return@withLock
+            check(lease.stagedAssetId == committedAssetId) {
+                "Committed asset does not match staged lease"
+            }
+            lease.committing = true
+        }
+    }
+
+    private suspend fun failAssetCommit(leaseId: String?) {
+        if (leaseId == null) return
+        val abandoned = leaseMutex.withLock {
+            val lease = assetLeases[leaseId] ?: return@withLock null
+            lease.committing = false
+            if (lease.discardRequested) assetLeases.remove(leaseId) else null
+        }
+        abandoned?.let { lease ->
+            imageStore?.let { store -> runCatching { store.deleteIfUnreferenced(lease.stagedAssetId) } }
+        }
+    }
+
+    private suspend fun commitAssetLease(leaseId: String?, committedAssetId: String?) {
+        if (leaseId == null) return
+        val lease = leaseMutex.withLock { assetLeases.remove(leaseId) } ?: return
+        lease.persistedAssetId?.takeIf { it != committedAssetId }?.let { oldAssetId ->
+            imageStore?.let { store -> runCatching { store.deleteIfUnreferenced(oldAssetId) } }
+        }
     }
 
     private fun observeBrands(type: BrandType) {
@@ -201,14 +317,23 @@ class CatalogViewModel(
     companion object {
         val BEAN_FILTERS = listOf(ItemStatus.ACTIVE, ItemStatus.DISCONTINUED, ItemStatus.ARCHIVED)
 
-        fun factory(repository: CatalogRepository): ViewModelProvider.Factory =
+        private val DEFAULT_LEASE_CLEANUP_SCOPE = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        fun factory(repository: CatalogRepository, imageStore: ImageStore? = null): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    CatalogViewModel(repository) as T
+                    CatalogViewModel(repository, imageStore) as T
             }
     }
 }
+
+private data class StagedAssetLease(
+    val stagedAssetId: String,
+    val persistedAssetId: String?,
+    var committing: Boolean = false,
+    var discardRequested: Boolean = false,
+)
 
 private fun String?.clean(): String? = this?.trim()?.takeIf(String::isNotEmpty)
 

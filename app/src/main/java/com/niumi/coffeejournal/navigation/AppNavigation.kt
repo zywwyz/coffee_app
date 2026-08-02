@@ -61,7 +61,11 @@ fun AppNavigation(
 ) {
     if (imageStore != null && screenshotTextRecognizer != null) {
         ImageImportHost(imageStore, screenshotTextRecognizer) { requester ->
-            AppNavigationContent(journalRepository, catalogRepository, imagePathResolver, requester)
+            AppNavigationContent(
+                journalRepository, catalogRepository, imagePathResolver,
+                imageStore = imageStore,
+                assetImportRequester = requester,
+            )
         }
     } else {
         AppNavigationContent(journalRepository, catalogRepository, imagePathResolver)
@@ -73,6 +77,7 @@ private fun AppNavigationContent(
     journalRepository: JournalRepository?,
     catalogRepository: CatalogRepository?,
     imagePathResolver: ImagePathResolver,
+    imageStore: ImageStore? = null,
     assetImportRequester: AssetImportRequester = { _, _, _, _ -> },
 ) {
     val backStack = rememberNavBackStack(Journal)
@@ -111,17 +116,14 @@ private fun AppNavigationContent(
                 }
                 entry<Catalog> {
                     if (catalogRepository != null) {
-                        CatalogFeature(catalogRepository) { previousAssetId, kind, callback ->
+                        CatalogFeature(catalogRepository, imageStore) { _, kind, callback ->
                             val imageKind = when (kind) {
                                 com.niumi.coffeejournal.catalog.CatalogAssetKind.BRAND_LOGO -> ImageKind.BRAND_LOGO
                                 com.niumi.coffeejournal.catalog.CatalogAssetKind.CHAIN_PRODUCT_IMAGE -> ImageKind.PRODUCT
                                 com.niumi.coffeejournal.catalog.CatalogAssetKind.BEAN_PACKAGE -> ImageKind.BEAN_PACKAGE
                             }
                             val mode = if (imageKind == ImageKind.PRODUCT) ImageImportMode.ASK else ImageImportMode.WHOLE_IMAGE
-                            assetImportRequester(imageKind, mode, previousAssetId) { selection ->
-                                callback(selection)
-                                true
-                            }
+                            assetImportRequester(imageKind, mode, null) { selection -> callback(selection) }
                         }
                     }
                     else RootContent("连锁品牌", "管理连锁产品与个人豆库")

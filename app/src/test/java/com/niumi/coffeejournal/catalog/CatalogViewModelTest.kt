@@ -1,5 +1,10 @@
 package com.niumi.coffeejournal.catalog
 
+import android.net.Uri
+import com.niumi.coffeejournal.core.image.CropRect
+import com.niumi.coffeejournal.core.image.ImageAsset
+import com.niumi.coffeejournal.core.image.ImageKind
+import com.niumi.coffeejournal.core.image.ImageStore
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.CatalogItem
@@ -194,10 +199,137 @@ class CatalogViewModelTest {
         }
     }
 
-    private fun viewModel(repository: FakeCatalogRepository) = CatalogViewModel(
-        repository = repository,
-        coroutineScope = CoroutineScope(Job() + Dispatchers.Unconfined),
-        idGenerator = { "generated-${repository.generated++}" },
+    @Test
+    fun `cancelled editor lease deletes staged image without creating catalog row`() = runBlocking {
+        val repository = FakeCatalogRepository()
+        val images = RecordingImageStore()
+        val viewModel = viewModel(repository, images)
+
+        assertTrue(viewModel.stageAsset("editor", null, "new-image"))
+        viewModel.discardAssetLease("editor")
+        yield()
+
+        assertTrue(repository.items.value.isEmpty())
+        assertEquals(listOf("new-image"), images.deleteAttempts)
+    }
+
+    @Test
+    fun `failed save retains staged lease then cancel cleans it`() = runBlocking {
+        val repository = FakeCatalogRepository().apply { failItemSave = true }
+        val images = RecordingImageStore()
+        val viewModel = viewModel(repository, images)
+        assertTrue(viewModel.stageAsset("editor", null, "new-image"))
+
+        viewModel.saveItem(editor(imageAssetId = "new-image", assetLeaseId = "editor"))
+        yield()
+        assertEquals("保存失败，请重试", viewModel.uiState.value.errorMessage)
+        assertTrue(images.deleteAttempts.isEmpty())
+
+        viewModel.discardAssetLease("editor")
+        yield()
+        assertEquals(listOf("new-image"), images.deleteAttempts)
+    }
+
+    @Test
+    fun `dispose during pending failed save defers cleanup until write terminates`() = runBlocking {
+        val repository = FakeCatalogRepository().apply {
+            itemSaveGate = CompletableDeferred()
+            failItemSave = true
+        }
+        val images = RecordingImageStore()
+        val viewModel = viewModel(repository, images)
+        assertTrue(viewModel.stageAsset("editor", null, "new-image"))
+
+        viewModel.saveItem(editor(imageAssetId = "new-image", assetLeaseId = "editor"))
+        viewModel.discardAssetLease("editor")
+        yield()
+        assertTrue(images.deleteAttempts.isEmpty())
+
+        repository.itemSaveGate?.complete(Unit)
+        yield()
+        assertEquals(listOf("new-image"), images.deleteAttempts)
+    }
+
+    @Test
+    fun `dispose during pending successful save does not delete newly associated image`() = runBlocking {
+        val repository = FakeCatalogRepository().apply { itemSaveGate = CompletableDeferred() }
+        val images = RecordingImageStore()
+        val viewModel = viewModel(repository, images)
+        assertTrue(viewModel.stageAsset("editor", "old-image", "new-image"))
+
+        viewModel.saveItem(editor(imageAssetId = "new-image", assetLeaseId = "editor"))
+        viewModel.discardAssetLease("editor")
+        yield()
+        assertTrue(images.deleteAttempts.isEmpty())
+
+        repository.itemSaveGate?.complete(Unit)
+        yield()
+        assertEquals("new-image", repository.items.value.single().imageAssetId)
+        assertEquals(listOf("old-image"), images.deleteAttempts)
+    }
+
+    @Test
+    fun `successful save commits staged image then deletes old persisted image`() = runBlocking {
+        val repository = FakeCatalogRepository()
+        val old = item(ItemStatus.ACTIVE).copy(imageAssetId = "old-image")
+        repository.upsertItem(old)
+        val images = RecordingImageStore()
+        val viewModel = viewModel(repository, images)
+        assertTrue(viewModel.stageAsset("editor", "old-image", "new-image"))
+        assertTrue(images.deleteAttempts.isEmpty())
+
+        viewModel.saveItem(
+            editor(id = old.id, imageAssetId = "new-image", assetLeaseId = "editor"),
+        )
+        yield()
+
+        assertEquals("new-image", repository.items.value.single().imageAssetId)
+        assertEquals(listOf("old-image"), images.deleteAttempts)
+        assertFalse("new-image" in images.deleteAttempts)
+    }
+
+    @Test
+    fun `replacing staged image cleans prior staged asset and historical old reference is retained`() = runBlocking {
+        val repository = FakeCatalogRepository()
+        val old = item(ItemStatus.ACTIVE).copy(imageAssetId = "historical-old")
+        repository.upsertItem(old)
+        val images = RecordingImageStore(protectedAssets = setOf("historical-old"))
+        val viewModel = viewModel(repository, images)
+
+        assertTrue(viewModel.stageAsset("editor", "historical-old", "first-stage"))
+        assertTrue(viewModel.stageAsset("editor", "historical-old", "second-stage"))
+        assertEquals(listOf("first-stage"), images.deleteAttempts)
+        viewModel.saveItem(
+            editor(id = old.id, imageAssetId = "second-stage", assetLeaseId = "editor"),
+        )
+        yield()
+
+        assertEquals(listOf("first-stage", "historical-old"), images.deleteAttempts)
+        assertTrue("historical-old" in images.retainedAssets)
+        assertFalse("second-stage" in images.deleteAttempts)
+    }
+
+    private fun viewModel(
+        repository: FakeCatalogRepository,
+        imageStore: ImageStore? = null,
+    ): CatalogViewModel {
+        val scope = CoroutineScope(Job() + Dispatchers.Unconfined)
+        return CatalogViewModel(
+            repository = repository, imageStore = imageStore,
+            coroutineScope = scope, leaseCleanupScope = scope,
+            idGenerator = { "generated-${repository.generated++}" },
+        )
+    }
+
+    private fun editor(
+        id: String? = null,
+        imageAssetId: String?,
+        assetLeaseId: String?,
+    ) = ItemEditor(
+        brandId = "roaster", type = ItemType.PERSONAL_BEAN, name = "豆子",
+        imageAssetId = imageAssetId, origin = null, processing = null, roastLevel = null,
+        flavorNotes = null, brewMethod = null, status = ItemStatus.ACTIVE, id = id,
+        assetLeaseId = assetLeaseId,
     )
 
     private fun item(status: ItemStatus) = CatalogItem(
@@ -214,6 +346,8 @@ class CatalogViewModelTest {
         var brandSaveCalls = 0
         var saveGate: CompletableDeferred<Unit>? = null
         var failSeed = false
+        var failItemSave = false
+        var itemSaveGate: CompletableDeferred<Unit>? = null
         override fun observeBrands(type: BrandType): Flow<List<Brand>> = brands
         override fun observeItems(brandId: String): Flow<List<CatalogItem>> = items
         override fun observeBrandOverviews(type: BrandType): Flow<List<BrandOverview>> =
@@ -227,11 +361,27 @@ class CatalogViewModelTest {
             brands.value = brands.value.filterNot { it.id == brand.id } + brand
         }
         override suspend fun upsertItem(item: CatalogItem) {
+            itemSaveGate?.await()
+            if (failItemSave) error("save failed")
             items.value = items.value.filterNot { it.id == item.id } + item
         }
         override suspend fun lastPriceFen(itemId: String): Long? = null
         override suspend fun ensureSeedBrands() {
             if (failSeed) error("seed failed")
+        }
+    }
+
+    private class RecordingImageStore(
+        protectedAssets: Set<String> = emptySet(),
+    ) : ImageStore {
+        val deleteAttempts = mutableListOf<String>()
+        val retainedAssets = protectedAssets.toMutableSet()
+        override suspend fun importCropped(source: Uri, crop: CropRect, kind: ImageKind): ImageAsset =
+            error("unexpected")
+        override suspend fun importWhole(source: Uri, kind: ImageKind): ImageAsset = error("unexpected")
+        override suspend fun deleteIfUnreferenced(assetId: String): Boolean {
+            deleteAttempts += assetId
+            return if (assetId in retainedAssets) false else true
         }
     }
 }
