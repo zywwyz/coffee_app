@@ -74,7 +74,7 @@ class SafeOfficialImageDownloader(
     private val readTimeoutMillis: Int = 12_000,
     private val maxBytes: Int = 5 * 1024 * 1024,
     private val resolver: NetworkResolver = SystemNetworkResolver,
-    private val transport: PinnedHttpTransport = HttpsUrlPinnedTransport(connectTimeoutMillis, readTimeoutMillis),
+    private val transport: PinnedHttpTransport = OkHttpPinnedTransport(connectTimeoutMillis, readTimeoutMillis),
 ) : OfficialImageDownloader {
     override suspend fun download(url: String): DownloadedOfficialImage {
         val originalHost = safeHttpsUri(url).host.lowercase()
@@ -82,7 +82,9 @@ class SafeOfficialImageDownloader(
         repeat(4) { redirectCount ->
             val uri = safeHttpsUri(current)
             if (!uri.host.equals(originalHost, true)) throw OfficialImageException("图片重定向离开官方域名")
-            val addresses = try { resolveGlobalAddresses(uri, resolver) }
+            val addresses = try {
+                if (transport is InternallyResolvingPinnedTransport) emptyList() else resolveGlobalAddresses(uri, resolver)
+            }
             catch (error: Exception) { throw error.toOfficialImageException() }
             val response = try {
                 transport.execute(
@@ -128,23 +130,27 @@ class SafeOfficialImageDownloader(
 class LocalOfficialImageAssetStore(
     context: Context,
     private val imageStore: ImageStore,
+    private val afterTempWritten: suspend (File) -> Unit = {},
     private val beforeAssetDelivery: suspend (String) -> Unit = {},
 ) : OfficialImageAssetStore {
     private val directory = File(context.applicationContext.cacheDir, "official-image-import")
 
     override suspend fun import(bytes: ByteArray, mimeType: String): String {
-        val temporary = withContext(Dispatchers.IO) {
-            directory.mkdirs()
-            File.createTempFile("official-", extensionFor(mimeType), directory).also { file ->
-                FileOutputStream(file).use { output ->
+        var temporary: File? = null
+        var assetId: String? = null
+        return try {
+            withContext(NonCancellable + Dispatchers.IO) {
+                directory.mkdirs()
+                temporary = File.createTempFile("official-", extensionFor(mimeType), directory)
+                FileOutputStream(checkNotNull(temporary)).use { output ->
                     output.write(bytes)
                     output.fd.sync()
                 }
             }
-        }
-        var assetId: String? = null
-        return try {
-            assetId = imageStore.importWhole(Uri.fromFile(temporary), ImageKind.PRODUCT).id
+            val ownedTemporary = checkNotNull(temporary)
+            afterTempWritten(ownedTemporary)
+            currentCoroutineContext().ensureActive()
+            assetId = imageStore.importWhole(Uri.fromFile(ownedTemporary), ImageKind.PRODUCT).id
             val owned = checkNotNull(assetId)
             beforeAssetDelivery(owned)
             currentCoroutineContext().ensureActive()
@@ -155,7 +161,7 @@ class LocalOfficialImageAssetStore(
             }
             throw error
         } finally {
-            withContext(NonCancellable + Dispatchers.IO) { runCatching { temporary.delete() } }
+            withContext(NonCancellable + Dispatchers.IO) { temporary?.let { runCatching { it.delete() } } }
         }
     }
 

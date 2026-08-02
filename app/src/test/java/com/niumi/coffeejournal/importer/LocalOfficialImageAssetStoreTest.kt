@@ -26,6 +26,26 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35])
 class LocalOfficialImageAssetStoreTest {
     @Test
+    fun `cancellation exactly after temp write return removes cache file before image import`() = runBlocking {
+        val context = RuntimeEnvironment.getApplication()
+        val directory = File(context.cacheDir, "official-image-import").apply { deleteRecursively() }
+        val images = BoundaryImageStore()
+        val store = LocalOfficialImageAssetStore(
+            context, images,
+            afterTempWritten = {
+                currentCoroutineContext().cancel()
+                yield()
+            },
+        )
+
+        val importing = async(Dispatchers.Default) { store.import(byteArrayOf(1, 2, 3), "image/png") }
+        try { importing.await(); fail("expected cancellation") } catch (_: CancellationException) { }
+
+        assertEquals(0, images.importCalls)
+        assertTrue(directory.listFiles().isNullOrEmpty())
+    }
+
+    @Test
     fun `cancellation at asset return boundary deletes asset and temporary file without masking cancellation`() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
         val directory = File(context.cacheDir, "official-image-import").apply { deleteRecursively() }
@@ -47,8 +67,12 @@ class LocalOfficialImageAssetStoreTest {
 
     private class BoundaryImageStore : ImageStore {
         val deleted = mutableListOf<String>()
+        var importCalls = 0
         override suspend fun importCropped(source: Uri, crop: CropRect, kind: ImageKind): ImageAsset = error("unused")
-        override suspend fun importWhole(source: Uri, kind: ImageKind) = ImageAsset("created-asset", "/private/a", "sha", kind)
+        override suspend fun importWhole(source: Uri, kind: ImageKind): ImageAsset {
+            importCalls++
+            return ImageAsset("created-asset", "/private/a", "sha", kind)
+        }
         override suspend fun deleteIfUnreferenced(assetId: String): Boolean { deleted += assetId; return true }
     }
 }

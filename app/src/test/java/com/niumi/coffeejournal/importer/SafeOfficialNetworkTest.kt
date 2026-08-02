@@ -1,16 +1,25 @@
 package com.niumi.coffeejournal.importer
 
+import java.io.IOException
 import java.net.InetAddress
-import java.net.URL
-import java.io.ByteArrayInputStream
-import java.io.InputStream
-import javax.net.ssl.HttpsURLConnection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Dns
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Protocol
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.ResponseBody
+import okio.Buffer
+import okio.BufferedSource
+import okio.ForwardingSource
+import okio.buffer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -101,54 +110,125 @@ class SafeOfficialNetworkTest {
     }
 
     @Test
-    fun `real pinned transport disconnects on success and cancellation`() = runBlocking {
-        val normal = FakeHttpsConnection("ok".toByteArray())
-        val transport = HttpsUrlPinnedTransport(
-            connectionFactory = PinnedHttpsConnectionFactory { _, _, _ -> normal },
+    fun `real okhttp transport uses validated custom dns keeps hostname closes and cancels call`() = runBlocking {
+        val testThread = Thread.currentThread()
+        val public = InetAddress.getByName("93.184.216.34")
+        var lookupThread: Thread? = null
+        var systemLookups = 0
+        var factory: FakeOkHttpCallFactory? = null
+        val transport = OkHttpPinnedTransport(
+            systemDns = dns { host ->
+                assertEquals("example.com", host)
+                lookupThread = Thread.currentThread()
+                systemLookups++
+                listOf(public)
+            },
+            clientFactory = OkHttpClientFactory { dns, _, _, _ ->
+                FakeOkHttpCallFactory(dns, completeResponse = true).also { factory = it }
+            },
         )
-        transport.execute(
-            SafeHttpRequest("GET", "https://example.com/x"),
-            listOf(InetAddress.getByName("93.184.216.34")), 10,
-        )
-        assertTrue(normal.disconnected)
 
-        val blocking = FakeHttpsConnection(null)
-        val cancellingTransport = HttpsUrlPinnedTransport(
-            connectionFactory = PinnedHttpsConnectionFactory { _, _, _ -> blocking },
+        assertEquals(
+            "ok",
+            transport.execute(SafeHttpRequest("GET", "https://example.com/x"), emptyList(), 10)
+                .body.toString(Charsets.UTF_8),
         )
-        val job = async {
-            cancellingTransport.execute(
-                SafeHttpRequest("GET", "https://example.com/x"),
-                listOf(InetAddress.getByName("93.184.216.34")), 10,
-            )
+        assertEquals("example.com", factory?.lastRequest?.url?.host)
+        assertEquals(listOf(public), factory?.dnsResult)
+        assertEquals(1, systemLookups)
+        assertTrue(factory?.dnsResultWasStable == true)
+        assertTrue(lookupThread != testThread)
+        assertTrue(factory?.body?.closed == true)
+
+        val mixedDns = OkHttpPinnedTransport(
+            systemDns = dns { listOf(public, InetAddress.getByName("10.0.0.1")) },
+            clientFactory = OkHttpClientFactory { dns, _, _, _ ->
+                FakeOkHttpCallFactory(dns, completeResponse = true)
+            },
+        )
+        assertThrows(PublicPageException.UnsafeUrl::class.java) {
+            runBlocking { mixedDns.execute(SafeHttpRequest("GET", "https://example.com/x"), emptyList(), 10) }
         }
-        blocking.readStarted.await()
+
+        var blockingFactory: FakeOkHttpCallFactory? = null
+        val blocking = OkHttpPinnedTransport(
+            systemDns = dns { listOf(public) },
+            clientFactory = OkHttpClientFactory { dns, _, _, _ ->
+                FakeOkHttpCallFactory(dns, completeResponse = false).also { blockingFactory = it }
+            },
+        )
+        val job = async { blocking.execute(SafeHttpRequest("GET", "https://example.com/x"), emptyList(), 10) }
+        yield()
+        requireNotNull(blockingFactory).enqueued.await()
         job.cancel(); runCatching { job.await() }
-        assertTrue(blocking.disconnected)
+        assertTrue(blockingFactory?.lastCall?.isCanceled() == true)
     }
 
     private val publicResolver = NetworkResolver { listOf(InetAddress.getByName("93.184.216.34")) }
 }
 
-private class FakeHttpsConnection(private val payload: ByteArray?) : HttpsURLConnection(URL("https://example.com/x")) {
-    var disconnected = false
-    val readStarted = CompletableDeferred<Unit>()
-    override fun disconnect() { disconnected = true }
-    override fun usingProxy() = false
-    override fun connect() = Unit
-    override fun getResponseCode() = 200
-    override fun getContentType() = "text/html"
-    override fun getInputStream(): InputStream = payload?.let(::ByteArrayInputStream) ?: object : InputStream() {
-        override fun read(): Int {
-            readStarted.complete(Unit)
-            while (true) Thread.sleep(1_000)
+private class TrackingBody : ResponseBody() {
+    var closed = false
+    private val trackedSource = object : ForwardingSource(Buffer().writeUtf8("ok")) {
+        override fun close() {
+            closed = true
+            super.close()
         }
+    }.buffer()
+    override fun contentType() = "text/html".toMediaType()
+    override fun contentLength() = 2L
+    override fun source(): BufferedSource = trackedSource
+}
+
+private fun dns(lookup: (String) -> List<InetAddress>): Dns = object : Dns {
+    override fun lookup(hostname: String): List<InetAddress> = lookup(hostname)
+}
+
+private class FakeOkHttpCallFactory(
+    private val dns: Dns,
+    private val completeResponse: Boolean,
+) : Call.Factory {
+    val enqueued = CompletableDeferred<Unit>()
+    val body = TrackingBody()
+    var lastRequest: Request? = null
+    var lastCall: Call? = null
+    var dnsResult: List<InetAddress>? = null
+    var dnsResultWasStable = false
+
+    override fun newCall(request: Request): Call = object : Call {
+        @Volatile private var cancelled = false
+        @Volatile private var executed = false
+        override fun request() = request
+        override fun execute(): Response = error("async only")
+        override fun enqueue(responseCallback: Callback) {
+            executed = true
+            lastRequest = request
+            lastCall = this
+            enqueued.complete(Unit)
+            Thread {
+                try {
+                    val firstResult = dns.lookup(request.url.host)
+                    dnsResult = firstResult
+                    dnsResultWasStable = firstResult === dns.lookup(request.url.host)
+                } catch (error: IOException) {
+                    responseCallback.onFailure(this, error)
+                    return@Thread
+                }
+                if (completeResponse && !cancelled) {
+                    responseCallback.onResponse(
+                        this,
+                        Response.Builder().request(request).protocol(Protocol.HTTP_1_1)
+                            .code(200).message("OK").header("Content-Type", "text/html").body(body).build(),
+                    )
+                }
+            }.start()
+        }
+        override fun cancel() { cancelled = true }
+        override fun isExecuted() = executed
+        override fun isCanceled() = cancelled
+        override fun timeout() = okio.Timeout.NONE
+        override fun clone(): Call = this
     }
-    override fun getCipherSuite(): String = "TLS"
-    override fun getLocalCertificates() = null
-    override fun getServerCertificates() = null
-    override fun getPeerPrincipal() = null
-    override fun getLocalPrincipal() = null
 }
 
 private data class RecordedPinnedRequest(val request: SafeHttpRequest, val addresses: List<InetAddress>)

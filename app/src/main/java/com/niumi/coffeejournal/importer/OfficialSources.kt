@@ -68,7 +68,7 @@ class SafeOfficialHttpClient(
     private val connectTimeoutMillis: Int = 8_000,
     private val readTimeoutMillis: Int = 12_000,
     private val resolver: NetworkResolver = SystemNetworkResolver,
-    private val transport: PinnedHttpTransport = HttpsUrlPinnedTransport(connectTimeoutMillis, readTimeoutMillis),
+    private val transport: PinnedHttpTransport = OkHttpPinnedTransport(connectTimeoutMillis, readTimeoutMillis),
 ) : PublicPageClient {
     override suspend fun getText(request: PublicPageRequest): PublicPageResponse = execute(
         request, "GET", null, setOf("text/html", "application/xhtml+xml"),
@@ -98,7 +98,11 @@ class SafeOfficialHttpClient(
             if (!request.policy.accepts(current)) throw PublicPageException.UnsafeUrl()
             val uri = URI(current)
             if (!uri.host.equals(originalHost, true)) throw PublicPageException.UnsafeUrl("重定向离开官方域名")
-            val addresses = resolveGlobalAddresses(uri, resolver)
+            val addresses = if (transport is InternallyResolvingPinnedTransport) {
+                emptyList()
+            } else {
+                resolveGlobalAddresses(uri, resolver)
+            }
             val headers = mutableMapOf(
                 "Accept" to if (method == "POST") "application/json" else "text/html,application/xhtml+xml",
                 "User-Agent" to "CoffeeJournal/1.0 public-catalog",

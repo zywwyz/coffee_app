@@ -1,17 +1,23 @@
 package com.niumi.coffeejournal.importer
 
-import java.io.IOException
 import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.Socket
 import java.net.URI
-import java.net.URL
-import javax.net.ssl.HttpsURLConnection
-import javax.net.ssl.SSLSocketFactory
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runInterruptible
+import java.net.UnknownHostException
+import java.util.Collections
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Dns
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 
 fun interface NetworkResolver {
     suspend fun resolve(host: String): List<InetAddress>
@@ -37,8 +43,15 @@ fun interface PinnedHttpTransport {
     suspend fun execute(request: SafeHttpRequest, addresses: List<InetAddress>, maxBytes: Int): SafeHttpResponse
 }
 
-fun interface PinnedHttpsConnectionFactory {
-    fun open(request: SafeHttpRequest, addresses: List<InetAddress>, connectTimeoutMillis: Int): HttpsURLConnection
+internal interface InternallyResolvingPinnedTransport : PinnedHttpTransport
+
+fun interface OkHttpClientFactory {
+    fun create(
+        dns: Dns,
+        connectTimeoutMillis: Int,
+        readTimeoutMillis: Int,
+        callTimeoutMillis: Int,
+    ): Call.Factory
 }
 
 internal val SystemNetworkResolver = NetworkResolver { host -> InetAddress.getAllByName(host).toList() }
@@ -50,8 +63,12 @@ internal suspend fun resolveGlobalAddresses(
     val host = uri.host?.lowercase() ?: throw PublicPageException.UnsafeUrl()
     if (uri.port !in setOf(-1, 443) || isIpLiteral(host)) throw PublicPageException.UnsafeUrl()
     val addresses = try { resolver.resolve(host) } catch (error: Exception) { throw error.toPublicNetworkException() }
+    return validateGlobalAddresses(addresses)
+}
+
+internal fun validateGlobalAddresses(addresses: List<InetAddress>): List<InetAddress> {
     if (addresses.isEmpty() || addresses.any { !it.isGlobalPublic() }) throw PublicPageException.UnsafeUrl()
-    return addresses.distinctBy { it.hostAddress }
+    return Collections.unmodifiableList(addresses.distinctBy { it.hostAddress })
 }
 
 internal fun URI.isSafeHttpsAuthority(): Boolean =
@@ -88,95 +105,93 @@ private fun InetAddress.isGlobalPublic(): Boolean {
     }
 }
 
-class HttpsUrlPinnedTransport(
+class OkHttpPinnedTransport(
     private val connectTimeoutMillis: Int = 8_000,
     private val readTimeoutMillis: Int = 12_000,
-    private val connectionFactory: PinnedHttpsConnectionFactory = PinnedHttpsConnectionFactory { request, addresses, timeout ->
-        val uri = URI(request.url)
-        (URL(request.url).openConnection() as HttpsURLConnection).apply {
-            sslSocketFactory = PinnedSslSocketFactory(
-                SSLSocketFactory.getDefault() as SSLSocketFactory,
-                checkNotNull(uri.host), addresses, timeout,
-            )
-        }
+    private val callTimeoutMillis: Int = 20_000,
+    private val systemDns: Dns = Dns.SYSTEM,
+    private val clientFactory: OkHttpClientFactory = OkHttpClientFactory { dns, connect, read, call ->
+        OkHttpClient.Builder()
+            .dns(dns)
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .connectTimeout(connect.toLong(), TimeUnit.MILLISECONDS)
+            .readTimeout(read.toLong(), TimeUnit.MILLISECONDS)
+            .callTimeout(call.toLong(), TimeUnit.MILLISECONDS)
+            .build()
     },
-) : PinnedHttpTransport {
+) : InternallyResolvingPinnedTransport {
     override suspend fun execute(
         request: SafeHttpRequest,
         addresses: List<InetAddress>,
         maxBytes: Int,
-    ): SafeHttpResponse = runInterruptible(Dispatchers.IO) {
-        val connection = connectionFactory.open(request, addresses, connectTimeoutMillis).apply {
-            instanceFollowRedirects = false
-            connectTimeout = connectTimeoutMillis
-            readTimeout = readTimeoutMillis
-            useCaches = false
-            doOutput = request.body != null
-            requestMethod = request.method
-            for ((name, value) in request.headers) setRequestProperty(name, value)
-            setRequestProperty("Cookie", "")
-        }
-        try {
-            request.body?.let { body ->
-                connection.setFixedLengthStreamingMode(body.size)
-                connection.outputStream.use { it.write(body) }
-            }
-            val status = connection.responseCode
-            val headers = connection.headerFields.orEmpty().filterKeys { it != null }
-                .mapKeys { it.key.lowercase() }.mapValues { it.value.firstOrNull().orEmpty() }
-            val input = if (status >= 400) connection.errorStream else connection.inputStream
-            val body = input?.use { it.readBounded(maxBytes) } ?: ByteArray(0)
-            SafeHttpResponse(status, headers, body, connection.contentType.orEmpty())
-        } finally {
-            connection.disconnect()
-        }
-    }
-}
-
-private class PinnedSslSocketFactory(
-    private val delegate: SSLSocketFactory,
-    private val expectedHost: String,
-    private val addresses: List<InetAddress>,
-    private val connectTimeoutMillis: Int,
-) : SSLSocketFactory() {
-    override fun getDefaultCipherSuites(): Array<String> = delegate.defaultCipherSuites
-    override fun getSupportedCipherSuites(): Array<String> = delegate.supportedCipherSuites
-    override fun createSocket(host: String, port: Int): Socket = layered(host, port, null, 0)
-    override fun createSocket(host: String, port: Int, local: InetAddress?, localPort: Int): Socket =
-        layered(host, port, local, localPort)
-    override fun createSocket(address: InetAddress, port: Int): Socket = verified(address, port, null, 0)
-    override fun createSocket(address: InetAddress, port: Int, local: InetAddress?, localPort: Int): Socket =
-        verified(address, port, local, localPort)
-    override fun createSocket(socket: Socket, host: String, port: Int, autoClose: Boolean): Socket {
-        if (autoClose) runCatching { socket.close() }
-        return layered(host, port, null, 0)
-    }
-    override fun createSocket(): Socket = throw IOException("Unpinned TLS socket creation is forbidden")
-
-    private fun layered(host: String, port: Int, local: InetAddress?, localPort: Int): Socket {
-        if (!host.equals(expectedHost, true) || port != 443) throw IOException("TLS target changed")
-        var failure: IOException? = null
-        for (address in addresses) {
+    ): SafeHttpResponse {
+        require(maxBytes > 0)
+        val expectedHost = request.host
+        val validatedAddresses by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
             try {
-                val raw = Socket()
-                if (local != null) raw.bind(InetSocketAddress(local, localPort))
-                raw.connect(InetSocketAddress(address, port), connectTimeoutMillis)
-                return delegate.createSocket(raw, expectedHost, port, true)
-            } catch (error: IOException) { failure = error }
+                validateGlobalAddresses(systemDns.lookup(expectedHost))
+            } catch (error: PublicPageException.UnsafeUrl) {
+                throw UnsafeDnsException(error.message ?: "来源地址不安全")
+            }
         }
-        throw failure ?: IOException("No validated address")
-    }
+        val requestDns = object : Dns {
+            override fun lookup(hostname: String): List<InetAddress> {
+                if (!hostname.equals(expectedHost, true)) throw UnsafeDnsException("DNS 目标已改变")
+                return validatedAddresses
+            }
+        }
+        val contentType = request.headers.entries.firstOrNull { it.key.equals("Content-Type", true) }
+            ?.value?.toMediaTypeOrNull()
+        val body = request.body?.toRequestBody(contentType)
+        val okRequest = Request.Builder().url(request.url).apply {
+            for ((name, value) in request.headers) header(name, value)
+            method(request.method, body)
+        }.build()
+        val call = clientFactory.create(
+            requestDns, connectTimeoutMillis, readTimeoutMillis, callTimeoutMillis,
+        ).newCall(okRequest)
 
-    private fun verified(address: InetAddress, port: Int, local: InetAddress?, localPort: Int): Socket {
-        if (addresses.none { it == address } || port != 443) throw IOException("Unvalidated address")
-        return if (local == null) delegate.createSocket(address, port)
-        else delegate.createSocket(address, port, local, localPort)
+        return suspendCancellableCoroutine { continuation ->
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: java.io.IOException) {
+                    if (continuation.isActive) continuation.resumeWithException(e.toPublicNetworkException())
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    try {
+                        val result = response.use { received ->
+                            val responseBody = received.body
+                            val bytes = responseBody?.byteStream()?.use { it.readBounded(maxBytes) } ?: ByteArray(0)
+                            val headers = received.headers.names().associate { name ->
+                                name.lowercase() to received.header(name).orEmpty()
+                            }
+                            SafeHttpResponse(
+                                status = received.code,
+                                headers = headers,
+                                body = bytes,
+                                contentType = responseBody?.contentType()?.toString()
+                                    ?: received.header("Content-Type").orEmpty(),
+                            )
+                        }
+                        if (continuation.isActive) continuation.resume(result)
+                    } catch (error: Exception) {
+                        if (continuation.isActive) continuation.resumeWithException(error.toPublicNetworkException())
+                    }
+                }
+            })
+        }
     }
 }
 
-internal fun Exception.toPublicNetworkException(): PublicPageException = when (this) {
-    is PublicPageException -> this
-    is java.net.UnknownHostException, is java.net.ConnectException, is java.net.SocketTimeoutException ->
+private class UnsafeDnsException(message: String) : UnknownHostException(message)
+
+internal fun Exception.toPublicNetworkException(): PublicPageException = when {
+    this is PublicPageException -> this
+    this is UnsafeDnsException || generateSequence(cause) { it.cause }.any { it is UnsafeDnsException } ->
+        PublicPageException.UnsafeUrl(message ?: "来源地址不安全")
+    this is UnknownHostException || this is java.net.ConnectException || this is java.net.SocketTimeoutException ->
         PublicPageException.Offline(message ?: "网络不可用")
     else -> PublicPageException.Http(message = message ?: "请求失败")
 }
