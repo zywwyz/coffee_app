@@ -12,6 +12,9 @@ import com.niumi.coffeejournal.core.database.ImageAssetEntity
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.yield
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -172,6 +175,29 @@ class CatalogUpdateApplierRoomTest {
         }
 
         assertEquals(listOf("asset-a"), importer.cleaned)
+        assertNull(database.catalogUpdateDao().latest("brand"))
+    }
+
+    @Test
+    fun `cancellation at imported asset delivery boundary cleans delivered asset`() = runBlocking {
+        database.imageAssetDao().upsert(image("asset-boundary", "6"))
+        val importer = FakeOfficialImageImporter(
+            assets = mapOf("https://img.official/a.webp" to "asset-boundary"),
+        )
+        val applier = CatalogUpdateApplier(
+            database, importer,
+            afterImageDelivered = {
+                currentCoroutineContext().cancel()
+                yield()
+            },
+        )
+        val review = applier.review("brand", success(candidate("新品 A", imageUrl = "https://img.official/a.webp")))
+
+        assertThrows(CancellationException::class.java) {
+            runBlocking { applier.applySelected(review, review.changes.map { it.key }.toSet()) }
+        }
+
+        assertEquals(listOf("asset-boundary"), importer.cleaned)
         assertNull(database.catalogUpdateDao().latest("brand"))
     }
 

@@ -63,6 +63,7 @@ class LocalImageStore(
         imageAssetDao.getBySha256(candidate.sha256)
             ?: error("Image asset was not persisted")
     },
+    private val beforeAssetDelivery: suspend (ImageAsset) -> Unit = {},
 ) : ImageStore {
     private val resolver: ContentResolver = context.applicationContext.contentResolver
     private val imageDirectory = File(context.applicationContext.filesDir, "images")
@@ -113,6 +114,7 @@ class LocalImageStore(
             val temporary = File.createTempFile("confirmed-", ".tmp", imageDirectory)
             var target: File? = null
             var createdTarget = false
+            var createdAsset: ImageAssetEntity? = null
             try {
                 FileOutputStream(temporary).use { output ->
                     if (!confirmed.compress(Bitmap.CompressFormat.WEBP, 90, output)) {
@@ -134,14 +136,27 @@ class LocalImageStore(
                     if (!temporary.renameTo(target)) throw IllegalStateException("Unable to atomically store image")
                     createdTarget = true
                 }
-                val stored = persistAsset(
-                    ImageAssetEntity(newAssetId(), target.absolutePath, sha256, kind.name, now()),
-                )
-                validateStored(stored, sha256)
+                val candidate = ImageAssetEntity(newAssetId(), target.absolutePath, sha256, kind.name, now())
+                var stored: ImageAssetEntity? = null
+                withContext(NonCancellable) {
+                    stored = persistAsset(candidate)
+                    if (stored?.id == candidate.id) createdAsset = stored
+                }
+                val delivered = validateStored(checkNotNull(stored), sha256)
+                beforeAssetDelivery(delivered)
+                coroutineContext.ensureActive()
+                delivered
             } catch (error: Throwable) {
                 if (!confirmed.isRecycled) confirmed.recycle()
                 withContext(NonCancellable) {
                     temporary.delete()
+                    createdAsset?.let { owned ->
+                        runCatching {
+                            if (imageAssetDao.referenceCount(owned.id) == 0 && imageAssetDao.deleteIfUnreferenced(owned.id) == 1) {
+                                managedFileOrNull(owned.localPath)?.delete()
+                            }
+                        }
+                    }
                     if (createdTarget) {
                         val hasDatabaseOwner = target?.let { file ->
                             try {

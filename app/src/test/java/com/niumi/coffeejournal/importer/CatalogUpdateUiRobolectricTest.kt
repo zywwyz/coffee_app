@@ -73,6 +73,26 @@ class CatalogUpdateUiRobolectricTest {
         }
     }
 
+    @Test
+    fun `loading update exposes cancel action`() {
+        var cancelled = false
+        compose.setContent {
+            CoffeeTheme {
+                CatalogScreen(
+                    state = catalogState(), onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {},
+                    onSaveBrand = {}, onSaveItem = {}, onSetItemStatus = { _, _ -> }, onClearError = {},
+                    updateState = CatalogUpdateUiState(
+                        phase = UpdatePhase.LOADING, brandId = "brand", brandName = "瑞幸",
+                    ),
+                    onDismissUpdate = { cancelled = true },
+                )
+            }
+        }
+
+        compose.onNodeWithText("取消更新").performClick()
+        compose.runOnIdle { org.junit.Assert.assertTrue(cancelled) }
+    }
+
     private fun catalogState() = CatalogUiState(
         tab = CatalogTab.CHAINS,
         brandOverviews = listOf(BrandOverview(brand(), 2, 1_700_000_000_000)),

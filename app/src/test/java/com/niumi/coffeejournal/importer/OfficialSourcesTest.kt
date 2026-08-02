@@ -1,6 +1,7 @@
 package com.niumi.coffeejournal.importer
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.delay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -87,8 +88,55 @@ class OfficialSourcesTest {
 
     @Test
     fun `custom public source only accepts explicit https url and never guesses parser`() = runBlocking {
-        assertEquals(FailureKind.HTTP, (CustomCatalogSource("custom", "http://example.com/menu", FakePageClient("x")).fetch() as SourceResult.Failure).kind)
-        assertEquals(FailureKind.PARSE_CHANGED, (CustomCatalogSource("custom", "https://example.com/menu", FakePageClient("<html></html>")).fetch() as SourceResult.Failure).kind)
+        val invalid = FakePageClient("x")
+        assertEquals(FailureKind.HTTP, (CustomCatalogSource("custom", "http://example.com/menu", invalid).fetch() as SourceResult.Failure).kind)
+        val valid = FakePageClient("<html></html>")
+        assertEquals(FailureKind.NO_PUBLIC_CATALOG, (CustomCatalogSource("custom", "https://example.com/menu", valid).fetch() as SourceResult.Failure).kind)
+        assertEquals(0, invalid.getCalls + valid.getCalls)
+    }
+
+    @Test
+    fun `mstand total byte and candidate budgets fail without partial success`() = runBlocking {
+        val first = fixture("mstand-product.html").replace("jp-totalpages=\"1\"", "jp-totalpages=\"2\"")
+        val bytesClient = FakePageClient(first, postBody = fixture("mstand-page2.json"), responseBytes = 100)
+        assertEquals(FailureKind.HTTP, (MStandCatalogSource(bytesClient, maxTotalBytes = 150).fetch() as SourceResult.Failure).kind)
+
+        val itemClient = FakePageClient(first, postBody = fixture("mstand-page2.json"))
+        assertEquals(FailureKind.HTTP, (MStandCatalogSource(itemClient, maxCandidates = 1).fetch() as SourceResult.Failure).kind)
+
+        val pagesClient = FakePageClient(first.replace("jp-totalpages=\"2\"", "jp-totalpages=\"11\""))
+        assertEquals(FailureKind.HTTP, (MStandCatalogSource(pagesClient, maxPages = 10).fetch() as SourceResult.Failure).kind)
+        assertEquals(0, pagesClient.postCalls)
+    }
+
+    @Test
+    fun `mstand total wall timeout returns failure without review data`() = runBlocking {
+        val client = FakePageClient(fixture("mstand-product.html"), delayMillis = 100)
+        val result = MStandCatalogSource(client, maxWallMillis = 10).fetch()
+        assertEquals(FailureKind.HTTP, (result as SourceResult.Failure).kind)
+    }
+
+    @Test
+    fun `mstand wall budget also uses injectable monotonic clock`() = runBlocking {
+        var clockReads = 0
+        val source = MStandCatalogSource(
+            FakePageClient(fixture("mstand-product.html")),
+            maxWallMillis = 30,
+            monotonicMillis = { if (clockReads++ == 0) 0 else 31 },
+        )
+        assertEquals(FailureKind.HTTP, (source.fetch() as SourceResult.Failure).kind)
+    }
+
+    @Test
+    fun `malformed json node types are parse changed`() = runBlocking {
+        val first = fixture("mstand-product.html").replace("jp-totalpages=\"1\"", "jp-totalpages=\"2\"")
+        listOf(
+            """{"IsSuccess":{},"Data":[]}""",
+            """{"IsSuccess":[],"Data":{}}""",
+        ).forEach { malformed ->
+            val result = MStandCatalogSource(FakePageClient(first, postBody = malformed)).fetch()
+            assertEquals(FailureKind.PARSE_CHANGED, (result as SourceResult.Failure).kind)
+        }
     }
 
     @Test
@@ -112,14 +160,19 @@ private class FakePageClient(
     private val body: String = "",
     private val error: PublicPageException? = null,
     private val postBody: String = "",
+    private val responseBytes: Int? = null,
+    private val delayMillis: Long = 0,
 ) : PublicPageClient {
+    var getCalls = 0
     var postCalls = 0
     override suspend fun getText(request: PublicPageRequest): PublicPageResponse {
+        getCalls++
+        if (delayMillis > 0) delay(delayMillis)
         error?.let { throw it }
-        return PublicPageResponse(request.url, body)
+        return PublicPageResponse(request.url, body, responseBytes ?: body.toByteArray().size)
     }
     override suspend fun postForm(request: PublicPageRequest, fields: Map<String, String>): PublicPageResponse {
         postCalls++
-        return PublicPageResponse(request.url, postBody)
+        return PublicPageResponse(request.url, postBody, responseBytes ?: postBody.toByteArray().size)
     }
 }

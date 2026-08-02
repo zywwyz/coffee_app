@@ -1,6 +1,7 @@
 package com.niumi.coffeejournal.importer
 
 import java.io.ByteArrayInputStream
+import java.net.InetAddress
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -18,6 +19,40 @@ class OfficialImageImporterTest {
         assertFalse(OfficialImagePolicy.accepts("seed-chain-luckin", "https://mstand.cn/a.webp"))
         assertTrue(OfficialImagePolicy.accepts("seed-chain-mstand", "https://mstand.cn/userfiles/a.jpg"))
         assertFalse(OfficialImagePolicy.accepts("custom", "https://example.com/a.jpg"))
+        assertFalse(OfficialImagePolicy.accepts("seed-chain-luckin", "https://img.luckincoffee.com:8443/a.jpg"))
+    }
+
+    @Test
+    fun `safe image downloader validates dns pins address and enforces response`() = runBlocking {
+        val pinned = mutableListOf<List<InetAddress>>()
+        val transport = PinnedHttpTransport { _, addresses, _ ->
+            pinned += addresses
+            SafeHttpResponse(200, emptyMap(), byteArrayOf(1, 2), "image/png")
+        }
+        val public = InetAddress.getByName("93.184.216.34")
+        val downloader = SafeOfficialImageDownloader(
+            resolver = NetworkResolver { listOf(public) }, transport = transport, maxBytes = 2,
+        )
+        assertArrayEquals(byteArrayOf(1, 2), downloader.download("https://img.luckincoffee.com/a.png").bytes)
+        assertEquals(listOf(listOf(public)), pinned)
+
+        assertThrows(OfficialImageException::class.java) {
+            runBlocking {
+                SafeOfficialImageDownloader(
+                    resolver = NetworkResolver { listOf(InetAddress.getByName("10.0.0.1")) }, transport = transport,
+                ).download("https://img.luckincoffee.com/a.png")
+            }
+        }
+        assertThrows(OfficialImageException::class.java) {
+            runBlocking {
+                SafeOfficialImageDownloader(
+                    resolver = NetworkResolver { listOf(public) },
+                    transport = PinnedHttpTransport { _, _, _ -> SafeHttpResponse(200, emptyMap(), ByteArray(3), "image/png") },
+                    maxBytes = 2,
+                ).download("https://img.luckincoffee.com/a.png")
+            }
+        }
+        Unit
     }
 
     @Test

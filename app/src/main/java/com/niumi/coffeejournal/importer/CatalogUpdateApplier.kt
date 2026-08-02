@@ -42,6 +42,7 @@ class CatalogUpdateApplier(
     private val database: CoffeeDatabase,
     private val imageImporter: OfficialImageImporter,
     private val idGenerator: () -> String = { UUID.randomUUID().toString() },
+    private val afterImageDelivered: suspend (String) -> Unit = {},
 ) : CatalogUpdateGateway {
     override suspend fun review(brandId: String, result: SourceResult.Success): CatalogReview {
         val current = database.catalogItemDao().observeByBrand(brandId).first().map(CatalogItemEntity::toDomain)
@@ -54,6 +55,7 @@ class CatalogUpdateApplier(
         }
         val selected = review.changes.filter { it.key in selectedKeys }
         val importedByKey = mutableMapOf<String, ImportedCandidateImage>()
+        val deliveredAssets = mutableSetOf<String>()
         val oldAssetsToRelease = mutableSetOf<String>()
         var fallbackCount = 0
         try {
@@ -69,7 +71,11 @@ class CatalogUpdateApplier(
                     fallbackCount++
                     null
                 }
-                imported?.let { importedByKey[change.key] = ImportedCandidateImage(it, imageUrl) }
+                imported?.let { assetId ->
+                    deliveredAssets += assetId
+                    afterImageDelivered(assetId)
+                    importedByKey[change.key] = ImportedCandidateImage(assetId, imageUrl)
+                }
             }
             database.withTransaction {
                 selected.forEach { change ->
@@ -130,7 +136,7 @@ class CatalogUpdateApplier(
             }
         } catch (error: Throwable) {
             withContext(NonCancellable) {
-                importedByKey.values.map { it.assetId }.distinct().forEach { assetId ->
+                deliveredAssets.forEach { assetId ->
                     runCatching { imageImporter.cleanup(assetId) }
                 }
             }

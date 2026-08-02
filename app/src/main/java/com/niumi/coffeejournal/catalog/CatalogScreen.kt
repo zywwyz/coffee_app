@@ -306,6 +306,11 @@ private fun CatalogUpdateDialog(
             title = { Text(if (state.phase == UpdatePhase.LOADING) "正在读取官网" else "正在应用更新") },
             text = { Text("${state.brandName.orEmpty()}，请稍候…") },
             confirmButton = {},
+            dismissButton = {
+                if (state.phase == UpdatePhase.LOADING) {
+                    TextButton(onClick = onDismiss) { Text("取消更新") }
+                }
+            },
         )
         UpdatePhase.FAILURE -> AlertDialog(
             onDismissRequest = onDismiss,

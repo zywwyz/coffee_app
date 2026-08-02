@@ -3,15 +3,11 @@ package com.niumi.coffeejournal.importer
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
-import java.net.ConnectException
-import java.net.SocketTimeoutException
 import java.net.URI
 import java.net.URLEncoder
-import java.net.URL
-import java.net.UnknownHostException
-import javax.net.ssl.HttpsURLConnection
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import com.niumi.coffeejournal.core.model.MaintenanceMode
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -26,7 +22,11 @@ data class PublicPageRequest(
     val maxBytes: Int = MAX_PAGE_BYTES,
 )
 
-data class PublicPageResponse(val finalUrl: String, val body: String)
+data class PublicPageResponse(
+    val finalUrl: String,
+    val body: String,
+    val decodedBytes: Int = body.toByteArray(Charsets.UTF_8).size,
+)
 
 interface PublicPageClient {
     suspend fun getText(request: PublicPageRequest): PublicPageResponse
@@ -56,7 +56,7 @@ enum class OfficialPagePolicy(
 
     fun accepts(rawUrl: String): Boolean {
         val uri = try { URI(rawUrl) } catch (_: Exception) { return false }
-        if (!uri.scheme.equals("https", ignoreCase = true) || uri.userInfo != null || uri.fragment != null) return false
+        if (!uri.isSafeHttpsAuthority()) return false
         val host = uri.host?.lowercase() ?: return false
         if (this != CUSTOM && host !in hosts) return false
         if (this == CUSTOM && host.isBlank()) return false
@@ -67,104 +67,62 @@ enum class OfficialPagePolicy(
 class SafeOfficialHttpClient(
     private val connectTimeoutMillis: Int = 8_000,
     private val readTimeoutMillis: Int = 12_000,
+    private val resolver: NetworkResolver = SystemNetworkResolver,
+    private val transport: PinnedHttpTransport = HttpsUrlPinnedTransport(connectTimeoutMillis, readTimeoutMillis),
 ) : PublicPageClient {
-    override suspend fun getText(request: PublicPageRequest): PublicPageResponse = withContext(Dispatchers.IO) {
-        if (!request.policy.accepts(request.url)) throw PublicPageException.UnsafeUrl()
-        var current = request.url
-        repeat(MAX_REDIRECTS + 1) { redirectCount ->
-            if (!request.policy.accepts(current)) throw PublicPageException.UnsafeUrl()
-            val connection = try {
-                (URL(current).openConnection() as HttpsURLConnection).apply {
-                    instanceFollowRedirects = false
-                    connectTimeout = connectTimeoutMillis
-                    readTimeout = readTimeoutMillis
-                    useCaches = false
-                    doOutput = false
-                    setRequestProperty("Accept", "text/html,application/xhtml+xml")
-                    setRequestProperty("User-Agent", "CoffeeJournal/1.0 public-catalog")
-                    setRequestProperty("Cookie", "")
-                }
-            } catch (error: Exception) {
-                throw error.toPublicPageException()
-            }
-            try {
-                val status = connection.responseCode
-                if (status in REDIRECT_CODES) {
-                    if (redirectCount == MAX_REDIRECTS) throw PublicPageException.Http(status, "重定向次数过多")
-                    val location = connection.getHeaderField("Location")
-                        ?: throw PublicPageException.Http(status, "重定向缺少目标")
-                    current = URI(current).resolve(location).toString()
-                    if (!request.policy.accepts(current)) throw PublicPageException.UnsafeUrl()
-                    return@repeat
-                }
-                if (status !in 200..299) throw PublicPageException.Http(status)
-                val contentType = connection.contentType.orEmpty().lowercase()
-                if (!contentType.startsWith("text/html") && !contentType.startsWith("application/xhtml+xml")) {
-                    throw PublicPageException.Http(status, "官网返回了非网页内容")
-                }
-                val declared = connection.contentLength.toLong()
-                if (declared > request.maxBytes) throw PublicPageException.TooLarge()
-                val body = connection.inputStream.use { it.readBounded(request.maxBytes).toString(Charsets.UTF_8) }
-                return@withContext PublicPageResponse(current, body)
-            } catch (error: PublicPageException) {
-                throw error
-            } catch (error: Exception) {
-                throw error.toPublicPageException()
-            } finally {
-                connection.disconnect()
-            }
-        }
-        throw PublicPageException.Http(message = "重定向失败")
-    }
+    override suspend fun getText(request: PublicPageRequest): PublicPageResponse = execute(
+        request, "GET", null, setOf("text/html", "application/xhtml+xml"),
+    )
 
     override suspend fun postForm(
         request: PublicPageRequest,
         fields: Map<String, String>,
-    ): PublicPageResponse = withContext(Dispatchers.IO) {
+    ): PublicPageResponse {
+        val encoded = fields.entries.joinToString("&") { (key, value) ->
+            "${URLEncoder.encode(key, "UTF-8") }=${URLEncoder.encode(value, "UTF-8") }"
+        }.toByteArray(Charsets.UTF_8)
+        if (encoded.size > MAX_FORM_BYTES) throw PublicPageException.Http(message = "分页请求过大")
+        return execute(request, "POST", encoded, setOf("application/json", "text/json"))
+    }
+
+    private suspend fun execute(
+        request: PublicPageRequest,
+        method: String,
+        body: ByteArray?,
+        acceptedTypes: Set<String>,
+    ): PublicPageResponse {
         if (!request.policy.accepts(request.url)) throw PublicPageException.UnsafeUrl()
-        val connection = try {
-            (URL(request.url).openConnection() as HttpsURLConnection).apply {
-                instanceFollowRedirects = false
-                connectTimeout = connectTimeoutMillis
-                readTimeout = readTimeoutMillis
-                useCaches = false
-                doOutput = true
-                requestMethod = "POST"
-                setRequestProperty("Accept", "application/json")
-                setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
-                setRequestProperty("User-Agent", "CoffeeJournal/1.0 public-catalog")
-                setRequestProperty("Cookie", "")
-            }
-        } catch (error: Exception) {
-            throw error.toPublicPageException()
-        }
-        try {
-            val encoded = fields.entries.joinToString("&") { (key, value) ->
-                "${URLEncoder.encode(key, "UTF-8") }=${URLEncoder.encode(value, "UTF-8") }"
-            }.toByteArray(Charsets.UTF_8)
-            if (encoded.size > MAX_FORM_BYTES) throw PublicPageException.Http(message = "分页请求过大")
-            connection.setFixedLengthStreamingMode(encoded.size)
-            connection.outputStream.use { it.write(encoded) }
-            val status = connection.responseCode
-            if (status in REDIRECT_CODES) throw PublicPageException.UnsafeUrl("分页请求不接受重定向")
-            if (status !in 200..299) throw PublicPageException.Http(status)
-            val contentType = connection.contentType.orEmpty().lowercase()
-            if (!contentType.startsWith("application/json") && !contentType.startsWith("text/json")) {
-                throw PublicPageException.Http(status, "官网分页返回了非 JSON 内容")
-            }
-            val declared = connection.contentLength.toLong()
-            if (declared > request.maxBytes) throw PublicPageException.TooLarge()
-            PublicPageResponse(
-                request.url,
-                connection.inputStream.use { it.readBounded(request.maxBytes).toString(Charsets.UTF_8) },
+        var current = request.url
+        val originalHost = URI(current).host.lowercase()
+        repeat(MAX_REDIRECTS + 1) { redirectCount ->
+            if (!request.policy.accepts(current)) throw PublicPageException.UnsafeUrl()
+            val uri = URI(current)
+            if (!uri.host.equals(originalHost, true)) throw PublicPageException.UnsafeUrl("重定向离开官方域名")
+            val addresses = resolveGlobalAddresses(uri, resolver)
+            val headers = mutableMapOf(
+                "Accept" to if (method == "POST") "application/json" else "text/html,application/xhtml+xml",
+                "User-Agent" to "CoffeeJournal/1.0 public-catalog",
             )
-        } catch (error: PublicPageException) {
-            throw error
-        } catch (error: Exception) {
-            throw error.toPublicPageException()
-        } finally {
-            connection.disconnect()
+            if (body != null) headers["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
+            val response = try {
+                transport.execute(SafeHttpRequest(method, current, headers, body), addresses, request.maxBytes)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) { throw error.toPublicNetworkException() }
+            if (response.body.size > request.maxBytes) throw PublicPageException.TooLarge()
+            if (response.status in REDIRECT_CODES) {
+                if (method != "GET") throw PublicPageException.UnsafeUrl("分页请求不接受重定向")
+                if (redirectCount == MAX_REDIRECTS) throw PublicPageException.Http(response.status, "重定向次数过多")
+                val location = response.headers["location"] ?: throw PublicPageException.Http(response.status, "重定向缺少目标")
+                current = uri.resolve(location).toString()
+                return@repeat
+            }
+            if (response.status !in 200..299) throw PublicPageException.Http(response.status)
+            val type = response.contentType.substringBefore(';').trim().lowercase()
+            if (type !in acceptedTypes) throw PublicPageException.Http(response.status, "官网返回内容类型无效")
+            return PublicPageResponse(current, response.body.toString(Charsets.UTF_8), response.body.size)
         }
+        throw PublicPageException.Http(message = "重定向失败")
     }
 }
 
@@ -196,21 +154,47 @@ class LuckinCatalogSource(
 class MStandCatalogSource(
     private val client: PublicPageClient,
     private val now: () -> Long = System::currentTimeMillis,
+    private val maxWallMillis: Long = 30_000,
+    private val maxTotalBytes: Int = 6 * 1024 * 1024,
+    private val maxPages: Int = 10,
+    private val maxCandidates: Int = 500,
+    private val monotonicMillis: () -> Long = { System.nanoTime() / 1_000_000 },
 ) : CatalogSource {
     override val brandKey = "seed-chain-mstand"
     override suspend fun fetch(): SourceResult = try {
-        val first = client.getText(PublicPageRequest(MSTAND_CATEGORY_URL, OfficialPagePolicy.MSTAND))
-        val page = parseMStand(first.body)
-        val items = page.items.toMutableList()
-        for (pageIndex in 1 until page.totalPages) {
-            val response = client.postForm(
-                PublicPageRequest(MSTAND_DATA_URL, OfficialPagePolicy.MSTAND),
-                mstandPageFields(pageIndex),
-            )
-            items += parseMStandData(response.body)
+        withTimeout(maxWallMillis) {
+            val startedAt = monotonicMillis()
+            fun checkWallBudget() {
+                if (monotonicMillis() - startedAt > maxWallMillis) {
+                    throw PublicPageException.Http(message = "M Stand 官网更新超过总时间限制")
+                }
+            }
+            val first = client.getText(PublicPageRequest(MSTAND_CATEGORY_URL, OfficialPagePolicy.MSTAND))
+            checkWallBudget()
+            val page = parseMStand(first.body)
+            if (page.totalPages > maxPages) throw PublicPageException.TooLarge()
+            var totalBytes = first.decodedBytes
+            if (totalBytes > maxTotalBytes) throw PublicPageException.TooLarge()
+            val items = page.items.toMutableList()
+            if (items.size > maxCandidates) throw PublicPageException.TooLarge()
+            for (pageIndex in 1 until page.totalPages) {
+                val response = client.postForm(
+                    PublicPageRequest(MSTAND_DATA_URL, OfficialPagePolicy.MSTAND),
+                    mstandPageFields(pageIndex),
+                )
+                checkWallBudget()
+                totalBytes += response.decodedBytes
+                if (totalBytes > maxTotalBytes) throw PublicPageException.TooLarge()
+                items += parseMStandData(response.body)
+                if (items.size > maxCandidates) throw PublicPageException.TooLarge()
+            }
+            ensureUniqueCandidates(items)
+            SourceResult.Success(now(), first.finalUrl, items)
         }
-        ensureUniqueCandidates(items)
-        SourceResult.Success(now(), first.finalUrl, items)
+    } catch (_: TimeoutCancellationException) {
+        SourceResult.Failure(FailureKind.HTTP, "M Stand 官网更新超过总时间限制，请稍后重试。")
+    } catch (error: CancellationException) {
+        throw error
     } catch (error: CatalogParseException) {
         SourceResult.Failure(FailureKind.PARSE_CHANGED, error.message ?: "M Stand 页面结构已变化")
     } catch (error: PublicPageException) {
@@ -241,15 +225,10 @@ class CustomCatalogSource(
         if (!OfficialPagePolicy.CUSTOM.accepts(url)) {
             return SourceResult.Failure(FailureKind.HTTP, "自定义来源必须是明确配置的 HTTPS 地址")
         }
-        return try {
-            client.getText(PublicPageRequest(url, OfficialPagePolicy.CUSTOM))
-            SourceResult.Failure(
-                FailureKind.PARSE_CHANGED,
-                "自定义网页没有专用解析器，请使用截图导入或手工录入。",
-            )
-        } catch (error: PublicPageException) {
-            error.toFailure()
-        }
+        return SourceResult.Failure(
+            FailureKind.NO_PUBLIC_CATALOG,
+            "自定义网页没有专用解析器，未发起网络请求；请使用截图导入或手工录入。",
+        )
     }
 }
 
@@ -332,7 +311,7 @@ private fun parseMStandData(raw: String): List<CatalogCandidate> {
     val root = try { Json.parseToJsonElement(raw).jsonObject } catch (_: Exception) {
         throw CatalogParseException("M Stand 分页数据无法解析")
     }
-    if (root["IsSuccess"]?.jsonPrimitive?.contentOrNull != "true") {
+    if (root.string("IsSuccess") != "true") {
         throw CatalogParseException("M Stand 分页请求未成功")
     }
     val data = root["Data"] as? JsonArray ?: throw CatalogParseException("M Stand 分页产品缺失")
@@ -389,14 +368,11 @@ private fun PublicPageException.toFailure(): SourceResult.Failure = when (this) 
     else -> SourceResult.Failure(FailureKind.HTTP, message ?: "官网请求失败")
 }
 
-private fun Exception.toPublicPageException(): PublicPageException = when (this) {
-    is PublicPageException -> this
-    is UnknownHostException, is ConnectException, is SocketTimeoutException -> PublicPageException.Offline(message ?: "网络不可用")
-    else -> PublicPageException.Http(message = message ?: "请求失败")
+private fun JsonObject.string(key: String): String? = try {
+    this[key]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+} catch (_: IllegalArgumentException) {
+    throw CatalogParseException("字段 $key 类型无效")
 }
-
-private fun JsonObject.string(key: String): String? = this[key]?.jsonPrimitive?.contentOrNull
-    ?.trim()?.takeIf { it.isNotEmpty() }
 
 private fun ensureUniqueCandidates(items: List<CatalogCandidate>) {
     if (items.isEmpty()) throw CatalogParseException("官网产品列表为空")

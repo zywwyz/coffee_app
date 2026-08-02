@@ -184,6 +184,29 @@ class ImageStoreTest {
     }
 
     @Test
+    fun `cancellation after row and file creation cleans asset before id delivery`() = runBlocking {
+        val source = Uri.fromFile(bitmapFile("return-boundary", 20, 20))
+        val cancellingStore = LocalImageStore(
+            context = context,
+            imageAssetDao = database.imageAssetDao(),
+            newAssetId = { "boundary-asset" },
+            beforeAssetDelivery = {
+                currentCoroutineContext().cancel()
+                yield()
+            },
+        )
+
+        try {
+            cancellingStore.importWhole(source, ImageKind.PRODUCT)
+            fail("expected cancellation")
+        } catch (_: kotlinx.coroutines.CancellationException) {
+        }
+
+        assertEquals(null, database.imageAssetDao().get("boundary-asset"))
+        assertTrue(File(context.filesDir, "images").listFiles().isNullOrEmpty())
+    }
+
+    @Test
     fun `delete waits for same store import finalization then removes a consistent row and file`() = runBlocking {
         val persistStarted = CompletableDeferred<Unit>()
         val releasePersist = CompletableDeferred<Unit>()

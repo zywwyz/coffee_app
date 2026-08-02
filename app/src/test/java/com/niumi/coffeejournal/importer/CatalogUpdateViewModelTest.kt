@@ -6,6 +6,8 @@ import com.niumi.coffeejournal.core.model.MaintenanceMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.awaitCancellation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -53,6 +55,29 @@ class CatalogUpdateViewModelTest {
         assertEquals(UpdatePhase.FAILURE, viewModel.uiState.value.phase)
         assertEquals(FailureKind.PARSE_CHANGED, viewModel.uiState.value.failureKind)
         assertTrue(viewModel.uiState.value.showFallbackActions)
+    }
+
+    @Test
+    fun `dismiss during loading promptly cancels fetch and returns idle`() {
+        var cancelled = false
+        val source = object : CatalogSource {
+            override val brandKey = "brand"
+            override suspend fun fetch(): SourceResult = try {
+                awaitCancellation()
+            } catch (error: CancellationException) {
+                cancelled = true
+                throw error
+            }
+        }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val viewModel = CatalogUpdateViewModel(FakeSourceProvider(source), FakeCatalogUpdateGateway(review()), scope)
+
+        viewModel.requestUpdate(brand())
+        assertEquals(UpdatePhase.LOADING, viewModel.uiState.value.phase)
+        viewModel.dismiss()
+
+        assertTrue(cancelled)
+        assertEquals(UpdatePhase.IDLE, viewModel.uiState.value.phase)
     }
 
     private fun brand() = Brand(

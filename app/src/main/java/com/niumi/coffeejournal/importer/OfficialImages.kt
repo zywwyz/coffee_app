@@ -10,10 +10,12 @@ import java.io.FileOutputStream
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.URI
-import java.net.URL
 import java.net.UnknownHostException
-import javax.net.ssl.HttpsURLConnection
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 data class DownloadedOfficialImage(val bytes: ByteArray, val mimeType: String)
@@ -39,7 +41,7 @@ object OfficialImagePolicy {
 
     fun accepts(brandId: String, rawUrl: String): Boolean {
         val uri = try { URI(rawUrl) } catch (_: Exception) { return false }
-        if (!uri.scheme.equals("https", true) || uri.userInfo != null || uri.fragment != null) return false
+        if (!uri.isSafeHttpsAuthority()) return false
         return uri.host?.lowercase() in allowedHosts[brandId].orEmpty()
     }
 }
@@ -71,52 +73,52 @@ class SafeOfficialImageDownloader(
     private val connectTimeoutMillis: Int = 8_000,
     private val readTimeoutMillis: Int = 12_000,
     private val maxBytes: Int = 5 * 1024 * 1024,
+    private val resolver: NetworkResolver = SystemNetworkResolver,
+    private val transport: PinnedHttpTransport = HttpsUrlPinnedTransport(connectTimeoutMillis, readTimeoutMillis),
 ) : OfficialImageDownloader {
-    override suspend fun download(url: String): DownloadedOfficialImage = withContext(Dispatchers.IO) {
+    override suspend fun download(url: String): DownloadedOfficialImage {
         val originalHost = safeHttpsUri(url).host.lowercase()
         var current = url
         repeat(4) { redirectCount ->
             val uri = safeHttpsUri(current)
             if (!uri.host.equals(originalHost, true)) throw OfficialImageException("图片重定向离开官方域名")
-            val connection = try {
-                (URL(current).openConnection() as HttpsURLConnection).apply {
-                    instanceFollowRedirects = false
-                    connectTimeout = connectTimeoutMillis
-                    readTimeout = readTimeoutMillis
-                    useCaches = false
-                    doOutput = false
-                    setRequestProperty("Accept", "image/avif,image/webp,image/png,image/jpeg")
-                    setRequestProperty("User-Agent", "CoffeeJournal/1.0 official-image")
-                    setRequestProperty("Cookie", "")
-                }
+            val addresses = try { resolveGlobalAddresses(uri, resolver) }
+            catch (error: Exception) { throw error.toOfficialImageException() }
+            val response = try {
+                transport.execute(
+                    SafeHttpRequest(
+                        "GET", current,
+                        mapOf(
+                            "Accept" to "image/avif,image/webp,image/png,image/jpeg",
+                            "User-Agent" to "CoffeeJournal/1.0 official-image",
+                        ),
+                    ),
+                    addresses,
+                    maxBytes,
+                )
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 throw error.toOfficialImageException()
             }
             try {
-                val status = connection.responseCode
+                val status = response.status
                 if (status in IMAGE_REDIRECT_CODES) {
                     if (redirectCount == 3) throw OfficialImageException("图片重定向次数过多")
-                    val target = connection.getHeaderField("Location")
+                    val target = response.headers["location"]
                         ?: throw OfficialImageException("图片重定向缺少目标")
                     current = URI(current).resolve(target).toString()
                     return@repeat
                 }
                 if (status !in 200..299) throw OfficialImageException("官方图片请求失败：HTTP $status")
-                val declared = connection.contentLength.toLong()
-                if (declared > maxBytes) throw OfficialImageException("官方图片超过大小限制")
-                val mime = connection.contentType.orEmpty()
-                val bytes = connection.inputStream.use {
-                    try { it.readBounded(maxBytes) } catch (_: PublicPageException.TooLarge) {
-                        throw OfficialImageException("官方图片超过大小限制")
-                    }
-                }
-                return@withContext DownloadedOfficialImage(bytes, mime)
+                if (response.body.size > maxBytes) throw OfficialImageException("官方图片超过大小限制")
+                val mime = response.contentType.substringBefore(';').trim().lowercase()
+                if (mime !in SUPPORTED_IMAGE_TYPES) throw OfficialImageException("官方地址返回的不是支持的图片")
+                return DownloadedOfficialImage(response.body, mime)
             } catch (error: OfficialImageException) {
                 throw error
             } catch (error: Exception) {
                 throw error.toOfficialImageException()
-            } finally {
-                connection.disconnect()
             }
         }
         throw OfficialImageException("官方图片请求失败")
@@ -126,6 +128,7 @@ class SafeOfficialImageDownloader(
 class LocalOfficialImageAssetStore(
     context: Context,
     private val imageStore: ImageStore,
+    private val beforeAssetDelivery: suspend (String) -> Unit = {},
 ) : OfficialImageAssetStore {
     private val directory = File(context.applicationContext.cacheDir, "official-image-import")
 
@@ -139,10 +142,20 @@ class LocalOfficialImageAssetStore(
                 }
             }
         }
+        var assetId: String? = null
         return try {
-            imageStore.importWhole(Uri.fromFile(temporary), ImageKind.PRODUCT).id
+            assetId = imageStore.importWhole(Uri.fromFile(temporary), ImageKind.PRODUCT).id
+            val owned = checkNotNull(assetId)
+            beforeAssetDelivery(owned)
+            currentCoroutineContext().ensureActive()
+            owned
+        } catch (error: Throwable) {
+            withContext(NonCancellable) {
+                assetId?.let { runCatching { imageStore.deleteIfUnreferenced(it) } }
+            }
+            throw error
         } finally {
-            withContext(Dispatchers.IO) { temporary.delete() }
+            withContext(NonCancellable + Dispatchers.IO) { runCatching { temporary.delete() } }
         }
     }
 
@@ -159,7 +172,7 @@ private fun androidImageBounds(bytes: ByteArray): ImageBounds {
 
 private fun safeHttpsUri(raw: String): URI {
     val uri = try { URI(raw) } catch (_: Exception) { throw OfficialImageException("图片地址无效") }
-    if (!uri.scheme.equals("https", true) || uri.host.isNullOrBlank() || uri.userInfo != null || uri.fragment != null) {
+    if (!uri.isSafeHttpsAuthority()) {
         throw OfficialImageException("图片地址必须是 HTTPS")
     }
     return uri
@@ -167,6 +180,7 @@ private fun safeHttpsUri(raw: String): URI {
 
 private fun Exception.toOfficialImageException(): OfficialImageException = when (this) {
     is OfficialImageException -> this
+    is PublicPageException -> OfficialImageException(message ?: "官方图片地址不安全")
     is UnknownHostException, is ConnectException, is SocketTimeoutException -> OfficialImageException("无法连接官方图片地址")
     else -> OfficialImageException(message ?: "官方图片请求失败")
 }
