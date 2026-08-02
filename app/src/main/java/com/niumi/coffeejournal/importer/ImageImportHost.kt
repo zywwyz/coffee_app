@@ -9,12 +9,17 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.core.image.ImageStore
 import kotlinx.coroutines.CancellationException
@@ -33,15 +38,35 @@ data class ImportedAssetSelection(
 typealias AssetImportRequester = (
     ImageKind,
     ImageImportMode,
+    String?,
     suspend (ImportedAssetSelection) -> Boolean,
 ) -> Unit
+
+typealias ImagePicker = (ImageImportMode, (Uri?) -> Unit) -> Unit
+
+data class ScreenshotReviewRequest(
+    val source: Uri,
+    val recognizer: ScreenshotTextRecognizer,
+    val imageStore: ImageStore,
+    val kind: ImageKind,
+    val onConfirmed: suspend (ConfirmedScreenshotImport) -> Boolean,
+    val onCancel: () -> Unit,
+)
+
+typealias ScreenshotReviewContent = @Composable (ScreenshotReviewRequest) -> Unit
 
 suspend fun associateImportedAsset(
     imageStore: ImageStore,
     selection: ImportedAssetSelection,
+    previousAssetId: String? = null,
     association: suspend (ImportedAssetSelection) -> Boolean,
 ): Boolean = try {
-    if (association(selection)) true else {
+    if (association(selection)) {
+        previousAssetId?.takeIf { it != selection.assetId }?.let { oldAssetId ->
+            runCatching { imageStore.deleteIfUnreferenced(oldAssetId) }
+        }
+        true
+    } else {
         runCatching { imageStore.deleteIfUnreferenced(selection.assetId) }
         false
     }
@@ -57,6 +82,18 @@ suspend fun associateImportedAsset(
 fun ImageImportHost(
     imageStore: ImageStore,
     recognizer: ScreenshotTextRecognizer,
+    pickImage: ImagePicker? = null,
+    showReviewInDialog: Boolean = true,
+    reviewContent: ScreenshotReviewContent = { request ->
+        ImportReviewScreen(
+            source = request.source,
+            recognizer = request.recognizer,
+            imageStore = request.imageStore,
+            kind = request.kind,
+            onConfirmed = request.onConfirmed,
+            onCancel = request.onCancel,
+        )
+    },
     content: @Composable (AssetImportRequester) -> Unit,
 ) {
     var pending by remember { mutableStateOf<PendingImport?>(null) }
@@ -73,10 +110,10 @@ fun ImageImportHost(
         associating = false
     }
 
-    val screenshotPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri == null) clearRequest() else selectedScreenshot = uri
+    val onScreenshotPicked: (Uri?) -> Unit = { uri ->
+        if (uri == null || pending == null) clearRequest() else selectedScreenshot = uri
     }
-    val wholeImagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    val onWholeImagePicked: (Uri?) -> Unit = { uri ->
         val request = pending
         if (uri == null || request == null) {
             clearRequest()
@@ -87,7 +124,7 @@ fun ImageImportHost(
                     val asset = imageStore.importWhole(uri, request.kind)
                     val selection = ImportedAssetSelection(asset.id)
                     associating = true
-                    if (associateImportedAsset(imageStore, selection, request.onSelected)) {
+                    if (associateImportedAsset(imageStore, selection, request.previousAssetId, request.onSelected)) {
                         clearRequest()
                     } else {
                         errorMessage = "图片未能关联到条目，已清理本次导入，请重试"
@@ -102,13 +139,25 @@ fun ImageImportHost(
             }
         }
     }
+    val screenshotPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent(), onScreenshotPicked)
+    val wholeImagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent(), onWholeImagePicked)
 
-    val requester: AssetImportRequester = { kind, mode, onSelected ->
+    fun launchPicker(mode: ImageImportMode) {
+        if (pickImage != null) {
+            pickImage(mode, if (mode == ImageImportMode.SCREENSHOT) onScreenshotPicked else onWholeImagePicked)
+        } else if (mode == ImageImportMode.SCREENSHOT) {
+            screenshotPicker.launch("image/*")
+        } else {
+            wholeImagePicker.launch("image/*")
+        }
+    }
+
+    val requester: AssetImportRequester = { kind, mode, previousAssetId, onSelected ->
         if (pending == null) {
-            pending = PendingImport(kind, mode, onSelected)
+            pending = PendingImport(kind, mode, previousAssetId, onSelected)
             when (mode) {
-                ImageImportMode.SCREENSHOT -> screenshotPicker.launch("image/*")
-                ImageImportMode.WHOLE_IMAGE -> wholeImagePicker.launch("image/*")
+                ImageImportMode.SCREENSHOT -> launchPicker(mode)
+                ImageImportMode.WHOLE_IMAGE -> launchPicker(mode)
                 ImageImportMode.ASK -> Unit
             }
         }
@@ -116,28 +165,41 @@ fun ImageImportHost(
 
     val screenshot = selectedScreenshot
     val request = pending
-    if (screenshot != null && request != null) {
-        ImportReviewScreen(
-            source = screenshot,
-            recognizer = recognizer,
-            imageStore = imageStore,
-            kind = request.kind,
-            onConfirmed = { result ->
-                associating = true
-                val selection = ImportedAssetSelection(result.imageAssetId, result.productName, result.actualPriceFen)
-                if (associateImportedAsset(imageStore, selection, request.onSelected)) {
-                    clearRequest()
-                    true
-                } else {
-                    associating = false
-                    errorMessage = "图片未能关联到产品，已清理本次裁剪，可调整后重试"
-                    false
-                }
-            },
-            onCancel = ::clearRequest,
-        )
-    } else {
+    Box(Modifier.fillMaxSize()) {
         content(requester)
+        if (screenshot != null && request != null) {
+            val reviewRequest = ScreenshotReviewRequest(
+                source = screenshot,
+                recognizer = recognizer,
+                imageStore = imageStore,
+                kind = request.kind,
+                onConfirmed = { result ->
+                    associating = true
+                    val selection = ImportedAssetSelection(result.imageAssetId, result.productName, result.actualPriceFen)
+                    if (associateImportedAsset(imageStore, selection, request.previousAssetId, request.onSelected)) {
+                            clearRequest()
+                            true
+                    } else {
+                        associating = false
+                        false
+                    }
+                },
+                onCancel = ::clearRequest,
+            )
+            if (showReviewInDialog) {
+                Dialog(
+                    onDismissRequest = {},
+                    properties = DialogProperties(
+                        dismissOnBackPress = false,
+                        dismissOnClickOutside = false,
+                        usePlatformDefaultWidth = false,
+                        decorFitsSystemWindows = false,
+                    ),
+                ) { reviewContent(reviewRequest) }
+            } else {
+                reviewContent(reviewRequest)
+            }
+        }
     }
 
     if (request?.mode == ImageImportMode.ASK && selectedScreenshot == null && !importingWhole) {
@@ -146,18 +208,18 @@ fun ImageImportHost(
             title = { Text("补充一张真实图片") },
             text = { Text("可直接选择原始全屏截图，在 App 内裁剪；也可选择已经裁好的产品图片。") },
             confirmButton = {
-                Button(onClick = { pending = request.copy(mode = ImageImportMode.SCREENSHOT); screenshotPicker.launch("image/*") }) {
+                Button(onClick = { pending = request.copy(mode = ImageImportMode.SCREENSHOT); launchPicker(ImageImportMode.SCREENSHOT) }) {
                     Text("选择完整截图")
                 }
             },
             dismissButton = {
-                OutlinedButton(onClick = { pending = request.copy(mode = ImageImportMode.WHOLE_IMAGE); wholeImagePicker.launch("image/*") }) {
+                OutlinedButton(onClick = { pending = request.copy(mode = ImageImportMode.WHOLE_IMAGE); launchPicker(ImageImportMode.WHOLE_IMAGE) }) {
                     Text("选择已裁图片")
                 }
             },
         )
     }
-    if (importingWhole || associating) {
+    if (importingWhole || associating && selectedScreenshot == null) {
         AlertDialog(
             onDismissRequest = {},
             confirmButton = {},
@@ -178,5 +240,6 @@ fun ImageImportHost(
 private data class PendingImport(
     val kind: ImageKind,
     val mode: ImageImportMode,
+    val previousAssetId: String?,
     val onSelected: suspend (ImportedAssetSelection) -> Boolean,
 )

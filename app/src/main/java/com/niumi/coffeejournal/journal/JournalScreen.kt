@@ -55,7 +55,7 @@ fun JournalFeature(
     journalRepository: JournalRepository,
     catalogRepository: CatalogRepository,
     imagePathResolver: ImagePathResolver,
-    assetImportRequester: AssetImportRequester = { _, _, _ -> },
+    assetImportRequester: AssetImportRequester = { _, _, _, _ -> },
 ) {
     val today = remember { Calendar.getInstance() }
     val journalViewModel: JournalViewModel = viewModel(
@@ -88,12 +88,14 @@ fun JournalFeature(
             onSave = journalViewModel::save,
             onBack = { editorOpen = false },
             onScreenshot = {
-                assetImportRequester(ImageKind.PRODUCT, ImageImportMode.SCREENSHOT) { selection ->
+                val previousAssetId = state.items.firstOrNull { it.id == state.editor.selectedItemId }?.imageAssetId
+                assetImportRequester(ImageKind.PRODUCT, ImageImportMode.SCREENSHOT, previousAssetId) { selection ->
                     journalViewModel.attachImportedImage(selection.assetId, selection.actualPriceFen)
                 }
             },
             onSelectImage = {
-                assetImportRequester(ImageKind.PRODUCT, ImageImportMode.WHOLE_IMAGE) { selection ->
+                val previousAssetId = state.items.firstOrNull { it.id == state.editor.selectedItemId }?.imageAssetId
+                assetImportRequester(ImageKind.PRODUCT, ImageImportMode.WHOLE_IMAGE, previousAssetId) { selection ->
                     journalViewModel.attachImportedImage(selection.assetId, null)
                 }
             },

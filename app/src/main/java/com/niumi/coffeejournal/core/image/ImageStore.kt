@@ -17,6 +17,8 @@ import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 interface ImageStore {
@@ -55,6 +57,7 @@ class LocalImageStore(
     context: Context,
     private val imageAssetDao: ImageAssetDao,
     private val now: () -> Long = System::currentTimeMillis,
+    private val newAssetId: () -> String = { UUID.randomUUID().toString() },
     private val persistAsset: suspend (ImageAssetEntity) -> ImageAssetEntity = { candidate ->
         imageAssetDao.insertIgnoringExisting(candidate)
         imageAssetDao.getBySha256(candidate.sha256)
@@ -80,13 +83,15 @@ class LocalImageStore(
         importConfirmed(source, kind) { it.bitmap }
 
     override suspend fun deleteIfUnreferenced(assetId: String): Boolean = withContext(Dispatchers.IO) {
-        val entity = imageAssetDao.get(assetId) ?: return@withContext false
-        val managedFile = managedFileOrNull(entity.localPath) ?: return@withContext false
-        if (imageAssetDao.referenceCount(assetId) != 0) return@withContext false
-        if (imageAssetDao.deleteIfUnreferenced(assetId) != 1) return@withContext false
-        if (!managedFile.exists() || managedFile.delete()) return@withContext true
-        imageAssetDao.upsert(entity)
-        false
+        MUTATION_MUTEX.withLock {
+            val entity = imageAssetDao.get(assetId) ?: return@withLock false
+            val managedFile = managedFileOrNull(entity.localPath) ?: return@withLock false
+            if (imageAssetDao.referenceCount(assetId) != 0) return@withLock false
+            if (imageAssetDao.deleteIfUnreferenced(assetId) != 1) return@withLock false
+            if (!managedFile.exists() || managedFile.delete()) return@withLock true
+            imageAssetDao.upsert(entity)
+            false
+        }
     }
 
     private suspend fun importConfirmed(
@@ -94,60 +99,62 @@ class LocalImageStore(
         kind: ImageKind,
         transform: (DecodedImage) -> Bitmap,
     ): ImageAsset = withContext(Dispatchers.IO) {
-        coroutineContext.ensureActive()
-        imageDirectory.mkdirs()
-        val decoded = decodeOriented(source)
-        val confirmed = try {
-            transform(decoded)
-        } catch (error: Throwable) {
-            decoded.bitmap.recycle()
-            throw error
-        }
-        if (confirmed !== decoded.bitmap) decoded.bitmap.recycle()
-        val temporary = File.createTempFile("confirmed-", ".tmp", imageDirectory)
-        var target: File? = null
-        var createdTarget = false
-        try {
-            FileOutputStream(temporary).use { output ->
-                if (!confirmed.compress(Bitmap.CompressFormat.WEBP, 90, output)) {
-                    throw IllegalStateException("Image encoding failed")
-                }
-                output.fd.sync()
-            }
-            confirmed.recycle()
+        MUTATION_MUTEX.withLock {
             coroutineContext.ensureActive()
-            val sha256 = sha256(temporary)
-            imageAssetDao.getBySha256(sha256)?.let { existing ->
-                temporary.delete()
-                return@withContext validateStored(existing, sha256)
+            imageDirectory.mkdirs()
+            val decoded = decodeOriented(source)
+            val confirmed = try {
+                transform(decoded)
+            } catch (error: Throwable) {
+                decoded.bitmap.recycle()
+                throw error
             }
-            target = File(imageDirectory, "$sha256.webp")
-            if (target.exists()) {
-                temporary.delete()
-            } else {
-                if (!temporary.renameTo(target)) throw IllegalStateException("Unable to atomically store image")
-                createdTarget = true
-            }
-            val stored = persistAsset(
-                ImageAssetEntity(UUID.randomUUID().toString(), target.absolutePath, sha256, kind.name, now()),
-            )
-            validateStored(stored, sha256)
-        } catch (error: Throwable) {
-            if (!confirmed.isRecycled) confirmed.recycle()
-            withContext(NonCancellable) {
-                temporary.delete()
-                if (createdTarget) {
-                    val hasDatabaseOwner = target?.let { file ->
-                        try {
-                            imageAssetDao.getBySha256(file.nameWithoutExtension) != null
-                        } catch (_: Exception) {
-                            false
-                        }
-                    } == true
-                    if (!hasDatabaseOwner) target?.delete()
+            if (confirmed !== decoded.bitmap) decoded.bitmap.recycle()
+            val temporary = File.createTempFile("confirmed-", ".tmp", imageDirectory)
+            var target: File? = null
+            var createdTarget = false
+            try {
+                FileOutputStream(temporary).use { output ->
+                    if (!confirmed.compress(Bitmap.CompressFormat.WEBP, 90, output)) {
+                        throw IllegalStateException("Image encoding failed")
+                    }
+                    output.fd.sync()
                 }
+                confirmed.recycle()
+                coroutineContext.ensureActive()
+                val sha256 = sha256(temporary)
+                imageAssetDao.getBySha256(sha256)?.let { existing ->
+                    temporary.delete()
+                    return@withLock validateStored(existing, sha256)
+                }
+                target = File(imageDirectory, "$sha256.webp")
+                if (target.exists()) {
+                    temporary.delete()
+                } else {
+                    if (!temporary.renameTo(target)) throw IllegalStateException("Unable to atomically store image")
+                    createdTarget = true
+                }
+                val stored = persistAsset(
+                    ImageAssetEntity(newAssetId(), target.absolutePath, sha256, kind.name, now()),
+                )
+                validateStored(stored, sha256)
+            } catch (error: Throwable) {
+                if (!confirmed.isRecycled) confirmed.recycle()
+                withContext(NonCancellable) {
+                    temporary.delete()
+                    if (createdTarget) {
+                        val hasDatabaseOwner = target?.let { file ->
+                            try {
+                                imageAssetDao.getBySha256(file.nameWithoutExtension) != null
+                            } catch (_: Exception) {
+                                false
+                            }
+                        } == true
+                        if (!hasDatabaseOwner) target?.delete()
+                    }
+                }
+                throw error
             }
-            throw error
         }
     }
 
@@ -198,6 +205,7 @@ class LocalImageStore(
     private companion object {
         const val MAX_DECODE_DIMENSION = 2048
         val SAFE_FILE_NAME = Regex("[0-9a-f]{64}\\.webp")
+        val MUTATION_MUTEX = Mutex()
 
         fun sampleSize(width: Int, height: Int): Int {
             var sample = 1

@@ -73,7 +73,7 @@ private fun AppNavigationContent(
     journalRepository: JournalRepository?,
     catalogRepository: CatalogRepository?,
     imagePathResolver: ImagePathResolver,
-    assetImportRequester: AssetImportRequester = { _, _, _ -> },
+    assetImportRequester: AssetImportRequester = { _, _, _, _ -> },
 ) {
     val backStack = rememberNavBackStack(Journal)
     val selectedRoot = backStack.last()
@@ -111,14 +111,14 @@ private fun AppNavigationContent(
                 }
                 entry<Catalog> {
                     if (catalogRepository != null) {
-                        CatalogFeature(catalogRepository) { _, kind, callback ->
+                        CatalogFeature(catalogRepository) { previousAssetId, kind, callback ->
                             val imageKind = when (kind) {
                                 com.niumi.coffeejournal.catalog.CatalogAssetKind.BRAND_LOGO -> ImageKind.BRAND_LOGO
                                 com.niumi.coffeejournal.catalog.CatalogAssetKind.CHAIN_PRODUCT_IMAGE -> ImageKind.PRODUCT
                                 com.niumi.coffeejournal.catalog.CatalogAssetKind.BEAN_PACKAGE -> ImageKind.BEAN_PACKAGE
                             }
                             val mode = if (imageKind == ImageKind.PRODUCT) ImageImportMode.ASK else ImageImportMode.WHOLE_IMAGE
-                            assetImportRequester(imageKind, mode) { selection ->
+                            assetImportRequester(imageKind, mode, previousAssetId) { selection ->
                                 callback(selection)
                                 true
                             }

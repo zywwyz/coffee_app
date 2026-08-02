@@ -8,9 +8,13 @@ import androidx.room.Room
 import androidx.exifinterface.media.ExifInterface
 import com.niumi.coffeejournal.core.database.BrandEntity
 import com.niumi.coffeejournal.core.database.CoffeeDatabase
+import com.niumi.coffeejournal.importer.ImportedAssetSelection
+import com.niumi.coffeejournal.importer.associateImportedAsset
 import java.io.File
 import java.io.FileOutputStream
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -101,6 +105,26 @@ class ImageStoreTest {
     }
 
     @Test
+    fun `successful replacement cleanup retains old asset while a database snapshot or catalog reference exists`() = runBlocking {
+        val old = store.importWhole(Uri.fromFile(bitmapFile("referenced-old", 32, 32)), ImageKind.BRAND_LOGO)
+        val replacement = store.importWhole(Uri.fromFile(bitmapFile("replacement", 24, 24)), ImageKind.BRAND_LOGO)
+        database.brandDao().upsert(
+            BrandEntity("brand-replacement", "CHAIN", "品牌", "品牌", old.id, "MANUAL_ONLY", null),
+        )
+
+        val accepted = associateImportedAsset(
+            imageStore = store,
+            selection = ImportedAssetSelection(replacement.id),
+            previousAssetId = old.id,
+            association = { true },
+        )
+
+        assertTrue(accepted)
+        assertTrue(File(old.localPath).isFile)
+        assertNotNull(database.imageAssetDao().get(old.id))
+    }
+
+    @Test
     fun `failed database write cleans newly encoded file`() = runBlocking {
         val source = Uri.fromFile(bitmapFile("failure", 20, 20))
         val failingStore = LocalImageStore(
@@ -157,6 +181,67 @@ class ImageStoreTest {
         job.join()
 
         assertTrue(File(context.filesDir, "images").listFiles().isNullOrEmpty())
+    }
+
+    @Test
+    fun `delete waits for same store import finalization then removes a consistent row and file`() = runBlocking {
+        val persistStarted = CompletableDeferred<Unit>()
+        val releasePersist = CompletableDeferred<Unit>()
+        val dao = database.imageAssetDao()
+        val serializedStore = LocalImageStore(
+            context = context,
+            imageAssetDao = dao,
+            newAssetId = { "serialized-asset" },
+            persistAsset = { candidate ->
+                persistStarted.complete(Unit)
+                releasePersist.await()
+                dao.insertIgnoringExisting(candidate)
+                checkNotNull(dao.getBySha256(candidate.sha256))
+            },
+        )
+        val source = Uri.fromFile(bitmapFile("serialized", 30, 30))
+
+        val importing = async(Dispatchers.Default) { serializedStore.importWhole(source, ImageKind.PRODUCT) }
+        persistStarted.await()
+        val deleting = async(Dispatchers.Default) { serializedStore.deleteIfUnreferenced("serialized-asset") }
+        repeat(20) { yield() }
+        assertFalse("delete must wait for import mutation", deleting.isCompleted)
+
+        releasePersist.complete(Unit)
+        val imported = importing.await()
+        assertTrue(deleting.await())
+        assertFalse(File(imported.localPath).exists())
+        assertEquals(null, dao.get(imported.id))
+    }
+
+    @Test
+    fun `global mutation lock keeps failing and succeeding same hash imports consistent`() = runBlocking {
+        val persistStarted = CompletableDeferred<Unit>()
+        val releaseFailure = CompletableDeferred<Unit>()
+        val source = Uri.fromFile(bitmapFile("same-hash-race", 28, 28))
+        val failing = LocalImageStore(
+            context = context,
+            imageAssetDao = database.imageAssetDao(),
+            newAssetId = { "failing-asset" },
+            persistAsset = {
+                persistStarted.complete(Unit)
+                releaseFailure.await()
+                throw IllegalStateException("database unavailable")
+            },
+        )
+        val succeeding = LocalImageStore(context, database.imageAssetDao(), newAssetId = { "winning-asset" })
+
+        val failedImport = async(Dispatchers.Default) { runCatching { failing.importWhole(source, ImageKind.PRODUCT) } }
+        persistStarted.await()
+        val successfulImport = async(Dispatchers.Default) { succeeding.importWhole(source, ImageKind.PRODUCT) }
+        repeat(20) { yield() }
+        assertFalse("second store must share the mutation lock", successfulImport.isCompleted)
+
+        releaseFailure.complete(Unit)
+        assertTrue(failedImport.await().isFailure)
+        val asset = successfulImport.await()
+        assertTrue(File(asset.localPath).isFile)
+        assertEquals(asset.id, database.imageAssetDao().getBySha256(asset.sha256)?.id)
     }
 
     private fun bitmapFile(

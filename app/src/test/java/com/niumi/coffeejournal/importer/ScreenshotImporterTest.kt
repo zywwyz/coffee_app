@@ -1,5 +1,6 @@
 package com.niumi.coffeejournal.importer
 
+import android.graphics.Bitmap
 import com.niumi.coffeejournal.core.image.CropRect
 import com.niumi.coffeejournal.core.image.ImageAsset
 import com.niumi.coffeejournal.core.image.ImageKind
@@ -51,6 +52,33 @@ class ScreenshotImporterTest {
         assertNull(candidate.productName)
         assertTrue("actualPriceFen" in candidate.lowConfidenceFields)
         assertTrue("productName" in candidate.lowConfidenceFields)
+    }
+
+    @Test
+    fun `payment time order number and bare date integers are never prices`() {
+        val candidate = normalizeScreenshot(
+            listOf(
+                TextBlock("支付时间 2026-08-01 12:30", CropRect(0, 0, 300, 40)),
+                TextBlock("订单号 123456789", CropRect(0, 50, 300, 90)),
+                TextBlock("取餐日期 2026", CropRect(0, 100, 300, 140)),
+            ),
+        )
+
+        assertNull(candidate.actualPriceFen)
+    }
+
+    @Test
+    fun `broad payment label needs currency mark for high confidence`() {
+        val withoutCurrency = normalizeScreenshot(
+            listOf(TextBlock("支付 9.90", CropRect(0, 0, 120, 40))),
+        )
+        val withCurrency = normalizeScreenshot(
+            listOf(TextBlock("支付 ¥9.90", CropRect(0, 0, 120, 40))),
+        )
+
+        assertTrue("actualPriceFen" in withoutCurrency.lowConfidenceFields)
+        assertEquals(990L, withCurrency.actualPriceFen)
+        assertFalse("actualPriceFen" in withCurrency.lowConfidenceFields)
     }
 
     @Test
@@ -128,6 +156,63 @@ class ScreenshotImporterTest {
 
         assertEquals(2, preparation.candidates.size)
         assertTrue(preparation.candidates[0].proposedCrop != preparation.candidates[1].proposedCrop)
+    }
+
+    @Test
+    fun `ocr sample size enforces both long edge and pixel budget`() {
+        val sample = ocrSampleSize(width = 1440, height = 20_000, maxDimension = 2048, maxPixels = 4_000_000)
+
+        assertTrue(1440 / sample <= 2048)
+        assertTrue(20_000 / sample <= 2048)
+        assertTrue((1440L / sample) * (20_000L / sample) <= 4_000_000L)
+    }
+
+    @Test
+    fun `sampled recognizer scales blocks to oriented original coordinates and recycles`() = runBlocking {
+        val bitmap = Bitmap.createBitmap(200, 400, Bitmap.Config.ARGB_8888)
+        var closed = false
+        val recognizer = SampledBitmapScreenshotTextRecognizer(
+            decoder = ScreenshotBitmapDecoder {
+                DecodedScreenshotBitmap(bitmap, orientedWidth = 1000, orientedHeight = 2000)
+            },
+            sessionFactory = BitmapTextRecognitionSessionFactory {
+                object : BitmapTextRecognitionSession {
+                    override suspend fun recognize(bitmap: Bitmap) =
+                        listOf(TextBlock("拿铁", CropRect(20, 40, 120, 160)))
+                    override fun close() { closed = true }
+                }
+            },
+        )
+
+        val blocks = recognizer.recognize(Uri.parse("content://large/screenshot"))
+
+        assertEquals(listOf(TextBlock("拿铁", CropRect(100, 200, 600, 800))), blocks)
+        assertTrue(bitmap.isRecycled)
+        assertTrue(closed)
+    }
+
+    @Test
+    fun `sampled recognizer closes engine and recycles bitmap on cancellation`() = runBlocking {
+        val bitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
+        var closed = false
+        val recognizer = SampledBitmapScreenshotTextRecognizer(
+            decoder = ScreenshotBitmapDecoder { DecodedScreenshotBitmap(bitmap, 1000, 1000) },
+            sessionFactory = BitmapTextRecognitionSessionFactory {
+                object : BitmapTextRecognitionSession {
+                    override suspend fun recognize(bitmap: Bitmap): List<TextBlock> =
+                        throw CancellationException("cancelled")
+                    override fun close() { closed = true }
+                }
+            },
+        )
+
+        try {
+            recognizer.recognize(Uri.parse("content://large/cancelled"))
+            throw AssertionError("Expected cancellation")
+        } catch (_: CancellationException) {
+        }
+        assertTrue(bitmap.isRecycled)
+        assertTrue(closed)
     }
 
     @Test

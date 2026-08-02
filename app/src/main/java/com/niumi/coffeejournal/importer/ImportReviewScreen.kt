@@ -58,6 +58,7 @@ import com.niumi.coffeejournal.core.image.ImageStore
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -91,16 +92,25 @@ fun ImportReviewScreen(
     onConfirmed: suspend (ConfirmedScreenshotImport) -> Boolean,
     onCancel: () -> Unit,
 ) {
-    val session = remember(source, recognizer, imageStore) { ScreenshotImportSession(recognizer, imageStore) }
+    val session = remember(source) { ScreenshotImportSession(recognizer, imageStore) }
     var state by remember(source) { mutableStateOf(ImportReviewUiState(loading = true)) }
+    val previewOwner = remember(source) { mutableStateOf<Bitmap?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(source) {
         try {
             val preview = loadTemporaryPreview(context, source)
+            try {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            } catch (error: CancellationException) {
+                preview.bitmap.recycle()
+                throw error
+            }
+            previewOwner.value?.takeIf { it !== preview.bitmap }?.recycle()
+            previewOwner.value = preview.bitmap
             state = state.copy(
-                preview = preview.bitmap,
+                preview = preview.bitmap.asImageBitmap(),
                 imageWidth = preview.width,
                 imageHeight = preview.height,
                 crop = CropRect(0, 0, preview.width, preview.height),
@@ -144,7 +154,13 @@ fun ImportReviewScreen(
             state = state.copy(loading = false, errorMessage = "截图读取失败，请重新选择图片")
         }
     }
-    DisposableEffect(session) { onDispose { session.cancel() } }
+    DisposableEffect(source) {
+        onDispose {
+            session.cancel()
+            previewOwner.value?.recycle()
+            previewOwner.value = null
+        }
+    }
 
     ImportReviewContent(
         state = state,
@@ -529,7 +545,7 @@ private fun CropSlider(label: String, description: String, value: Int, minimum: 
     }
 }
 
-private data class TemporaryPreview(val bitmap: ImageBitmap, val width: Int, val height: Int)
+private data class TemporaryPreview(val bitmap: Bitmap, val width: Int, val height: Int)
 
 private suspend fun loadTemporaryPreview(context: Context, source: Uri): TemporaryPreview = withContext(Dispatchers.IO) {
     val resolver = context.applicationContext.contentResolver
@@ -557,7 +573,7 @@ private suspend fun loadTemporaryPreview(context: Context, source: Uri): Tempora
     }
     val oriented = if (matrix.isIdentity) decoded else Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true).also { decoded.recycle() }
     val swapsAxes = orientation in setOf(5, 6, 7, 8)
-    TemporaryPreview(oriented.asImageBitmap(), if (swapsAxes) bounds.outHeight else bounds.outWidth, if (swapsAxes) bounds.outWidth else bounds.outHeight)
+    TemporaryPreview(oriented, if (swapsAxes) bounds.outHeight else bounds.outWidth, if (swapsAxes) bounds.outWidth else bounds.outHeight)
 }
 
 private fun formatFen(fen: Long): String = String.format(Locale.CHINA, "%d.%02d", fen / 100, fen % 100)

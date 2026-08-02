@@ -1,7 +1,11 @@
 package com.niumi.coffeejournal.importer
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.net.Uri
+import androidx.exifinterface.media.ExifInterface
 import com.niumi.coffeejournal.core.image.CropRect
 import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.core.image.ImageStore
@@ -10,15 +14,74 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import java.math.BigDecimal
 import java.math.RoundingMode
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 
 data class TextBlock(val text: String, val bounds: CropRect)
 
 fun interface ScreenshotTextRecognizer {
     suspend fun recognize(uri: Uri): List<TextBlock>
+}
+
+data class DecodedScreenshotBitmap(
+    val bitmap: Bitmap,
+    val orientedWidth: Int,
+    val orientedHeight: Int,
+)
+
+fun interface ScreenshotBitmapDecoder {
+    suspend fun decode(uri: Uri): DecodedScreenshotBitmap
+}
+
+interface BitmapTextRecognitionSession {
+    suspend fun recognize(bitmap: Bitmap): List<TextBlock>
+    fun close()
+}
+
+fun interface BitmapTextRecognitionSessionFactory {
+    fun create(): BitmapTextRecognitionSession
+}
+
+class SampledBitmapScreenshotTextRecognizer(
+    private val decoder: ScreenshotBitmapDecoder,
+    private val sessionFactory: BitmapTextRecognitionSessionFactory,
+) : ScreenshotTextRecognizer {
+    override suspend fun recognize(uri: Uri): List<TextBlock> {
+        val decoded = decoder.decode(uri)
+        val session = try {
+            sessionFactory.create()
+        } catch (error: Throwable) {
+            decoded.bitmap.recycle()
+            throw error
+        }
+        return try {
+            val scaleX = decoded.orientedWidth.toDouble() / decoded.bitmap.width
+            val scaleY = decoded.orientedHeight.toDouble() / decoded.bitmap.height
+            session.recognize(decoded.bitmap).map { block ->
+                val left = (block.bounds.left * scaleX).roundToInt().coerceIn(0, decoded.orientedWidth - 1)
+                val top = (block.bounds.top * scaleY).roundToInt().coerceIn(0, decoded.orientedHeight - 1)
+                block.copy(
+                    bounds = CropRect(
+                        left,
+                        top,
+                        (block.bounds.right * scaleX).roundToInt().coerceIn(left + 1, decoded.orientedWidth),
+                        (block.bounds.bottom * scaleY).roundToInt().coerceIn(top + 1, decoded.orientedHeight),
+                    ),
+                )
+            }
+        } finally {
+            try {
+                session.close()
+            } finally {
+                decoded.bitmap.recycle()
+            }
+        }
+    }
 }
 
 data class ScreenshotCandidate(
@@ -76,44 +139,117 @@ class ScreenshotImportSession(
     override fun toString(): String = "ScreenshotImportSession(active=${selectedSource != null})"
 }
 
-class MlKitScreenshotTextRecognizer(context: Context) : ScreenshotTextRecognizer {
-    private val applicationContext = context.applicationContext
+class MlKitScreenshotTextRecognizer(
+    context: Context,
+    decoder: ScreenshotBitmapDecoder = AndroidScreenshotBitmapDecoder(context),
+    sessionFactory: BitmapTextRecognitionSessionFactory = MlKitBitmapTextRecognitionSessionFactory,
+) : ScreenshotTextRecognizer by SampledBitmapScreenshotTextRecognizer(decoder, sessionFactory)
 
-    override suspend fun recognize(uri: Uri): List<TextBlock> {
-        val input = InputImage.fromFilePath(applicationContext, uri)
-        val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
-        return suspendCancellableCoroutine { continuation ->
-            val closed = AtomicBoolean(false)
-            fun closeOnce() {
-                if (closed.compareAndSet(false, true)) recognizer.close()
-            }
-            recognizer.process(input)
-                .addOnSuccessListener { result ->
-                    val blocks = result.textBlocks.flatMap { block ->
-                        block.lines.mapNotNull { line ->
-                            val box = line.boundingBox ?: return@mapNotNull null
-                            TextBlock(line.text, CropRect(box.left, box.top, box.right, box.bottom))
-                        }
-                    }
-                    if (continuation.isActive) continuation.resume(blocks)
-                    closeOnce()
-                }
-                .addOnFailureListener { error ->
-                    if (continuation.isActive) continuation.resumeWithException(error)
-                    closeOnce()
-                }
-                .addOnCanceledListener {
-                    continuation.cancel()
-                    closeOnce()
-                }
-            continuation.invokeOnCancellation { closeOnce() }
+class AndroidScreenshotBitmapDecoder(
+    context: Context,
+    private val maxDimension: Int = OCR_MAX_DECODE_DIMENSION,
+    private val maxPixels: Int = OCR_MAX_DECODE_PIXELS,
+) : ScreenshotBitmapDecoder {
+    private val resolver = context.applicationContext.contentResolver
+
+    override suspend fun decode(uri: Uri): DecodedScreenshotBitmap = withContext(Dispatchers.IO) {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+            ?: throw IllegalArgumentException("Screenshot cannot be opened")
+        require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Screenshot cannot be decoded" }
+        val orientation = resolver.openInputStream(uri)?.use {
+            ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        } ?: ExifInterface.ORIENTATION_NORMAL
+        val sample = ocrSampleSize(bounds.outWidth, bounds.outHeight, maxDimension, maxPixels)
+        val decoded = resolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+        } ?: throw IllegalArgumentException("Screenshot cannot be decoded")
+        val oriented = applyOcrOrientation(decoded, orientation)
+        if (oriented !== decoded) decoded.recycle()
+        val swapsAxes = orientation in setOf(
+            ExifInterface.ORIENTATION_TRANSPOSE,
+            ExifInterface.ORIENTATION_ROTATE_90,
+            ExifInterface.ORIENTATION_TRANSVERSE,
+            ExifInterface.ORIENTATION_ROTATE_270,
+        )
+        try {
+            coroutineContext.ensureActive()
+            DecodedScreenshotBitmap(
+                oriented,
+                if (swapsAxes) bounds.outHeight else bounds.outWidth,
+                if (swapsAxes) bounds.outWidth else bounds.outHeight,
+            )
+        } catch (error: Throwable) {
+            oriented.recycle()
+            throw error
         }
     }
 }
 
+private object MlKitBitmapTextRecognitionSessionFactory : BitmapTextRecognitionSessionFactory {
+    override fun create(): BitmapTextRecognitionSession = object : BitmapTextRecognitionSession {
+        private val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+
+        override suspend fun recognize(bitmap: Bitmap): List<TextBlock> {
+            val input = InputImage.fromBitmap(bitmap, 0)
+            return suspendCancellableCoroutine { continuation ->
+                recognizer.process(input)
+                    .addOnSuccessListener { result ->
+                        val blocks = result.textBlocks.flatMap { block ->
+                            block.lines.mapNotNull { line ->
+                                val box = line.boundingBox ?: return@mapNotNull null
+                                TextBlock(line.text, CropRect(box.left, box.top, box.right, box.bottom))
+                            }
+                        }
+                        if (continuation.isActive) continuation.resume(blocks)
+                    }
+                    .addOnFailureListener { error ->
+                        if (continuation.isActive) continuation.resumeWithException(error)
+                    }
+                    .addOnCanceledListener {
+                        continuation.cancel()
+                    }
+            }
+        }
+
+        override fun close() = recognizer.close()
+    }
+}
+
+const val OCR_MAX_DECODE_DIMENSION = 2048
+const val OCR_MAX_DECODE_PIXELS = 4_000_000
+
+fun ocrSampleSize(width: Int, height: Int, maxDimension: Int, maxPixels: Int): Int {
+    require(width > 0 && height > 0 && maxDimension > 0 && maxPixels > 0)
+    var sample = 1
+    while (
+        width / sample > maxDimension || height / sample > maxDimension ||
+        (width.toLong() / sample) * (height.toLong() / sample) > maxPixels
+    ) sample *= 2
+    return sample
+}
+
+private fun applyOcrOrientation(source: Bitmap, orientation: Int): Bitmap {
+    val matrix = Matrix()
+    when (orientation) {
+        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.setScale(-1f, 1f)
+        ExifInterface.ORIENTATION_ROTATE_180 -> matrix.setRotate(180f)
+        ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.setScale(1f, -1f)
+        ExifInterface.ORIENTATION_TRANSPOSE -> { matrix.setRotate(90f); matrix.postScale(-1f, 1f) }
+        ExifInterface.ORIENTATION_ROTATE_90 -> matrix.setRotate(90f)
+        ExifInterface.ORIENTATION_TRANSVERSE -> { matrix.setRotate(-90f); matrix.postScale(-1f, 1f) }
+        ExifInterface.ORIENTATION_ROTATE_270 -> matrix.setRotate(-90f)
+        else -> return source
+    }
+    return Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
+}
+
 private val PRICE_PATTERN = Regex("(?:¥|￥)?\\s*([0-9]{1,7}(?:,[0-9]{3})*(?:\\.[0-9]{1,2})?)")
-private val ACTUAL_LABELS = listOf("实付", "支付", "到手", "成交价", "优惠后")
+private val ACTUAL_LABELS = listOf("实付", "到手", "成交价", "优惠后", "支付金额", "付款金额")
+private const val BROAD_PAYMENT_LABEL = "支付"
+private val PAYMENT_LABELS = ACTUAL_LABELS + BROAD_PAYMENT_LABEL
 private val ORIGINAL_LABELS = listOf("原价", "划线价", "门市价", "建议价")
+private val NON_PRICE_CONTEXTS = listOf("支付时间", "付款时间", "订单号", "订单编号", "取餐码", "日期", "时间")
 
 fun normalizeScreenshot(blocks: List<TextBlock>): ScreenshotCandidate {
     val priceCandidates = extractPriceCandidates(blocks)
@@ -168,19 +304,27 @@ fun normalizeScreenshotCandidates(
 }
 
 private fun extractPriceCandidates(blocks: List<TextBlock>) = blocks.mapNotNull { block ->
+        if (NON_PRICE_CONTEXTS.any(block.text::contains)) return@mapNotNull null
         val actualLabel = ACTUAL_LABELS.firstOrNull(block.text::contains)
         val originalLabel = ORIGINAL_LABELS.firstOrNull(block.text::contains)
+        val broadPayment = actualLabel == null && block.text.contains(BROAD_PAYMENT_LABEL)
         val searchText = when {
             actualLabel != null -> block.text.substringAfter(actualLabel)
             originalLabel != null -> block.text.substringAfter(originalLabel)
+            broadPayment -> block.text.substringAfter(BROAD_PAYMENT_LABEL)
             else -> block.text
         }
-        val fen = PRICE_PATTERN.find(searchText)?.groupValues?.get(1)?.let(::parseYuanAmountToFen)
-            ?: return@mapNotNull null
+        val match = PRICE_PATTERN.find(searchText) ?: return@mapNotNull null
+        val amount = match.groupValues[1]
+        val hasCurrencyMark = match.value.contains('¥') || match.value.contains('￥')
+        if (actualLabel == null && originalLabel == null && !hasCurrencyMark && '.' !in amount) {
+            return@mapNotNull null
+        }
+        val fen = parseYuanAmountToFen(amount) ?: return@mapNotNull null
         PriceCandidate(
             fen,
             priority = when {
-                ACTUAL_LABELS.any(block.text::contains) -> 2
+                actualLabel != null || broadPayment && hasCurrencyMark -> 2
                 ORIGINAL_LABELS.any(block.text::contains) -> 0
                 else -> 1
             },
@@ -191,7 +335,7 @@ private fun extractPriceCandidates(blocks: List<TextBlock>) = blocks.mapNotNull 
 private fun extractNameBlocks(blocks: List<TextBlock>) = blocks.filter { block ->
         val value = block.text.trim()
         value.length in 2..40 && value.any(Char::isLetter) &&
-            ACTUAL_LABELS.none(value::contains) && ORIGINAL_LABELS.none(value::contains) &&
+            PAYMENT_LABELS.none(value::contains) && ORIGINAL_LABELS.none(value::contains) &&
             PRICE_PATTERN.find(value) == null
     }
 
