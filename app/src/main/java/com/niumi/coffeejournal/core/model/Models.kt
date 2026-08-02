@@ -116,6 +116,7 @@ data class CatalogItem(
     val informationCompleteness: Int = 0,
     val category: String? = null,
     val specificationDescription: String? = null,
+    val imageSourceUrl: String? = null,
 ) {
     init {
         require(informationCompleteness in 0..100) {

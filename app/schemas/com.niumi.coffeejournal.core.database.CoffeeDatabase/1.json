@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "5886b623006a40298ecb19e7f1bf42d1",
+    "identityHash": "630300b58f2f33802ecc0d756158b804",
     "entities": [
       {
         "tableName": "brands",
@@ -92,7 +92,7 @@
       },
       {
         "tableName": "catalog_items",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `brandId` TEXT NOT NULL, `type` TEXT NOT NULL, `name` TEXT NOT NULL, `normalizedName` TEXT NOT NULL, `imageAssetId` TEXT, `origin` TEXT, `processing` TEXT, `roastLevel` TEXT, `flavorNotes` TEXT, `brewMethod` TEXT, `status` TEXT NOT NULL, `caffeineMg` REAL, `officialDescription` TEXT, `purchaseDate` TEXT, `roastDate` TEXT, `sourceUrl` TEXT, `sourceFetchedAt` INTEGER, `informationCompleteness` INTEGER NOT NULL DEFAULT 0, `category` TEXT, `specificationDescription` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`brandId`) REFERENCES `brands`(`id`) ON UPDATE CASCADE ON DELETE RESTRICT , FOREIGN KEY(`imageAssetId`) REFERENCES `image_assets`(`id`) ON UPDATE CASCADE ON DELETE RESTRICT )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `brandId` TEXT NOT NULL, `type` TEXT NOT NULL, `name` TEXT NOT NULL, `normalizedName` TEXT NOT NULL, `imageAssetId` TEXT, `origin` TEXT, `processing` TEXT, `roastLevel` TEXT, `flavorNotes` TEXT, `brewMethod` TEXT, `status` TEXT NOT NULL, `caffeineMg` REAL, `officialDescription` TEXT, `purchaseDate` TEXT, `roastDate` TEXT, `sourceUrl` TEXT, `sourceFetchedAt` INTEGER, `informationCompleteness` INTEGER NOT NULL DEFAULT 0, `category` TEXT, `specificationDescription` TEXT, `imageSourceUrl` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`brandId`) REFERENCES `brands`(`id`) ON UPDATE CASCADE ON DELETE RESTRICT , FOREIGN KEY(`imageAssetId`) REFERENCES `image_assets`(`id`) ON UPDATE CASCADE ON DELETE RESTRICT )",
         "fields": [
           {
             "fieldPath": "id",
@@ -205,6 +205,11 @@
           {
             "fieldPath": "specificationDescription",
             "columnName": "specificationDescription",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "imageSourceUrl",
+            "columnName": "imageSourceUrl",
             "affinity": "TEXT"
           }
         ],
@@ -593,7 +598,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '5886b623006a40298ecb19e7f1bf42d1')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '630300b58f2f33802ecc0d756158b804')"
     ]
   }
 }

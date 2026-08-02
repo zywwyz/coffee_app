@@ -115,14 +115,18 @@ class RoomCatalogRepository(
 }
 
 fun seedBrands(): List<Brand> = listOf(
-    "seed-chain-luckin" to "瑞幸",
-    "seed-chain-manner" to "Manner",
-    "seed-chain-mstand" to "M Stand",
-    "seed-chain-peets" to "Peet's",
-    "seed-chain-arabica" to "% Arabica",
-).map { (id, name) ->
-    Brand(id, BrandType.CHAIN, name, null, MaintenanceMode.MANUAL_ONLY, null)
-}
+    Brand(
+        "seed-chain-luckin", BrandType.CHAIN, "瑞幸", null, MaintenanceMode.PUBLIC_SOURCE,
+        "https://www.luckincoffee.com/cn/menu/signature-lattes",
+    ),
+    Brand("seed-chain-manner", BrandType.CHAIN, "Manner", null, MaintenanceMode.MANUAL_ONLY, null),
+    Brand(
+        "seed-chain-mstand", BrandType.CHAIN, "M Stand", null, MaintenanceMode.PUBLIC_SOURCE,
+        "https://mstand.cn/ProductInfoCategory?categoryId=575736",
+    ),
+    Brand("seed-chain-peets", BrandType.CHAIN, "Peet's", null, MaintenanceMode.MANUAL_ONLY, null),
+    Brand("seed-chain-arabica", BrandType.CHAIN, "% Arabica", null, MaintenanceMode.MANUAL_ONLY, null),
+)
 
 private fun BrandEntity.toDomain() = Brand(
     id = id,
@@ -177,6 +181,7 @@ private fun CatalogItemEntity.toDomain() = CatalogItem(
     informationCompleteness = informationCompleteness,
     category = category,
     specificationDescription = specificationDescription,
+    imageSourceUrl = imageSourceUrl,
 )
 
 private fun CatalogItem.toEntity() = CatalogItemEntity(
@@ -201,6 +206,7 @@ private fun CatalogItem.toEntity() = CatalogItemEntity(
     informationCompleteness = informationCompleteness,
     category = category,
     specificationDescription = specificationDescription,
+    imageSourceUrl = imageSourceUrl,
 )
 
 fun normalizeCatalogName(raw: String): String {

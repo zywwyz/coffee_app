@@ -18,6 +18,8 @@ class MainActivity : ComponentActivity() {
                     imagePathResolver = app.imagePathResolver,
                     imageStore = app.imageStore,
                     screenshotTextRecognizer = app.screenshotTextRecognizer,
+                    catalogUpdateSources = app.catalogUpdateSources,
+                    catalogUpdateGateway = app.catalogUpdateGateway,
                 )
             }
         }

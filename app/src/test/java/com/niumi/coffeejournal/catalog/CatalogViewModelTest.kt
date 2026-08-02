@@ -32,6 +32,24 @@ class CatalogViewModelTest {
             seedBrands().map { it.name },
         )
         assertTrue(seedBrands().all { it.logoAssetId == null && it.type == BrandType.CHAIN })
+        assertEquals(
+            mapOf(
+                "瑞幸" to MaintenanceMode.PUBLIC_SOURCE,
+                "M Stand" to MaintenanceMode.PUBLIC_SOURCE,
+                "Manner" to MaintenanceMode.MANUAL_ONLY,
+                "Peet's" to MaintenanceMode.MANUAL_ONLY,
+                "% Arabica" to MaintenanceMode.MANUAL_ONLY,
+            ),
+            seedBrands().associate { it.name to it.maintenanceMode },
+        )
+        assertEquals(
+            "https://www.luckincoffee.com/cn/menu/signature-lattes",
+            seedBrands().single { it.name == "瑞幸" }.publicSourceUrl,
+        )
+        assertEquals(
+            "https://mstand.cn/ProductInfoCategory?categoryId=575736",
+            seedBrands().single { it.name == "M Stand" }.publicSourceUrl,
+        )
     }
 
     @Test

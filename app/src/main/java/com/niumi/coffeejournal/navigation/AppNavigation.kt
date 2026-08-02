@@ -22,6 +22,8 @@ import com.niumi.coffeejournal.importer.AssetImportRequester
 import com.niumi.coffeejournal.importer.ImageImportHost
 import com.niumi.coffeejournal.importer.ImageImportMode
 import com.niumi.coffeejournal.importer.ScreenshotTextRecognizer
+import com.niumi.coffeejournal.importer.CatalogSourceProvider
+import com.niumi.coffeejournal.importer.CatalogUpdateGateway
 import com.niumi.coffeejournal.journal.JournalFeature
 import com.niumi.coffeejournal.journal.JournalRepository
 import androidx.navigation3.runtime.NavKey
@@ -58,6 +60,8 @@ fun AppNavigation(
     imagePathResolver: ImagePathResolver = ImagePathResolver { null },
     imageStore: ImageStore? = null,
     screenshotTextRecognizer: ScreenshotTextRecognizer? = null,
+    catalogUpdateSources: CatalogSourceProvider? = null,
+    catalogUpdateGateway: CatalogUpdateGateway? = null,
 ) {
     if (imageStore != null && screenshotTextRecognizer != null) {
         ImageImportHost(imageStore, screenshotTextRecognizer) { requester ->
@@ -65,10 +69,16 @@ fun AppNavigation(
                 journalRepository, catalogRepository, imagePathResolver,
                 imageStore = imageStore,
                 assetImportRequester = requester,
+                catalogUpdateSources = catalogUpdateSources,
+                catalogUpdateGateway = catalogUpdateGateway,
             )
         }
     } else {
-        AppNavigationContent(journalRepository, catalogRepository, imagePathResolver)
+        AppNavigationContent(
+            journalRepository, catalogRepository, imagePathResolver,
+            catalogUpdateSources = catalogUpdateSources,
+            catalogUpdateGateway = catalogUpdateGateway,
+        )
     }
 }
 
@@ -79,6 +89,8 @@ private fun AppNavigationContent(
     imagePathResolver: ImagePathResolver,
     imageStore: ImageStore? = null,
     assetImportRequester: AssetImportRequester = { _, _, _, _ -> },
+    catalogUpdateSources: CatalogSourceProvider? = null,
+    catalogUpdateGateway: CatalogUpdateGateway? = null,
 ) {
     val backStack = rememberNavBackStack(Journal)
     val selectedRoot = backStack.last()
@@ -116,15 +128,21 @@ private fun AppNavigationContent(
                 }
                 entry<Catalog> {
                     if (catalogRepository != null) {
-                        CatalogFeature(catalogRepository, imageStore) { _, kind, callback ->
-                            val imageKind = when (kind) {
-                                com.niumi.coffeejournal.catalog.CatalogAssetKind.BRAND_LOGO -> ImageKind.BRAND_LOGO
-                                com.niumi.coffeejournal.catalog.CatalogAssetKind.CHAIN_PRODUCT_IMAGE -> ImageKind.PRODUCT
-                                com.niumi.coffeejournal.catalog.CatalogAssetKind.BEAN_PACKAGE -> ImageKind.BEAN_PACKAGE
-                            }
-                            val mode = if (imageKind == ImageKind.PRODUCT) ImageImportMode.ASK else ImageImportMode.WHOLE_IMAGE
-                            assetImportRequester(imageKind, mode, null) { selection -> callback(selection) }
-                        }
+                        CatalogFeature(
+                            repository = catalogRepository,
+                            imageStore = imageStore,
+                            updateSources = catalogUpdateSources,
+                            updateGateway = catalogUpdateGateway,
+                            onRequestAsset = { _, kind, callback ->
+                                val imageKind = when (kind) {
+                                    com.niumi.coffeejournal.catalog.CatalogAssetKind.BRAND_LOGO -> ImageKind.BRAND_LOGO
+                                    com.niumi.coffeejournal.catalog.CatalogAssetKind.CHAIN_PRODUCT_IMAGE -> ImageKind.PRODUCT
+                                    com.niumi.coffeejournal.catalog.CatalogAssetKind.BEAN_PACKAGE -> ImageKind.BEAN_PACKAGE
+                                }
+                                val mode = if (imageKind == ImageKind.PRODUCT) ImageImportMode.ASK else ImageImportMode.WHOLE_IMAGE
+                                assetImportRequester(imageKind, mode, null) { selection -> callback(selection) }
+                            },
+                        )
                     }
                     else RootContent("连锁品牌", "管理连锁产品与个人豆库")
                 }

@@ -10,6 +10,14 @@ import com.niumi.coffeejournal.core.image.ImageStore
 import com.niumi.coffeejournal.core.image.LocalImageStore
 import com.niumi.coffeejournal.importer.MlKitScreenshotTextRecognizer
 import com.niumi.coffeejournal.importer.ScreenshotTextRecognizer
+import com.niumi.coffeejournal.importer.CatalogSourceProvider
+import com.niumi.coffeejournal.importer.CatalogUpdateApplier
+import com.niumi.coffeejournal.importer.CatalogUpdateGateway
+import com.niumi.coffeejournal.importer.DefaultCatalogSourceProvider
+import com.niumi.coffeejournal.importer.LocalOfficialImageAssetStore
+import com.niumi.coffeejournal.importer.SafeOfficialHttpClient
+import com.niumi.coffeejournal.importer.SafeOfficialImageDownloader
+import com.niumi.coffeejournal.importer.ValidatingOfficialImageImporter
 import com.niumi.coffeejournal.journal.DefaultJournalRepository
 import com.niumi.coffeejournal.journal.JournalRepository
 import com.niumi.coffeejournal.journal.RoomDrinkStore
@@ -48,6 +56,18 @@ class CoffeeJournalApp : Application() {
 
     val screenshotTextRecognizer: ScreenshotTextRecognizer by lazy {
         MlKitScreenshotTextRecognizer(this)
+    }
+
+    val catalogUpdateSources: CatalogSourceProvider by lazy {
+        DefaultCatalogSourceProvider(SafeOfficialHttpClient())
+    }
+
+    val catalogUpdateGateway: CatalogUpdateGateway by lazy {
+        val officialImages = ValidatingOfficialImageImporter(
+            downloader = SafeOfficialImageDownloader(),
+            assetStore = LocalOfficialImageAssetStore(this, imageStore),
+        )
+        CatalogUpdateApplier(database, officialImages)
     }
 
     override fun onCreate() {

@@ -199,6 +199,16 @@ interface CatalogUpdateDao {
         """,
     )
     fun observeLatest(brandId: String): Flow<CatalogUpdateEntity?>
+
+    @Query(
+        """
+        SELECT * FROM catalog_updates
+        WHERE brandId = :brandId
+        ORDER BY fetchedAtEpochMillis DESC, id DESC
+        LIMIT 1
+        """,
+    )
+    suspend fun latest(brandId: String): CatalogUpdateEntity?
 }
 
 @Dao
