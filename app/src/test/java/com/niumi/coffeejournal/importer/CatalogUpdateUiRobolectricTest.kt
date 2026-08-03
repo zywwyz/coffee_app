@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.runtime.mutableStateOf
 import com.niumi.coffeejournal.catalog.BrandOverview
 import com.niumi.coffeejournal.catalog.CatalogScreen
 import com.niumi.coffeejournal.catalog.CatalogTab
@@ -94,8 +95,9 @@ class CatalogUpdateUiRobolectricTest {
     }
 
     @Test
-    fun `offline update failure offers retry screenshot and manual fallback`() {
+    fun `all update failures offer classified message retry screenshot and manual fallback`() {
         var retried: String? = null
+        val failure = mutableStateOf(FailureKind.OFFLINE)
         compose.setContent {
             CoffeeTheme {
                 CatalogScreen(
@@ -103,16 +105,27 @@ class CatalogUpdateUiRobolectricTest {
                     onSaveBrand = {}, onSaveItem = {}, onSetItemStatus = { _, _ -> }, onClearError = {},
                     updateState = CatalogUpdateUiState(
                         phase = UpdatePhase.FAILURE, brandId = "brand", brandName = "瑞幸",
-                        failureKind = FailureKind.OFFLINE, message = "网络不可用",
+                        failureKind = failure.value, message = "测试失败",
                     ),
                     onUpdateBrand = { retried = it.id },
                 )
             }
         }
 
-        compose.onNodeWithText("重试官网更新").assertIsDisplayed().performClick()
-        compose.onNodeWithText("上传截图").assertIsDisplayed()
-        compose.onNodeWithText("手工录入").assertIsDisplayed()
+        listOf(
+            FailureKind.OFFLINE to "当前离线，请联网后重试。",
+            FailureKind.HTTP to "官网暂时无法访问。",
+            FailureKind.PARSE_CHANGED to "官网页面结构发生变化。",
+            FailureKind.NO_PUBLIC_CATALOG to "该品牌暂无稳定公开产品目录。",
+        ).forEach { (kind, label) ->
+            compose.runOnIdle { failure.value = kind }
+            compose.waitForIdle()
+            compose.onNodeWithText(label).assertIsDisplayed()
+            compose.onNodeWithText("重试官网更新").assertIsDisplayed()
+            compose.onNodeWithText("上传截图").assertIsDisplayed()
+            compose.onNodeWithText("手工录入").assertIsDisplayed()
+        }
+        compose.onNodeWithText("重试官网更新").performClick()
         compose.runOnIdle { assertEquals("brand", retried) }
     }
 

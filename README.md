@@ -103,7 +103,7 @@ App 没有账号、广告、分析 SDK、云同步或后台官网更新。数据
 
 ## 发布前验证
 
-无真机时可执行等价的 Robolectric 跨功能验收，并编译 instrumentation 测试 APK：
+无真机时可以运行 Robolectric 本地跨层替代覆盖，并编译 instrumentation 测试 APK：
 
 ```bash
 ./gradlew clean testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease
@@ -116,3 +116,5 @@ App 没有账号、广告、分析 SDK、云同步或后台官网更新。数据
 ```
 
 真机验收应覆盖：离线记录、截图 OCR/裁剪、自定义品牌与 Logo、个人豆子、月/年总结，以及备份后恢复全部记录和图片。
+
+Robolectric 只验证本地进程内的 MainActivity、导航、Room、ViewModel 和 Compose UI 链路，不能替代 instrumentation 与真机验收，也不能证明 Android 系统文件选择器、设备上的 OCR 模型和完整备份恢复在具体手机上正常工作。

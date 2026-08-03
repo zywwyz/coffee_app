@@ -7,6 +7,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
 import com.niumi.coffeejournal.core.model.Brand
@@ -160,6 +161,23 @@ class JournalScreenRobolectricTest {
 
         compose.onNodeWithText("5.0").assertIsNotEnabled()
         compose.onNodeWithText("加载产品…").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `save is disabled until a concrete item is selected`() {
+        compose.setContent {
+            CoffeeTheme {
+                RecordDrinkScreen(
+                    state = RecordEditorUi(selectedBrandId = "brand", selectedItemId = null),
+                    brands = emptyList(), items = emptyList(),
+                    onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {},
+                    onRatingChange = {}, onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {},
+                    onSave = {}, onBack = {}, onScreenshot = {}, onSelectImage = {}, onSkipImage = {},
+                )
+            }
+        }
+
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.ConfirmSave).assertIsNotEnabled()
     }
 
     private fun temporaryBitmap(prefix: String): File {

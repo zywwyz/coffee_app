@@ -29,9 +29,9 @@ import kotlinx.coroutines.CancellationException
 import com.niumi.coffeejournal.backup.BackupManager
 import com.niumi.coffeejournal.backup.LocalBackupManager
 
-class CoffeeJournalApp : Application() {
+open class CoffeeJournalApp : Application() {
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    val database: CoffeeDatabase by lazy { CoffeeDatabase.create(this) }
+    open val database: CoffeeDatabase by lazy { CoffeeDatabase.create(this) }
 
     val catalogRepository: CatalogRepository by lazy {
         RoomCatalogRepository(
