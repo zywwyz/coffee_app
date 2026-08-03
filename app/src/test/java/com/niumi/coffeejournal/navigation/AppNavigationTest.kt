@@ -73,6 +73,9 @@ class AppNavigationTest {
         }
 
         compose.onNodeWithText("记录一杯").assertIsDisplayed()
+        compose.onNodeWithText("总结").performClick()
+        compose.onNodeWithText("咖啡回顾").assertIsDisplayed()
+        compose.onNodeWithText("2026年", substring = true).assertExists()
     }
 
     @Test

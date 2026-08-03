@@ -28,6 +28,7 @@ import com.niumi.coffeejournal.importer.CatalogSourceProvider
 import com.niumi.coffeejournal.importer.CatalogUpdateGateway
 import com.niumi.coffeejournal.journal.JournalFeature
 import com.niumi.coffeejournal.journal.JournalRepository
+import com.niumi.coffeejournal.insights.InsightsFeature
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
@@ -149,7 +150,10 @@ private fun AppNavigationContent(
                     }
                     else RootContent("连锁品牌", "管理连锁产品与个人豆库")
                 }
-                entry<Insights> { RootContent("月度总结", "查看饮用、评分与消费趋势") }
+                entry<Insights> {
+                    if (journalRepository != null) InsightsFeature(journalRepository)
+                    else RootContent("月度总结", "查看饮用、评分与消费趋势")
+                }
             },
         )
     }
