@@ -13,6 +13,15 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.job
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.cancel
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -158,6 +167,113 @@ class BackupManagerTest {
         assertTrue(sourceFile.isFile)
         collision.delete()
         Unit
+    }
+
+    @Test fun `operation sweeps stale staging but preserves an active validation lease`() = runBlocking {
+        val archive = File(context.cacheDir, "lease-${System.nanoTime()}.zip")
+        manager.export(Uri.fromFile(archive))
+        val validated = manager.validate(Uri.fromFile(archive))
+        val stale = File(context.cacheDir, "backup-staging/stale-abandoned").apply { mkdirs(); File(this, "x").writeText("x") }
+
+        manager.export(Uri.fromFile(File(context.cacheDir, "lease-second-${System.nanoTime()}.zip")))
+
+        assertFalse(stale.exists())
+        assertTrue(validated.root.exists())
+        manager.discard(validated)
+    }
+
+    @Test fun `restore rejects a database changed after validation before any write`() = runBlocking {
+        database.brandDao().upsert(BrandEntity("keep", "CHAIN", "保留", "保留", null, "MANUAL_ONLY", null))
+        val archive = File(context.cacheDir, "tamper-db-${System.nanoTime()}.zip")
+        manager.export(Uri.fromFile(archive))
+        val validated = manager.validate(Uri.fromFile(archive))
+        validated.decoded.databaseFile.appendBytes(byteArrayOf(0))
+
+        assertThrows(BackupValidationException::class.java) { runBlocking { manager.restore(validated) } }
+
+        assertNotNull(database.brandDao().get("keep"))
+    }
+
+    @Test fun `restore rejects a valid image changed after validation before any write`() = runBlocking {
+        val imageDir = File(context.filesDir, "images").apply { mkdirs() }
+        val sourceFile = File(imageDir, "original.webp")
+        Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888).also { bitmap -> bitmap.eraseColor(0xFF000000.toInt()); sourceFile.outputStream().use { bitmap.compress(Bitmap.CompressFormat.WEBP, 90, it) }; bitmap.recycle() }
+        database.imageAssetDao().upsert(ImageAssetEntity("asset", sourceFile.absolutePath, sha256(sourceFile), "PRODUCT", 1))
+        val archive = File(context.cacheDir, "tamper-image-${System.nanoTime()}.zip")
+        manager.export(Uri.fromFile(archive))
+        val validated = manager.validate(Uri.fromFile(archive))
+        val staged = validated.decoded.images.single().file
+        Bitmap.createBitmap(3, 3, Bitmap.Config.ARGB_8888).also { bitmap -> bitmap.eraseColor(0xFFFFFFFF.toInt()); staged.outputStream().use { bitmap.compress(Bitmap.CompressFormat.WEBP, 90, it) }; bitmap.recycle() }
+
+        assertThrows(BackupValidationException::class.java) { runBlocking { manager.restore(validated) } }
+
+        assertNotNull(database.imageAssetDao().get("asset"))
+    }
+
+    @Test fun `failed export deletes or truncates the SAF target`() = runBlocking {
+        database.imageAssetDao().upsert(ImageAssetEntity("missing", File(context.filesDir, "images/missing.webp").absolutePath, "0".repeat(64), "PRODUCT", 1))
+        val target = File(context.cacheDir, "failed-export-${System.nanoTime()}.zip").apply { writeText("private old content") }
+
+        assertThrows(BackupValidationException::class.java) { runBlocking { manager.export(Uri.fromFile(target)) } }
+
+        assertTrue(!target.exists() || target.length() == 0L)
+    }
+
+    @Test fun `cancelling during the production row copy loop rolls back`() = runBlocking {
+        database.brandDao().upsert(BrandEntity("keep", "CHAIN", "保留", "保留", null, "MANUAL_ONLY", null))
+        val source = Room.databaseBuilder(context, CoffeeDatabase::class.java, "loop-source-${System.nanoTime()}.db").allowMainThreadQueries().build()
+        try {
+            source.brandDao().upsert(BrandEntity("incoming", "CHAIN", "导入", "导入", null, "MANUAL_ONLY", null))
+            repeat(300) { index -> source.catalogUpdateDao().insert(CatalogUpdateEntity("u$index", "incoming", index.toLong(), "CONFIRMED", null, null)) }
+            val archive = File(context.cacheDir, "loop-${System.nanoTime()}.zip")
+            LocalBackupManager(context, source).export(Uri.fromFile(archive))
+            val validated = manager.validate(Uri.fromFile(archive))
+            val entered = CompletableDeferred<Unit>()
+            val release = CountDownLatch(1)
+            val rows = AtomicInteger()
+            val cancelling = LocalBackupManager(context, database, onRestoreRowCopied = {
+                if (rows.incrementAndGet() == 30) { entered.complete(Unit); release.await() }
+            })
+            val job = launch(Dispatchers.IO) { cancelling.restore(validated) }
+            entered.await()
+            job.cancel()
+            release.countDown()
+            job.join()
+
+            assertTrue(job.isCancelled)
+            assertNotNull(database.brandDao().get("keep"))
+            assertNull(database.brandDao().get("incoming"))
+            assertFalse(validated.root.exists())
+        } finally { source.close() }
+    }
+
+    @Test fun `cancellation after commit still returns success to the caller`() = runBlocking {
+        val archive = File(context.cacheDir, "commit-boundary-${System.nanoTime()}.zip")
+        manager.export(Uri.fromFile(archive))
+        val validated = manager.validate(Uri.fromFile(archive))
+        val displayedSuccess = AtomicBoolean(false)
+
+        val job = launch {
+            val operationJob = coroutineContext.job
+            LocalBackupManager(context, database, afterRestoreCommitted = { operationJob.cancel() }).restore(validated)
+            displayedSuccess.set(true)
+        }
+        job.join()
+
+        assertTrue(displayedSuccess.get())
+    }
+
+    @Test fun `discard completes when its composition cleanup scope is cancelled`() = runBlocking {
+        val archive = File(context.cacheDir, "discard-scope-${System.nanoTime()}.zip")
+        manager.export(Uri.fromFile(archive))
+        val validated = manager.validate(Uri.fromFile(archive))
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        val job = scope.launch(start = CoroutineStart.UNDISPATCHED) { manager.discard(validated) }
+        scope.cancel()
+        job.join()
+
+        assertFalse(validated.root.exists())
     }
 
     private fun count(table:String):Int=database.openHelper.writableDatabase.query("SELECT COUNT(*) FROM $table").use{it.moveToFirst();it.getInt(0)}

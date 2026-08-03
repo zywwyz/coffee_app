@@ -5,6 +5,7 @@ import java.io.FileOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.io.path.createTempDirectory
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -146,6 +147,40 @@ class BackupArchiveCodecTest {
                 }
             }
             assertThrows(BackupValidationException::class.java) { codec.decode(missing, File(root, "out")) }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun `streaming archive loop observes cancellation checks`() {
+        val root = createTempDirectory("backup-cancel-loop-").toFile()
+        try {
+            val db = File(root, "source.sqlite").apply {
+                outputStream().use { output -> output.write("SQLite format 3\u0000".toByteArray()); output.write(ByteArray(512 * 1024)) }
+            }
+            var checks = 0
+            assertThrows(CancellationException::class.java) {
+                codec.encode(File(root, "cancelled.zip"), db, emptyList(), BackupCounts(0,0,0,0,0,0), 1, 1) {
+                    if (++checks == 8) throw CancellationException("cancel")
+                }
+            }
+            org.junit.Assert.assertTrue(checks >= 8)
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun `streaming extraction loop propagates cancellation and cleans output`() {
+        val root = createTempDirectory("backup-decode-cancel-").toFile()
+        try {
+            val permissiveCodec = SafeBackupArchiveCodec(BackupLimits(maxCompressionRatio = 20_000))
+            val db = File(root, "source.sqlite").apply { outputStream().use { it.write("SQLite format 3\u0000".toByteArray()); it.write(ByteArray(256 * 1024)) } }
+            val archive = File(root, "source.zip")
+            permissiveCodec.encode(archive, db, emptyList(), BackupCounts(0,0,0,0,0,0), 1, 1)
+            val output = File(root, "output")
+            var checks = 0
+
+            assertThrows(CancellationException::class.java) {
+                permissiveCodec.decode(archive, output) { if (++checks == 6) throw CancellationException("cancel") }
+            }
+
+            org.junit.Assert.assertFalse(output.exists())
         } finally { root.deleteRecursively() }
     }
 }

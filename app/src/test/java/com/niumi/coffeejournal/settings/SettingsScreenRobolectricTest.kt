@@ -7,6 +7,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.assertCountEquals
 import com.niumi.coffeejournal.backup.*
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
 import org.junit.Rule
@@ -16,6 +18,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.RuntimeEnvironment
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import java.io.File
+import kotlin.io.path.createTempDirectory
+import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w320dp-h480dp")
@@ -42,6 +48,22 @@ class SettingsScreenRobolectricTest {
         assertEquals("*/*", open.type)
         assertEquals(listOf("application/zip"), open.getStringArrayExtra(Intent.EXTRA_MIME_TYPES)?.toList())
     }
+
+    @Test fun `leaving settings discards a validated backup`() {
+        TrackingBackupManager.discards.set(0)
+        val root = createTempDirectory("settings-validated-").toFile()
+        val db = File(root, "database.sqlite").apply { writeText("unused") }
+        val manifest = BackupManifest(1, 1, 1, "0".repeat(64), db.length(), emptyList(), BackupCounts(0,0,0,0,0,0))
+        val backup = ValidatedBackup(root, DecodedBackup(manifest, db, emptyList()))
+        val visible = androidx.compose.runtime.mutableStateOf(true)
+        compose.setContent { if (visible.value) CoffeeTheme { SettingsScreen(TrackingBackupManager, initialValidatedBackup = backup) } }
+
+        compose.runOnIdle { visible.value = false }
+        compose.onAllNodesWithText("导出完整备份").assertCountEquals(0)
+        compose.waitUntil(5_000) { TrackingBackupManager.discards.get() > 0 }
+
+        assertFalse(root.exists())
+    }
 }
 
 private object UnusedBackupManager : BackupManager {
@@ -49,4 +71,12 @@ private object UnusedBackupManager : BackupManager {
     override suspend fun validate(source: Uri) = error("unused")
     override suspend fun restore(backup: ValidatedBackup) = error("unused")
     override suspend fun discard(backup: ValidatedBackup) = Unit
+}
+
+private object TrackingBackupManager : BackupManager {
+    val discards = AtomicInteger()
+    override suspend fun export(target: Uri) = error("unused")
+    override suspend fun validate(source: Uri) = error("unused")
+    override suspend fun restore(backup: ValidatedBackup) = error("unused")
+    override suspend fun discard(backup: ValidatedBackup) { discards.incrementAndGet(); backup.root.deleteRecursively() }
 }

@@ -21,17 +21,32 @@ import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.cancel
 
 @Composable
-fun SettingsScreen(manager: BackupManager) {
+fun SettingsScreen(manager: BackupManager, initialValidatedBackup: ValidatedBackup? = null) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
-    var validated by remember { mutableStateOf<ValidatedBackup?>(null) }
+    var validated by remember { mutableStateOf(initialValidatedBackup) }
     var running by remember { mutableStateOf<Job?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var lastBackup by remember { mutableLongStateOf(prefs.getLong(LAST_BACKUP, 0)) }
+    val cleanupScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.IO) }
+    val latestValidated = rememberUpdatedState(validated)
+    DisposableEffect(Unit) {
+        onDispose {
+            latestValidated.value?.let { pending ->
+                cleanupScope.launch(start = CoroutineStart.UNDISPATCHED) { manager.discard(pending) }
+            }
+            cleanupScope.cancel()
+        }
+    }
 
     fun launch(block: suspend () -> Unit) {
         error = null

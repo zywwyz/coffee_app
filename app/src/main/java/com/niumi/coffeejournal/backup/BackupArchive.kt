@@ -11,6 +11,7 @@ import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.CancellationException
 
 @Serializable
 data class BackupCounts(
@@ -61,12 +62,15 @@ class SafeBackupArchiveCodec(
         counts: BackupCounts,
         schemaVersion: Int,
         exportedAtEpochMillis: Long,
+        checkCancelled: () -> Unit = {},
     ): BackupManifest {
+        checkCancelled()
         require(database.isFile && database.length() in 1..limits.maxDatabaseBytes)
         require(images.size <= limits.maxImages)
         val ids = HashSet<String>()
         val entries = HashSet<String>()
         val imageManifest = images.map { image ->
+            checkCancelled()
             require(ids.add(image.assetId) && entries.add(image.entry))
             requireSafeImageEntry(image.entry)
             require(image.file.isFile && image.file.length() in 1..limits.maxImageBytes)
@@ -83,13 +87,14 @@ class SafeBackupArchiveCodec(
         target.parentFile?.mkdirs()
         ZipOutputStream(BufferedOutputStream(FileOutputStream(target))).use { zip ->
             putBytes(zip, MANIFEST, json.encodeToString(BackupManifest.serializer(), manifest).toByteArray())
-            putFile(zip, DATABASE, database)
-            images.forEach { putFile(zip, it.entry, it.file) }
+            putFile(zip, DATABASE, database, checkCancelled)
+            images.forEach { checkCancelled(); putFile(zip, it.entry, it.file, checkCancelled) }
         }
         return manifest
     }
 
-    fun decode(archive: File, destination: File): DecodedBackup {
+    fun decode(archive: File, destination: File, checkCancelled: () -> Unit = {}): DecodedBackup {
+        checkCancelled()
         if (!archive.isFile || archive.length() !in 1..limits.maxArchiveBytes) fail("备份文件大小无效")
         destination.deleteRecursively()
         destination.mkdirs()
@@ -99,6 +104,7 @@ class SafeBackupArchiveCodec(
                 val all = zip.entries().asSequence().toList()
                 if (all.size > limits.maxEntries) fail("备份条目过多")
                 all.forEach { entry ->
+                    checkCancelled()
                     if (entry.isDirectory || !safeName(entry.name) || !seen.add(entry.name)) fail("备份包含不安全或重复条目")
                     if (entry.size < 0 || entry.compressedSize < 0) fail("备份条目大小未知")
                     val max = if (entry.name == DATABASE) limits.maxDatabaseBytes else if (entry.name == MANIFEST) limits.maxManifestBytes else limits.maxImageBytes
@@ -106,7 +112,7 @@ class SafeBackupArchiveCodec(
                     if (entry.compressedSize == 0L && entry.size > 0 || entry.compressedSize > 0 && entry.size / entry.compressedSize > limits.maxCompressionRatio) fail("备份压缩比异常")
                 }
                 val manifestEntry = zip.getEntry(MANIFEST) ?: fail("缺少 manifest.json")
-                val manifestBytes = zip.getInputStream(manifestEntry).use { readBounded(it, limits.maxManifestBytes) }
+                val manifestBytes = zip.getInputStream(manifestEntry).use { readBounded(it, limits.maxManifestBytes, checkCancelled) }
                 val manifest = try { json.decodeFromString(BackupManifest.serializer(), manifestBytes.toString(Charsets.UTF_8)) }
                     catch (error: Exception) { fail("清单无法解析", error) }
                 if (manifest.formatVersion != BackupManifest.CURRENT_FORMAT) fail("不支持的备份格式版本 ${manifest.formatVersion}")
@@ -126,12 +132,13 @@ class SafeBackupArchiveCodec(
                     if (expanded > limits.maxExpandedBytes) fail("备份解压总量过大")
                     val out = File(destination, name)
                     out.parentFile?.mkdirs()
-                    zip.getInputStream(entry).use { input -> FileOutputStream(out).use { output -> copyBounded(input, output, max) } }
+                    zip.getInputStream(entry).use { input -> FileOutputStream(out).use { output -> copyBounded(input, output, max, checkCancelled) } }
                     return out
                 }
                 val db = extract(DATABASE, limits.maxDatabaseBytes)
                 if (db.length() != manifest.databaseSize || sha256(db) != manifest.databaseSha256 || !hasSqliteMagic(db)) fail("数据库校验失败")
                 val images = manifest.images.map { item ->
+                    checkCancelled()
                     val file = extract(item.entry, limits.maxImageBytes)
                     if (file.length() != item.size || sha256(file) != item.sha256 || !hasImageMagic(file, item.entry.substringAfterLast('.'))) fail("图片校验失败: ${item.assetId}")
                     BackupImage(item.assetId, item.entry, file, item.kind)
@@ -140,8 +147,24 @@ class SafeBackupArchiveCodec(
             }
         } catch (error: BackupValidationException) {
             destination.deleteRecursively(); throw error
+        } catch (cancelled: CancellationException) {
+            destination.deleteRecursively(); throw cancelled
         } catch (error: Exception) {
             destination.deleteRecursively(); fail("备份文件损坏", error)
+        }
+    }
+
+    fun verifyDecoded(decoded: DecodedBackup, checkCancelled: () -> Unit = {}) {
+        checkCancelled()
+        val manifest = decoded.manifest
+        val database = decoded.databaseFile
+        if (!database.isFile || database.length() != manifest.databaseSize || sha256(database, checkCancelled) != manifest.databaseSha256 || !hasSqliteMagic(database)) fail("数据库暂存文件已变化")
+        val files = decoded.images.associateBy { it.assetId }
+        if (files.keys != manifest.images.map { it.assetId }.toSet()) fail("图片暂存清单已变化")
+        manifest.images.forEach { item ->
+            checkCancelled()
+            val image = files.getValue(item.assetId).file
+            if (!image.isFile || image.length() != item.size || sha256(image, checkCancelled) != item.sha256 || !hasImageMagic(image, item.entry.substringAfterLast('.'))) fail("图片暂存文件已变化: ${item.assetId}")
         }
     }
 
@@ -150,9 +173,9 @@ class SafeBackupArchiveCodec(
     }
     private fun safeName(name: String) = name.isNotEmpty() && !name.startsWith('/') && !name.startsWith('\\') && '\\' !in name && name.split('/').none { it == ".." || it == "." || it.isEmpty() }
     private fun putBytes(zip: ZipOutputStream, name: String, bytes: ByteArray) { zip.putNextEntry(ZipEntry(name)); zip.write(bytes); zip.closeEntry() }
-    private fun putFile(zip: ZipOutputStream, name: String, file: File) { zip.putNextEntry(ZipEntry(name)); FileInputStream(file).use { it.copyTo(zip) }; zip.closeEntry() }
-    private fun readBounded(input: java.io.InputStream, max: Long): ByteArray { val output = java.io.ByteArrayOutputStream(); copyBounded(input, output, max); return output.toByteArray() }
-    private fun copyBounded(input: java.io.InputStream, output: java.io.OutputStream, max: Long) { val buffer = ByteArray(DEFAULT_BUFFER_SIZE); var total = 0L; while (true) { val n=input.read(buffer); if(n<0) break; total += n; if(total>max) fail("条目超过限制"); output.write(buffer,0,n) } }
+    private fun putFile(zip: ZipOutputStream, name: String, file: File, check: () -> Unit) { zip.putNextEntry(ZipEntry(name)); FileInputStream(file).use { copyBounded(it, zip, Long.MAX_VALUE, check) }; zip.closeEntry() }
+    private fun readBounded(input: java.io.InputStream, max: Long, check: () -> Unit = {}): ByteArray { val output = java.io.ByteArrayOutputStream(); copyBounded(input, output, max, check); return output.toByteArray() }
+    private fun copyBounded(input: java.io.InputStream, output: java.io.OutputStream, max: Long, check: () -> Unit = {}) { val buffer = ByteArray(DEFAULT_BUFFER_SIZE); var total = 0L; while (true) { check(); val n=input.read(buffer); if(n<0) break; total += n; if(total>max) fail("条目超过限制"); output.write(buffer,0,n) } }
     private fun hasSqliteMagic(file: File) = file.inputStream().use { input -> val b=ByteArray(16); input.read(b)==16 && b.contentEquals("SQLite format 3\u0000".toByteArray()) }
     private fun hasImageMagic(file: File, extension: String): Boolean = file.inputStream().use { input ->
         val b=ByteArray(12); val n=input.read(b)
@@ -163,7 +186,7 @@ class SafeBackupArchiveCodec(
             else -> false
         }
     }
-    private fun sha256(file: File): String { val d=MessageDigest.getInstance("SHA-256"); BufferedInputStream(FileInputStream(file)).use { input -> val b=ByteArray(DEFAULT_BUFFER_SIZE); while(true){val n=input.read(b);if(n<0)break;d.update(b,0,n)} }; return d.digest().joinToString(""){"%02x".format(it)} }
+    private fun sha256(file: File, check: () -> Unit = {}): String { val d=MessageDigest.getInstance("SHA-256"); BufferedInputStream(FileInputStream(file)).use { input -> val b=ByteArray(DEFAULT_BUFFER_SIZE); while(true){check();val n=input.read(b);if(n<0)break;d.update(b,0,n)} }; return d.digest().joinToString(""){"%02x".format(it)} }
     private fun fail(message: String, cause: Throwable? = null): Nothing = throw BackupValidationException(message, cause)
     companion object { const val MANIFEST="manifest.json"; const val DATABASE="database.sqlite"; val IMAGE_ENTRY=Regex("images/[A-Za-z0-9_-]{1,128}\\.(webp|png|jpg|jpeg)") }
 }
