@@ -7,8 +7,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -42,6 +44,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.niumi.coffeejournal.journal.JournalRepository
 import java.util.GregorianCalendar
 import java.util.Locale
+import java.math.BigInteger
 
 @Composable
 fun InsightsFeature(repository: JournalRepository) {
@@ -253,11 +256,12 @@ private fun RatedRecordRows(records: List<RatedRecordSummary>, onOpenRecord: (Ra
         Text("—")
         return
     }
-    records.forEach { record ->
+    records.take(20).forEach { record ->
         TextButton(onClick = { onOpenRecord(record) }) {
             Text("${record.brandName} · ${record.itemName} · ${record.ratingHalfStars / 2.0}★")
         }
     }
+    if (records.size > 20) Text("另有 ${records.size - 20} 条并列记录")
 }
 
 @Composable
@@ -266,12 +270,19 @@ private fun RecordDetailDialog(record: RatedRecordSummary, onDismiss: () -> Unit
         onDismissRequest = onDismiss,
         title = { Text("原始记录") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(
+                Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
                 Text("${record.brandName} · ${record.itemName}", style = MaterialTheme.typography.titleMedium)
                 Text(record.localDate)
                 Text("评分：${record.ratingHalfStars / 2.0}★")
                 Text("实际支付：${record.actualPriceFen?.let(::formatFen) ?: "未记录"}")
                 Text("冲煮方式：${record.brewMethod ?: "未记录"}")
+                Text("产地：${record.origin ?: "未记录"}")
+                Text("处理法：${record.processing ?: "未记录"}")
+                Text("烘焙度：${record.roastLevel ?: "未记录"}")
+                Text("风味：${record.flavorNotes ?: "未记录"}")
                 Text("备注：${record.note ?: "未记录"}")
             }
         },
@@ -291,9 +302,14 @@ private fun TrendChart(points: List<TrendPoint>) {
         .ifBlank { "暂无数据" }
     val barColor = MaterialTheme.colorScheme.secondary
     val ratingColor = MaterialTheme.colorScheme.primary
-    Canvas(
-        Modifier.fillMaxWidth().height(150.dp).semantics { contentDescription = description },
-    ) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text("■ 消费柱", color = barColor)
+            Text("● 评分折线", color = ratingColor)
+        }
+        Canvas(
+            Modifier.fillMaxWidth().height(150.dp).semantics { contentDescription = description },
+        ) {
         val maxSpend = points.mapNotNull(TrendPoint::spendFen).maxOrNull()?.takeIf { it > 0 } ?: 1L
         val cell = size.width / points.size.coerceAtLeast(1)
         var lastRating: Offset? = null
@@ -311,6 +327,19 @@ private fun TrendChart(points: List<TrendPoint>) {
                 lastRating?.let { drawLine(ratingColor, it, current, 4.dp.toPx(), StrokeCap.Round) }
                 drawCircle(ratingColor, 4.dp.toPx(), current)
                 lastRating = current
+            }
+        }
+        }
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            points.forEach { point ->
+                Column(Modifier.padding(vertical = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(point.label)
+                    point.spendFen?.let { Text(formatFen(it)) }
+                    point.averageRating?.let { Text("${String.format(Locale.ROOT, "%.1f", it)}★") }
+                }
             }
         }
     }
@@ -352,5 +381,11 @@ private fun EmptyCard(title: String, subtitle: String) {
 
 internal fun formatFen(fen: Long): String = "¥${fenWithoutSymbol(fen)}"
 private fun fenWithoutSymbol(fen: Long): String = "${fen / 100}.${(fen % 100).toString().padStart(2, '0')}"
-private fun signedFen(fen: Long): String = (if (fen >= 0) "+" else "-") + formatFen(kotlin.math.abs(fen))
+internal fun formatSignedFen(fen: Long): String {
+    val value = BigInteger.valueOf(fen)
+    val parts = value.abs().divideAndRemainder(BigInteger.valueOf(100))
+    val amount = "¥${parts[0]}.${parts[1].toString().padStart(2, '0')}"
+    return (if (value.signum() >= 0) "+" else "-") + amount
+}
+private fun signedFen(fen: Long): String = formatSignedFen(fen)
 private fun String?.orDash(): String = this ?: "—"

@@ -39,6 +39,11 @@ class InsightsScreenRobolectricTest {
         compose.setContent { CoffeeTheme { InsightsScreen(state(), {}, {}) } }
 
         compose.onNodeWithText("偏好排行").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("消费柱", substring = true).assertExists()
+        compose.onNodeWithText("评分折线", substring = true).assertExists()
+        compose.onNodeWithText("第1周").assertExists()
+        compose.onAllNodesWithText("¥10.00")[0].assertExists()
+        compose.onAllNodesWithText("4.5★")[0].assertExists()
         compose.onNodeWithContentDescription("第1周 消费10.00元，平均评分4.5星", substring = true).assertExists()
         compose.onNodeWithContentDescription("品牌消费占比图：瑞幸 100%").assertExists()
     }
@@ -51,14 +56,15 @@ class InsightsScreenRobolectricTest {
         compose.onNodeWithText("原始记录").assertIsDisplayed()
         compose.onNodeWithText("2026-08-01").assertIsDisplayed()
         compose.onNodeWithText("实际支付：¥10.00").assertIsDisplayed()
+        compose.onNodeWithText("产地：云南").assertExists()
     }
 
     @Test
     fun `chart semantics never invent price or rating facts`() {
         val base = state()
         val points = listOf(
-            TrendPoint("第1周", null, 0, 4.0),
-            TrendPoint("第2周", 0, 1, null),
+            TrendPoint("第1周", null, 0, 1, 4.0),
+            TrendPoint("第2周", 0, 1, 0, null),
         )
         val report = requireNotNull(base.monthly).copy(period = base.monthly.period.copy(points = points))
         compose.setContent { CoffeeTheme { InsightsScreen(base.copy(monthly = report), {}, {}) } }
@@ -66,6 +72,11 @@ class InsightsScreenRobolectricTest {
         compose.onNodeWithContentDescription(
             "消费与评分趋势图：第1周 平均评分4.0星；第2周 消费0.00元",
         ).assertExists()
+    }
+
+    @Test
+    fun `signed delta handles minimum long without double minus`() {
+        org.junit.Assert.assertEquals("-¥92233720368547758.08", formatSignedFen(Long.MIN_VALUE))
     }
 
     @Test
@@ -77,9 +88,10 @@ class InsightsScreenRobolectricTest {
     }
 
     private fun state(): InsightsUiState {
-        val point = TrendPoint("第1周", 1_000, 1, 4.5)
+        val point = TrendPoint("第1周", 1_000, 1, 2, 4.5)
         val summary = RatedRecordSummary(
-            "one", "2026-08-01", "瑞幸", "生椰拿铁", 9, 1_000, "冰", "清爽",
+            "one", "2026-08-01", "瑞幸", "生椰拿铁", 9, 1_000, "冰", "清爽".repeat(100),
+            origin = "云南", processing = "水洗", roastLevel = "中烘", flavorNotes = "坚果",
         )
         val period = PeriodInsights(
             1, 1_000, 1_000, 4.5,

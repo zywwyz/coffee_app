@@ -3,7 +3,6 @@ package com.niumi.coffeejournal.insights
 import com.niumi.coffeejournal.core.model.DrinkRecord
 import com.niumi.coffeejournal.core.model.ItemType
 import java.math.BigInteger
-import java.util.GregorianCalendar
 
 data class RankedValue(val name: String, val count: Int)
 
@@ -11,6 +10,7 @@ data class TrendPoint(
     val label: String,
     val spendFen: Long?,
     val pricedCupCount: Int,
+    val ratingSampleCount: Int,
     val averageRating: Double?,
 )
 
@@ -23,6 +23,10 @@ data class RatedRecordSummary(
     val actualPriceFen: Long?,
     val brewMethod: String?,
     val note: String?,
+    val origin: String? = null,
+    val processing: String? = null,
+    val roastLevel: String? = null,
+    val flavorNotes: String? = null,
 )
 
 data class PeriodInsights(
@@ -124,12 +128,10 @@ object InsightsCalculator {
             }
             point("第${week}周", weekRecords)
         }
-        val previousDate = if (year == 1 && month == 1) null else
-            GregorianCalendar(year, month - 1, 1).apply { add(GregorianCalendar.MONTH, -1) }
+        val previousDate = previousMonth(year, month)
         val prior = if (previousDate == null) emptyList() else previousMonthRecords.filter {
             parseDate(it.localDate)?.let { date ->
-                date.year == previousDate.get(GregorianCalendar.YEAR) &&
-                    date.month == previousDate.get(GregorianCalendar.MONTH) + 1
+                date.year == previousDate.first && date.month == previousDate.second
             } == true
         }
         val previousExact = exactSum(prior.mapNotNull(DrinkRecord::actualPriceFen))
@@ -186,17 +188,18 @@ object InsightsCalculator {
 
     private fun point(label: String, records: List<DrinkRecord>): TrendPoint {
         val priced = records.mapNotNull(DrinkRecord::actualPriceFen)
+        val rated = records.mapNotNull(DrinkRecord::ratingHalfStars)
         return TrendPoint(
             label = label,
             spendFen = priced.takeIf(List<Long>::isNotEmpty)?.let(::saturatedSum),
             pricedCupCount = priced.size,
-            averageRating = records.mapNotNull(DrinkRecord::ratingHalfStars)
-                .takeIf(List<Int>::isNotEmpty)?.average()?.div(2.0),
+            ratingSampleCount = rated.size,
+            averageRating = rated.takeIf(List<Int>::isNotEmpty)?.average()?.div(2.0),
         )
     }
 
     private fun trendText(points: List<TrendPoint>): String? {
-        val rated = points.mapNotNull(TrendPoint::averageRating)
+        val rated = points.filter { it.ratingSampleCount >= 2 }.mapNotNull(TrendPoint::averageRating)
         if (rated.size < 2) return null
         return when {
             rated.last() > rated.first() -> "评分趋势上升"
@@ -239,21 +242,30 @@ object InsightsCalculator {
     private fun BigInteger.toSaturatedLong(): Long = coerceIn(BigInteger.ZERO, LONG_MAX).toLong()
     private fun BigInteger.toSignedSaturatedLong(): Long = coerceIn(LONG_MIN, LONG_MAX).toLong()
 
-    private fun weekCount(year: Int, month: Int): Int =
-        if (GregorianCalendar(year, month - 1, 1).getActualMaximum(GregorianCalendar.DAY_OF_MONTH) > 28) 5 else 4
+    private fun weekCount(year: Int, month: Int): Int = if (daysInMonth(year, month) > 28) 5 else 4
 
     private fun parseDate(value: String): DateParts? {
         if (!DATE.matches(value)) return null
         val year = value.substring(0, 4).toInt()
         val month = value.substring(5, 7).toInt()
         val day = value.substring(8, 10).toInt()
-        return try {
-            GregorianCalendar(year, month - 1, day).apply { isLenient = false }.time
-            DateParts(year, month, day)
-        } catch (_: IllegalArgumentException) {
-            null
-        }
+        if (year !in 1..9999 || month !in 1..12 || day !in 1..daysInMonth(year, month)) return null
+        return DateParts(year, month, day)
     }
+
+    private fun previousMonth(year: Int, month: Int): Pair<Int, Int>? = when {
+        year == 1 && month == 1 -> null
+        month == 1 -> year - 1 to 12
+        else -> year to month - 1
+    }
+
+    private fun daysInMonth(year: Int, month: Int): Int = when (month) {
+        2 -> if (isLeapYear(year)) 29 else 28
+        4, 6, 9, 11 -> 30
+        else -> 31
+    }
+
+    private fun isLeapYear(year: Int): Boolean = year % 400 == 0 || year % 4 == 0 && year % 100 != 0
 
     private data class DateParts(val year: Int, val month: Int, val day: Int)
 
@@ -266,6 +278,10 @@ object InsightsCalculator {
         actualPriceFen = actualPriceFen,
         brewMethod = brewMethod,
         note = note,
+        origin = snapshot.origin,
+        processing = snapshot.processing,
+        roastLevel = snapshot.roastLevel,
+        flavorNotes = snapshot.flavorNotes,
     )
 
     private val DATE = Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}")

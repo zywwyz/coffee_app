@@ -116,15 +116,13 @@ class InsightsViewModel(
     }
 
     private suspend fun observeMonthly(selected: InsightsUiState, selectedGeneration: Long) {
-        val previous = if (selected.year == 1 && selected.month == 1) null else
-            GregorianCalendar(selected.year, selected.month - 1, 1).apply {
-                isLenient = false
-                add(GregorianCalendar.MONTH, -1)
-            }
-        val previousRecords = previous?.let {
-            repository.observeMonth(
-                it.get(GregorianCalendar.YEAR), it.get(GregorianCalendar.MONTH) + 1,
-            )
+        val previous = when {
+            selected.year == 1 && selected.month == 1 -> null
+            selected.month == 1 -> selected.year - 1 to 12
+            else -> selected.year to selected.month - 1
+        }
+        val previousRecords = previous?.let { (year, month) ->
+            repository.observeMonth(year, month)
         } ?: flowOf(emptyList())
         combine(
             repository.observeMonth(selected.year, selected.month),

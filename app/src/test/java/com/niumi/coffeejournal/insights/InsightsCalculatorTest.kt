@@ -133,7 +133,7 @@ class InsightsCalculatorTest {
         assertEquals(listOf("1月", "4月"), report.lowestSpendMonths)
         assertEquals(listOf("mar", "feb", "jan", "apr"), report.topRatedRecordIds)
         assertEquals(listOf("产品", "产品", "产品", "产品"), report.topRatedRecords.map { it.itemName })
-        assertTrue(report.ratingTrendText != null)
+        assertNull(report.ratingTrendText)
     }
 
     @Test
@@ -222,6 +222,35 @@ class InsightsCalculatorTest {
 
         assertEquals(SpendDeltaBaseline.MISSING, report.spendDelta.baseline)
         assertEquals(100L, report.spendDelta.amountFen)
+    }
+
+    @Test
+    fun `date validation uses proleptic Gregorian rules`() {
+        val report = InsightsCalculator.yearly(1582, listOf(
+            record("cutover", "1582-10-10"),
+            record("bad1500", "1500-02-29"),
+            record("leap1600", "1600-02-29"),
+        ))
+        assertEquals(1, report.period.cupCount)
+        assertEquals(1, InsightsCalculator.yearly(1600, listOf(record("x", "1600-02-29"))).period.cupCount)
+        assertEquals(0, InsightsCalculator.yearly(1900, listOf(record("x", "1900-02-29"))).period.cupCount)
+        assertEquals(1, InsightsCalculator.yearly(2000, listOf(record("x", "2000-02-29"))).period.cupCount)
+        assertEquals(1, InsightsCalculator.yearly(1, listOf(record("x", "0001-01-01"))).period.cupCount)
+        assertEquals(1, InsightsCalculator.yearly(9999, listOf(record("x", "9999-12-31"))).period.cupCount)
+    }
+
+    @Test
+    fun `trend prose requires two well sampled periods`() {
+        val singleton = InsightsCalculator.yearly(2026, listOf(
+            record("a", "2026-01-01", rating = 4), record("b", "2026-02-01", rating = 10),
+        ))
+        val rise = InsightsCalculator.yearly(2026, listOf(
+            record("a1", "2026-01-01", rating = 4), record("a2", "2026-01-02", rating = 4),
+            record("b1", "2026-02-01", rating = 8), record("b2", "2026-02-02", rating = 8),
+        ))
+        assertNull(singleton.ratingTrendText)
+        assertEquals("评分趋势上升", rise.ratingTrendText)
+        assertEquals(2, rise.monthlyPoints[0].ratingSampleCount)
     }
 
     private fun record(
