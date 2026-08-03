@@ -45,6 +45,7 @@ class InsightsCalculatorTest {
         assertEquals(listOf("Manner", "瑞幸"), report.topBrands.map { it.name })
         assertEquals(listOf("a", "z"), report.bestRecordIds)
         assertEquals(listOf("low1", "low2"), report.worstRecordIds)
+        assertEquals(listOf("Manner · 澳白", "瑞幸 · 生椰"), report.bestRecords.map { "${it.brandName} · ${it.itemName}" })
     }
 
     @Test
@@ -131,6 +132,7 @@ class InsightsCalculatorTest {
         assertEquals(listOf("2月", "3月"), report.highestSpendMonths)
         assertEquals(listOf("1月", "4月"), report.lowestSpendMonths)
         assertEquals(listOf("mar", "feb", "jan", "apr"), report.topRatedRecordIds)
+        assertEquals(listOf("产品", "产品", "产品", "产品"), report.topRatedRecords.map { it.itemName })
         assertTrue(report.ratingTrendText != null)
     }
 
@@ -166,6 +168,60 @@ class InsightsCalculatorTest {
 
         assertEquals(SpendDeltaBaseline.ZERO, zero.spendDelta.baseline)
         assertNull(zero.spendDelta.percent)
+    }
+
+    @Test
+    fun `year top five preserves rating ties at cutoff`() {
+        val records = (1..7).map { index ->
+            record(
+                "r$index", "2026-01-${index.toString().padStart(2, '0')}",
+                rating = if (index <= 3) 10 else 8,
+            )
+        }
+
+        val report = InsightsCalculator.yearly(2026, records)
+
+        assertEquals(7, report.topRatedRecords.size)
+        assertEquals(10, report.highestRatedRecords.first().ratingHalfStars)
+    }
+
+    @Test
+    fun `trend point distinguishes missing price from zero price`() {
+        val missing = InsightsCalculator.monthly(
+            2026, 8, listOf(record("rated", "2026-08-01", price = null, rating = 9)), emptyList(),
+        ).period.points.first()
+        val zero = InsightsCalculator.monthly(
+            2026, 8, listOf(record("free", "2026-08-01", price = 0, rating = null)), emptyList(),
+        ).period.points.first()
+
+        assertNull(missing.spendFen)
+        assertEquals(0L, zero.spendFen)
+        assertEquals(0, missing.pricedCupCount)
+        assertEquals(1, zero.pricedCupCount)
+
+        val yearly = InsightsCalculator.yearly(
+            2026,
+            listOf(
+                record("jan-rated", "2026-01-01", price = null, rating = 8),
+                record("feb-free", "2026-02-01", price = 0, rating = null),
+            ),
+        )
+        assertNull(yearly.monthlyPoints[0].spendFen)
+        assertEquals(4.0, yearly.monthlyPoints[0].averageRating!!, 0.0)
+        assertEquals(0L, yearly.monthlyPoints[1].spendFen)
+        assertNull(yearly.monthlyPoints[1].averageRating)
+    }
+
+    @Test
+    fun `first supported month has no previous baseline`() {
+        val report = InsightsCalculator.monthly(
+            1, 1,
+            listOf(record("current", "0001-01-01", price = 100)),
+            listOf(record("not-prior", "0001-12-01", price = 999)),
+        )
+
+        assertEquals(SpendDeltaBaseline.MISSING, report.spendDelta.baseline)
+        assertEquals(100L, report.spendDelta.amountFen)
     }
 
     private fun record(

@@ -67,10 +67,27 @@ class InsightsViewModelTest {
         assertEquals(1 to 1, lower.uiState.value.year to lower.uiState.value.month)
     }
 
+    @Test
+    fun `first supported month never observes december as previous baseline`() = runBlocking {
+        val repository = FakeInsightsRepository()
+        repository.flow(1, 12).value = listOf(record("dec", "0001-12-01"))
+        val viewModel = InsightsViewModel(
+            repository, 1, 1, CoroutineScope(Job() + Dispatchers.Unconfined),
+        )
+        yield()
+
+        assertTrue(1 to 12 !in repository.observed)
+        assertEquals(SpendDeltaBaseline.MISSING, viewModel.uiState.value.monthly?.spendDelta?.baseline)
+    }
+
     private class FakeInsightsRepository : InsightsRepository {
         private val flows = mutableMapOf<Pair<Int, Int>, MutableStateFlow<List<DrinkRecord>>>()
+        val observed = mutableListOf<Pair<Int, Int>>()
         fun flow(year: Int, month: Int) = flows.getOrPut(year to month) { MutableStateFlow(emptyList()) }
-        override fun observeMonth(year: Int, month: Int): Flow<List<DrinkRecord>> = flow(year, month)
+        override fun observeMonth(year: Int, month: Int): Flow<List<DrinkRecord>> {
+            observed += year to month
+            return flow(year, month)
+        }
     }
 
     private fun record(id: String, date: String) = DrinkRecord(

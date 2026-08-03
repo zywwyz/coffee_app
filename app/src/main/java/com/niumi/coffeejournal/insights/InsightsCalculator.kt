@@ -9,8 +9,20 @@ data class RankedValue(val name: String, val count: Int)
 
 data class TrendPoint(
     val label: String,
-    val spendFen: Long,
+    val spendFen: Long?,
+    val pricedCupCount: Int,
     val averageRating: Double?,
+)
+
+data class RatedRecordSummary(
+    val recordId: String,
+    val localDate: String,
+    val brandName: String,
+    val itemName: String,
+    val ratingHalfStars: Int,
+    val actualPriceFen: Long?,
+    val brewMethod: String?,
+    val note: String?,
 )
 
 data class PeriodInsights(
@@ -25,6 +37,8 @@ data class PeriodInsights(
     val bestRecordIds: List<String>,
     val worstRecordIds: List<String>,
     val points: List<TrendPoint>,
+    val bestRecords: List<RatedRecordSummary> = emptyList(),
+    val worstRecords: List<RatedRecordSummary> = emptyList(),
 )
 
 enum class SpendDeltaBaseline { AVAILABLE, ZERO, MISSING }
@@ -59,6 +73,8 @@ data class YearlyInsights(
     val lowestSpendMonths: List<String>,
     val topRatedRecordIds: List<String>,
     val ratingTrendText: String?,
+    val topRatedRecords: List<RatedRecordSummary> = emptyList(),
+    val highestRatedRecords: List<RatedRecordSummary> = emptyList(),
 )
 
 object InsightsCalculator {
@@ -83,6 +99,12 @@ object InsightsCalculator {
                 records.filter { it.ratingHalfStars == value }.map { it.id }.sorted()
             }.orEmpty(),
             points = points,
+            bestRecords = best?.let { value ->
+                records.filter { it.ratingHalfStars == value }.sortedBy(DrinkRecord::id).map { it.ratedSummary() }
+            }.orEmpty(),
+            worstRecords = worst?.let { value ->
+                records.filter { it.ratingHalfStars == value }.sortedBy(DrinkRecord::id).map { it.ratedSummary() }
+            }.orEmpty(),
         )
     }
 
@@ -102,8 +124,9 @@ object InsightsCalculator {
             }
             point("第${week}周", weekRecords)
         }
-        val previousDate = GregorianCalendar(year, month - 1, 1).apply { add(GregorianCalendar.MONTH, -1) }
-        val prior = previousMonthRecords.filter {
+        val previousDate = if (year == 1 && month == 1) null else
+            GregorianCalendar(year, month - 1, 1).apply { add(GregorianCalendar.MONTH, -1) }
+        val prior = if (previousDate == null) emptyList() else previousMonthRecords.filter {
             parseDate(it.localDate)?.let { date ->
                 date.year == previousDate.get(GregorianCalendar.YEAR) &&
                     date.month == previousDate.get(GregorianCalendar.MONTH) + 1
@@ -138,12 +161,14 @@ object InsightsCalculator {
         val points = (1..12).map { month ->
             point("${month}月", current.filter { parseDate(it.localDate)?.month == month })
         }
-        val populated = points.filterIndexed { index, _ ->
-            current.any { parseDate(it.localDate)?.month == index + 1 && it.actualPriceFen != null }
-        }
-        val high = populated.maxOfOrNull(TrendPoint::spendFen)
-        val low = populated.minOfOrNull(TrendPoint::spendFen)
+        val populated = points.filter { it.spendFen != null }
+        val high = populated.mapNotNull(TrendPoint::spendFen).maxOrNull()
+        val low = populated.mapNotNull(TrendPoint::spendFen).minOrNull()
         val period = period(current, points)
+        val sortedRated = current.filter { it.ratingHalfStars != null }
+            .sortedWith(compareByDescending<DrinkRecord> { it.ratingHalfStars }.thenBy { it.id })
+        val cutoff = sortedRated.getOrNull(4)?.ratingHalfStars
+        val topRated = if (cutoff == null) sortedRated else sortedRated.filter { it.ratingHalfStars!! >= cutoff }
         return YearlyInsights(
             year = year,
             period = period,
@@ -152,20 +177,23 @@ object InsightsCalculator {
             monthlyPoints = points,
             highestSpendMonths = populated.filter { it.spendFen == high }.map { it.label },
             lowestSpendMonths = populated.filter { it.spendFen == low }.map { it.label },
-            topRatedRecordIds = current.filter { it.ratingHalfStars != null }
-                .sortedWith(compareByDescending<DrinkRecord> { it.ratingHalfStars }.thenBy { it.id })
-                .take(5)
-                .map { it.id },
+            topRatedRecordIds = topRated.map { it.id },
             ratingTrendText = trendText(points),
+            topRatedRecords = topRated.map { it.ratedSummary() },
+            highestRatedRecords = period.bestRecords,
         )
     }
 
-    private fun point(label: String, records: List<DrinkRecord>) = TrendPoint(
-        label = label,
-        spendFen = saturatedSum(records.mapNotNull(DrinkRecord::actualPriceFen)),
-        averageRating = records.mapNotNull(DrinkRecord::ratingHalfStars)
-            .takeIf(List<Int>::isNotEmpty)?.average()?.div(2.0),
-    )
+    private fun point(label: String, records: List<DrinkRecord>): TrendPoint {
+        val priced = records.mapNotNull(DrinkRecord::actualPriceFen)
+        return TrendPoint(
+            label = label,
+            spendFen = priced.takeIf(List<Long>::isNotEmpty)?.let(::saturatedSum),
+            pricedCupCount = priced.size,
+            averageRating = records.mapNotNull(DrinkRecord::ratingHalfStars)
+                .takeIf(List<Int>::isNotEmpty)?.average()?.div(2.0),
+        )
+    }
 
     private fun trendText(points: List<TrendPoint>): String? {
         val rated = points.mapNotNull(TrendPoint::averageRating)
@@ -228,6 +256,17 @@ object InsightsCalculator {
     }
 
     private data class DateParts(val year: Int, val month: Int, val day: Int)
+
+    private fun DrinkRecord.ratedSummary() = RatedRecordSummary(
+        recordId = id,
+        localDate = localDate,
+        brandName = snapshot.brandName,
+        itemName = snapshot.itemName,
+        ratingHalfStars = requireNotNull(ratingHalfStars),
+        actualPriceFen = actualPriceFen,
+        brewMethod = brewMethod,
+        note = note,
+    )
 
     private val DATE = Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}")
     private val LONG_MAX: BigInteger = BigInteger.valueOf(Long.MAX_VALUE)

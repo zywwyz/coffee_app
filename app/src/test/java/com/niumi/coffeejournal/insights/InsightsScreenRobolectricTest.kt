@@ -3,6 +3,7 @@ package com.niumi.coffeejournal.insights
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -38,8 +39,33 @@ class InsightsScreenRobolectricTest {
         compose.setContent { CoffeeTheme { InsightsScreen(state(), {}, {}) } }
 
         compose.onNodeWithText("偏好排行").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithContentDescription("消费趋势图：第1周 10.00元").assertExists()
+        compose.onNodeWithContentDescription("第1周 消费10.00元，平均评分4.5星", substring = true).assertExists()
         compose.onNodeWithContentDescription("品牌消费占比图：瑞幸 100%").assertExists()
+    }
+
+    @Test
+    fun `best record opens immutable snapshot details instead of exposing id`() {
+        compose.setContent { CoffeeTheme { InsightsScreen(state(), {}, {}) } }
+
+        compose.onAllNodesWithText("瑞幸 · 生椰拿铁 · 4.5★")[0].performScrollTo().performClick()
+        compose.onNodeWithText("原始记录").assertIsDisplayed()
+        compose.onNodeWithText("2026-08-01").assertIsDisplayed()
+        compose.onNodeWithText("实际支付：¥10.00").assertIsDisplayed()
+    }
+
+    @Test
+    fun `chart semantics never invent price or rating facts`() {
+        val base = state()
+        val points = listOf(
+            TrendPoint("第1周", null, 0, 4.0),
+            TrendPoint("第2周", 0, 1, null),
+        )
+        val report = requireNotNull(base.monthly).copy(period = base.monthly.period.copy(points = points))
+        compose.setContent { CoffeeTheme { InsightsScreen(base.copy(monthly = report), {}, {}) } }
+
+        compose.onNodeWithContentDescription(
+            "消费与评分趋势图：第1周 平均评分4.0星；第2周 消费0.00元",
+        ).assertExists()
     }
 
     @Test
@@ -51,11 +77,15 @@ class InsightsScreenRobolectricTest {
     }
 
     private fun state(): InsightsUiState {
-        val point = TrendPoint("第1周", 1_000, 4.5)
+        val point = TrendPoint("第1周", 1_000, 1, 4.5)
+        val summary = RatedRecordSummary(
+            "one", "2026-08-01", "瑞幸", "生椰拿铁", 9, 1_000, "冰", "清爽",
+        )
         val period = PeriodInsights(
             1, 1_000, 1_000, 4.5,
             listOf(RankedValue("瑞幸", 1)), listOf(RankedValue("生椰拿铁", 1)),
             emptyList(), listOf(RankedValue("冰", 1)), listOf("one"), listOf("one"), listOf(point),
+            bestRecords = listOf(summary), worstRecords = listOf(summary),
         )
         return InsightsUiState(
             year = 2026,

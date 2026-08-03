@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 interface InsightsRepository {
@@ -115,15 +116,19 @@ class InsightsViewModel(
     }
 
     private suspend fun observeMonthly(selected: InsightsUiState, selectedGeneration: Long) {
-        val previous = GregorianCalendar(selected.year, selected.month - 1, 1).apply {
-            isLenient = false
-            add(GregorianCalendar.MONTH, -1)
-        }
+        val previous = if (selected.year == 1 && selected.month == 1) null else
+            GregorianCalendar(selected.year, selected.month - 1, 1).apply {
+                isLenient = false
+                add(GregorianCalendar.MONTH, -1)
+            }
+        val previousRecords = previous?.let {
+            repository.observeMonth(
+                it.get(GregorianCalendar.YEAR), it.get(GregorianCalendar.MONTH) + 1,
+            )
+        } ?: flowOf(emptyList())
         combine(
             repository.observeMonth(selected.year, selected.month),
-            repository.observeMonth(
-                previous.get(GregorianCalendar.YEAR), previous.get(GregorianCalendar.MONTH) + 1,
-            ),
+            previousRecords,
         ) { current, prior -> current to prior }.collect { (current, prior) ->
             if (generation != selectedGeneration) return@collect
             mutableState.value = mutableState.value.copy(

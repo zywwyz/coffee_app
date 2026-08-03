@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -19,9 +20,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -77,6 +81,7 @@ fun InsightsScreen(
     onPreviousYear: () -> Unit = {},
     onNextYear: () -> Unit = {},
 ) {
+    var selectedRecord by remember { mutableStateOf<RatedRecordSummary?>(null) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 32.dp),
     ) {
@@ -104,9 +109,12 @@ fun InsightsScreen(
                 Modifier.padding(20.dp),
                 color = MaterialTheme.colorScheme.error,
             )
-            state.mode == InsightsMode.MONTHLY -> MonthlyContent(state.monthly)
-            else -> YearlyContent(state.yearly)
+            state.mode == InsightsMode.MONTHLY -> MonthlyContent(state.monthly, onOpenRecord = { selectedRecord = it })
+            else -> YearlyContent(state.yearly, onOpenRecord = { selectedRecord = it })
         }
+    }
+    selectedRecord?.let { record ->
+        RecordDetailDialog(record = record, onDismiss = { selectedRecord = null })
     }
 }
 
@@ -134,7 +142,7 @@ private fun PeriodSelector(
 }
 
 @Composable
-private fun MonthlyContent(report: MonthlyInsights?) {
+private fun MonthlyContent(report: MonthlyInsights?, onOpenRecord: (RatedRecordSummary) -> Unit) {
     if (report == null || report.period.cupCount == 0) {
         EmptyCard("这个月还没有咖啡记录", "下一杯会从这里开始留下痕迹")
         return
@@ -167,13 +175,15 @@ private fun MonthlyContent(report: MonthlyInsights?) {
         SectionTitle("偏好排行")
         RankingGroups(period)
         SectionTitle("最好与最差")
-        Text("最高分：${period.bestRecordIds.joinToString().ifBlank { "—" }}")
-        Text("最低分：${period.worstRecordIds.joinToString().ifBlank { "—" }}")
+        Text("最高分")
+        RatedRecordRows(period.bestRecords, onOpenRecord)
+        Text("最低分")
+        RatedRecordRows(period.worstRecords, onOpenRecord)
     }
 }
 
 @Composable
-private fun YearlyContent(report: YearlyInsights?) {
+private fun YearlyContent(report: YearlyInsights?, onOpenRecord: (RatedRecordSummary) -> Unit) {
     if (report == null || report.period.cupCount == 0) {
         EmptyCard("这一年还没有咖啡记录", "切换年份看看往年的咖啡足迹")
         return
@@ -195,8 +205,10 @@ private fun YearlyContent(report: YearlyInsights?) {
         Text("消费最低：${report.lowestSpendMonths.joinToString().ifBlank { "—" }}")
         SectionTitle("偏好排行")
         RankingGroups(period)
-        SectionTitle("年度高分记录")
-        Text(report.topRatedRecordIds.joinToString().ifBlank { "还没有评分记录" })
+        SectionTitle("年度最高分")
+        RatedRecordRows(report.highestRatedRecords, onOpenRecord)
+        SectionTitle("年度评分 Top 5")
+        RatedRecordRows(report.topRatedRecords, onOpenRecord)
     }
 }
 
@@ -236,25 +248,64 @@ private fun RankingLine(label: String, values: List<RankedValue>) {
 }
 
 @Composable
+private fun RatedRecordRows(records: List<RatedRecordSummary>, onOpenRecord: (RatedRecordSummary) -> Unit) {
+    if (records.isEmpty()) {
+        Text("—")
+        return
+    }
+    records.forEach { record ->
+        TextButton(onClick = { onOpenRecord(record) }) {
+            Text("${record.brandName} · ${record.itemName} · ${record.ratingHalfStars / 2.0}★")
+        }
+    }
+}
+
+@Composable
+private fun RecordDetailDialog(record: RatedRecordSummary, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("原始记录") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("${record.brandName} · ${record.itemName}", style = MaterialTheme.typography.titleMedium)
+                Text(record.localDate)
+                Text("评分：${record.ratingHalfStars / 2.0}★")
+                Text("实际支付：${record.actualPriceFen?.let(::formatFen) ?: "未记录"}")
+                Text("冲煮方式：${record.brewMethod ?: "未记录"}")
+                Text("备注：${record.note ?: "未记录"}")
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
+    )
+}
+
+@Composable
 private fun TrendChart(points: List<TrendPoint>) {
-    val description = "消费趋势图：" + points.filter { it.spendFen > 0 || it.averageRating != null }
-        .joinToString("，") { "${it.label} ${fenWithoutSymbol(it.spendFen)}元" }
+    val description = "消费与评分趋势图：" + points.mapNotNull { point ->
+        val facts = buildList {
+            point.spendFen?.let { add("消费${fenWithoutSymbol(it)}元") }
+            point.averageRating?.let { add("平均评分${String.format(Locale.ROOT, "%.1f", it)}星") }
+        }
+        facts.takeIf(List<String>::isNotEmpty)?.let { "${point.label} ${it.joinToString("，")}" }
+    }.joinToString("；")
         .ifBlank { "暂无数据" }
     val barColor = MaterialTheme.colorScheme.secondary
     val ratingColor = MaterialTheme.colorScheme.primary
     Canvas(
         Modifier.fillMaxWidth().height(150.dp).semantics { contentDescription = description },
     ) {
-        val maxSpend = points.maxOfOrNull(TrendPoint::spendFen)?.takeIf { it > 0 } ?: 1L
+        val maxSpend = points.mapNotNull(TrendPoint::spendFen).maxOrNull()?.takeIf { it > 0 } ?: 1L
         val cell = size.width / points.size.coerceAtLeast(1)
         var lastRating: Offset? = null
         points.forEachIndexed { index, point ->
-            val barHeight = size.height * .72f * (point.spendFen.toDouble() / maxSpend.toDouble()).toFloat()
-            drawRoundRect(
-                color = barColor.copy(alpha = .55f),
-                topLeft = Offset(index * cell + cell * .18f, size.height - barHeight),
-                size = androidx.compose.ui.geometry.Size(cell * .45f, barHeight),
-            )
+            point.spendFen?.let { spend ->
+                val barHeight = size.height * .72f * (spend.toDouble() / maxSpend.toDouble()).toFloat()
+                drawRoundRect(
+                    color = barColor.copy(alpha = .55f),
+                    topLeft = Offset(index * cell + cell * .18f, size.height - barHeight),
+                    size = androidx.compose.ui.geometry.Size(cell * .45f, barHeight),
+                )
+            }
             point.averageRating?.let { rating ->
                 val current = Offset(index * cell + cell * .5f, size.height * (1f - (rating / 5.0).toFloat()))
                 lastRating?.let { drawLine(ratingColor, it, current, 4.dp.toPx(), StrokeCap.Round) }
