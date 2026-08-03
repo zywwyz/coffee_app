@@ -54,6 +54,26 @@ fun interface OkHttpClientFactory {
     ): Call.Factory
 }
 
+internal class SharedOkHttpClientFactory(
+    private val baseClientProvider: () -> OkHttpClient = { OkHttpClient.Builder().build() },
+) : OkHttpClientFactory {
+    private val baseClient by lazy(LazyThreadSafetyMode.SYNCHRONIZED, baseClientProvider)
+
+    override fun create(
+        dns: Dns,
+        connectTimeoutMillis: Int,
+        readTimeoutMillis: Int,
+        callTimeoutMillis: Int,
+    ): Call.Factory = baseClient.newBuilder()
+        .dns(dns)
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .connectTimeout(connectTimeoutMillis.toLong(), TimeUnit.MILLISECONDS)
+        .readTimeout(readTimeoutMillis.toLong(), TimeUnit.MILLISECONDS)
+        .callTimeout(callTimeoutMillis.toLong(), TimeUnit.MILLISECONDS)
+        .build()
+}
+
 internal val SystemNetworkResolver = NetworkResolver { host -> InetAddress.getAllByName(host).toList() }
 
 internal suspend fun resolveGlobalAddresses(
@@ -110,16 +130,7 @@ class OkHttpPinnedTransport(
     private val readTimeoutMillis: Int = 12_000,
     private val callTimeoutMillis: Int = 20_000,
     private val systemDns: Dns = Dns.SYSTEM,
-    private val clientFactory: OkHttpClientFactory = OkHttpClientFactory { dns, connect, read, call ->
-        OkHttpClient.Builder()
-            .dns(dns)
-            .followRedirects(false)
-            .followSslRedirects(false)
-            .connectTimeout(connect.toLong(), TimeUnit.MILLISECONDS)
-            .readTimeout(read.toLong(), TimeUnit.MILLISECONDS)
-            .callTimeout(call.toLong(), TimeUnit.MILLISECONDS)
-            .build()
-    },
+    private val clientFactory: OkHttpClientFactory = SharedOkHttpClientFactory(),
 ) : InternallyResolvingPinnedTransport {
     override suspend fun execute(
         request: SafeHttpRequest,

@@ -12,6 +12,7 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Dns
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
@@ -26,6 +27,36 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SafeOfficialNetworkTest {
+    @Test
+    fun `shared okhttp factory reuses resources without sharing request dns`() {
+        var baseConstructions = 0
+        val factory = SharedOkHttpClientFactory {
+            baseConstructions++
+            OkHttpClient.Builder().build()
+        }
+        val luckinAddress = InetAddress.getByName("93.184.216.34")
+        val mstandAddress = InetAddress.getByName("93.184.216.35")
+        val luckinDns = dns { host ->
+            assertEquals("www.luckincoffee.com", host)
+            listOf(luckinAddress)
+        }
+        val mstandDns = dns { host ->
+            assertEquals("www.mstand.cn", host)
+            listOf(mstandAddress)
+        }
+
+        val clients = (0 until 100).map { index ->
+            factory.create(if (index % 2 == 0) luckinDns else mstandDns, 1_000, 2_000, 3_000) as OkHttpClient
+        }
+
+        assertEquals(1, baseConstructions)
+        assertTrue(clients.all { it.dispatcher === clients.first().dispatcher })
+        assertTrue(clients.all { it.connectionPool === clients.first().connectionPool })
+        assertTrue(clients[0].dns !== clients[1].dns)
+        assertEquals(listOf(luckinAddress), clients[0].dns.lookup("www.luckincoffee.com"))
+        assertEquals(listOf(mstandAddress), clients[1].dns.lookup("www.mstand.cn"))
+    }
+
     @Test
     fun `page client rejects ip literals non443 and any private or mixed dns answer`() = runBlocking {
         val transport = RecordingPinnedTransport()
@@ -140,6 +171,27 @@ class SafeOfficialNetworkTest {
         assertTrue(lookupThread != testThread)
         assertTrue(factory?.body?.closed == true)
 
+        val luckinAddress = InetAddress.getByName("93.184.216.35")
+        val mstandAddress = InetAddress.getByName("93.184.216.36")
+        val hostFactories = mutableListOf<FakeOkHttpCallFactory>()
+        val multiHost = OkHttpPinnedTransport(
+            systemDns = dns { host ->
+                when (host) {
+                    "www.luckincoffee.com" -> listOf(luckinAddress)
+                    "www.mstand.cn" -> listOf(mstandAddress)
+                    else -> error("unexpected host $host")
+                }
+            },
+            clientFactory = OkHttpClientFactory { dns, _, _, _ ->
+                FakeOkHttpCallFactory(dns, completeResponse = true).also(hostFactories::add)
+            },
+        )
+        multiHost.execute(SafeHttpRequest("GET", "https://www.luckincoffee.com/x"), emptyList(), 10)
+        multiHost.execute(SafeHttpRequest("GET", "https://www.mstand.cn/x"), emptyList(), 10)
+        assertTrue(hostFactories[0].requestDns !== hostFactories[1].requestDns)
+        assertEquals(listOf(luckinAddress), hostFactories[0].dnsResult)
+        assertEquals(listOf(mstandAddress), hostFactories[1].dnsResult)
+
         val mixedDns = OkHttpPinnedTransport(
             systemDns = dns { listOf(public, InetAddress.getByName("10.0.0.1")) },
             clientFactory = OkHttpClientFactory { dns, _, _, _ ->
@@ -185,7 +237,7 @@ private fun dns(lookup: (String) -> List<InetAddress>): Dns = object : Dns {
 }
 
 private class FakeOkHttpCallFactory(
-    private val dns: Dns,
+    val requestDns: Dns,
     private val completeResponse: Boolean,
 ) : Call.Factory {
     val enqueued = CompletableDeferred<Unit>()
@@ -207,9 +259,9 @@ private class FakeOkHttpCallFactory(
             enqueued.complete(Unit)
             Thread {
                 try {
-                    val firstResult = dns.lookup(request.url.host)
+                    val firstResult = requestDns.lookup(request.url.host)
                     dnsResult = firstResult
-                    dnsResultWasStable = firstResult === dns.lookup(request.url.host)
+                    dnsResultWasStable = firstResult === requestDns.lookup(request.url.host)
                 } catch (error: IOException) {
                     responseCallback.onFailure(this, error)
                     return@Thread
