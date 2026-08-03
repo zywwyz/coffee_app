@@ -3,11 +3,13 @@ package com.niumi.coffeejournal.navigation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -29,6 +31,8 @@ import com.niumi.coffeejournal.importer.CatalogUpdateGateway
 import com.niumi.coffeejournal.journal.JournalFeature
 import com.niumi.coffeejournal.journal.JournalRepository
 import com.niumi.coffeejournal.insights.InsightsFeature
+import com.niumi.coffeejournal.backup.BackupManager
+import com.niumi.coffeejournal.settings.SettingsScreen
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
@@ -43,6 +47,9 @@ data object Catalog : NavKey
 
 @Serializable
 data object Insights : NavKey
+
+@Serializable
+data object Settings : NavKey
 
 private data class RootDestination(
     val key: NavKey,
@@ -65,6 +72,7 @@ fun AppNavigation(
     screenshotTextRecognizer: ScreenshotTextRecognizer? = null,
     catalogUpdateSources: CatalogSourceProvider? = null,
     catalogUpdateGateway: CatalogUpdateGateway? = null,
+    backupManager: BackupManager? = null,
 ) {
     if (imageStore != null && screenshotTextRecognizer != null) {
         ImageImportHost(imageStore, screenshotTextRecognizer) { requester ->
@@ -74,6 +82,7 @@ fun AppNavigation(
                 assetImportRequester = requester,
                 catalogUpdateSources = catalogUpdateSources,
                 catalogUpdateGateway = catalogUpdateGateway,
+                backupManager = backupManager,
             )
         }
     } else {
@@ -81,6 +90,7 @@ fun AppNavigation(
             journalRepository, catalogRepository, imagePathResolver,
             catalogUpdateSources = catalogUpdateSources,
             catalogUpdateGateway = catalogUpdateGateway,
+            backupManager = backupManager,
         )
     }
 }
@@ -94,11 +104,26 @@ private fun AppNavigationContent(
     assetImportRequester: AssetImportRequester = { _, _, _, _ -> },
     catalogUpdateSources: CatalogSourceProvider? = null,
     catalogUpdateGateway: CatalogUpdateGateway? = null,
+    backupManager: BackupManager? = null,
 ) {
     val backStack = rememberNavBackStack(Journal)
     val selectedRoot = backStack.last()
 
     Scaffold(
+        topBar = {
+            if (backupManager != null) {
+                androidx.compose.foundation.layout.Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    if (selectedRoot == Settings) {
+                        TextButton(onClick = { if (backStack.size > 1) backStack.removeAt(backStack.lastIndex) }) { Text("返回") }
+                    } else {
+                        TextButton(onClick = { backStack.add(Settings) }) { Text("设置") }
+                    }
+                }
+            }
+        },
         bottomBar = {
             NavigationBar {
                 RootDestinations.forEach { destination ->
@@ -153,6 +178,10 @@ private fun AppNavigationContent(
                 entry<Insights> {
                     if (journalRepository != null) InsightsFeature(journalRepository)
                     else RootContent("月度总结", "查看饮用、评分与消费趋势")
+                }
+                entry<Settings> {
+                    if (backupManager != null) SettingsScreen(backupManager)
+                    else RootContent("设置", "备份与恢复")
                 }
             },
         )

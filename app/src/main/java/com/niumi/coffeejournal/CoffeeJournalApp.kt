@@ -26,6 +26,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
+import com.niumi.coffeejournal.backup.BackupManager
+import com.niumi.coffeejournal.backup.LocalBackupManager
 
 class CoffeeJournalApp : Application() {
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -53,6 +55,8 @@ class CoffeeJournalApp : Application() {
     val imageStore: ImageStore by lazy {
         LocalImageStore(this, database.imageAssetDao())
     }
+
+    val backupManager: BackupManager by lazy { LocalBackupManager(this, database) }
 
     val screenshotTextRecognizer: ScreenshotTextRecognizer by lazy {
         MlKitScreenshotTextRecognizer(this)

@@ -20,6 +20,7 @@ class MainActivity : ComponentActivity() {
                     screenshotTextRecognizer = app.screenshotTextRecognizer,
                     catalogUpdateSources = app.catalogUpdateSources,
                     catalogUpdateGateway = app.catalogUpdateGateway,
+                    backupManager = app.backupManager,
                 )
             }
         }

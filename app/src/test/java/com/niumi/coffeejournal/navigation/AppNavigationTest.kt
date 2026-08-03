@@ -22,6 +22,9 @@ import com.niumi.coffeejournal.importer.ImageImportMode
 import com.niumi.coffeejournal.importer.ImportedAssetSelection
 import kotlinx.coroutines.runBlocking
 import com.niumi.coffeejournal.journal.JournalRepository
+import com.niumi.coffeejournal.backup.BackupManager
+import com.niumi.coffeejournal.backup.ValidatedBackup
+import android.net.Uri
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import org.junit.Assert.assertEquals
@@ -46,6 +49,17 @@ class AppNavigationTest {
         compose.onNodeWithText("连锁品牌").assertIsDisplayed()
         compose.onNodeWithText("总结").performClick()
         compose.onNodeWithText("月度总结").assertIsDisplayed()
+    }
+
+    @Test fun settings_is_reachable_without_adding_a_fourth_bottom_root() {
+        compose.setContent { CoffeeTheme { AppNavigation(backupManager = FakeBackupManager) } }
+
+        compose.onNodeWithText("设置").performClick()
+        compose.onNodeWithText("备份与恢复").assertIsDisplayed()
+        compose.onNodeWithText("导出完整备份").assertIsDisplayed()
+        compose.onNodeWithText("日记").assertIsDisplayed()
+        compose.onNodeWithText("返回").performClick()
+        compose.onNodeWithText("咖啡日历").assertIsDisplayed()
     }
 
     @Test
@@ -113,5 +127,12 @@ class AppNavigationTest {
         override suspend fun upsertBrand(brand: Brand) = Unit
         override suspend fun upsertItem(item: CatalogItem) = Unit
         override suspend fun lastPriceFen(itemId: String): Long? = null
+    }
+
+    private object FakeBackupManager : BackupManager {
+        override suspend fun export(target: Uri) = error("unused")
+        override suspend fun validate(source: Uri) = error("unused")
+        override suspend fun restore(backup: ValidatedBackup) = error("unused")
+        override suspend fun discard(backup: ValidatedBackup) = Unit
     }
 }
