@@ -23,7 +23,6 @@ import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
 import java.io.File
 import java.io.FileOutputStream
-import java.util.Calendar
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -58,9 +57,9 @@ class AcceptanceTest {
         }
         compose.onNodeWithContentDescription("咖啡图片").assertIsDisplayed()
 
-        val now = Calendar.getInstance()
+        val (year, month) = app.acceptanceYearMonth
         val records = app.journalRepository.observeMonth(
-            now.get(Calendar.YEAR), now.get(Calendar.MONTH) + 1,
+            year, month,
         ).first()
         assertEquals(2, records.size)
         assertEquals(setOf(9), records.map { it.ratingHalfStars }.toSet())
@@ -77,7 +76,7 @@ class AcceptanceTest {
             item.copy(name = UPDATED_ITEM_NAME, imageAssetId = PRODUCT_ID, status = ItemStatus.ACTIVE),
         )
         val afterUpdate = app.journalRepository.observeMonth(
-            now.get(Calendar.YEAR), now.get(Calendar.MONTH) + 1,
+            year, month,
         ).first()
         assertEquals(setOf(ORIGINAL_ITEM_NAME), afterUpdate.map { it.snapshot.itemName }.toSet())
         assertEquals(setOf(null), afterUpdate.map { it.snapshot.imageAssetId }.toSet())

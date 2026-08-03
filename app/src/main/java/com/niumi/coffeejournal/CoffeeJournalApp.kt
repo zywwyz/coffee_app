@@ -21,6 +21,8 @@ import com.niumi.coffeejournal.importer.ValidatingOfficialImageImporter
 import com.niumi.coffeejournal.journal.DefaultJournalRepository
 import com.niumi.coffeejournal.journal.JournalRepository
 import com.niumi.coffeejournal.journal.RoomDrinkStore
+import com.niumi.coffeejournal.journal.Clock
+import com.niumi.coffeejournal.journal.SystemClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -32,6 +34,7 @@ import com.niumi.coffeejournal.backup.LocalBackupManager
 open class CoffeeJournalApp : Application() {
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     open val database: CoffeeDatabase by lazy { CoffeeDatabase.create(this) }
+    open val journalClock: Clock = SystemClock
 
     val catalogRepository: CatalogRepository by lazy {
         RoomCatalogRepository(
@@ -44,7 +47,8 @@ open class CoffeeJournalApp : Application() {
     val journalRepository: JournalRepository by lazy {
         DefaultJournalRepository(
             catalogRepository = catalogRepository,
-            drinkStore = RoomDrinkStore(database),
+            drinkStore = RoomDrinkStore(database, journalClock),
+            clock = journalClock,
         )
     }
 

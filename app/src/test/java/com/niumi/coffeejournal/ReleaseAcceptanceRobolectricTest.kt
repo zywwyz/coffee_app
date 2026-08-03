@@ -25,7 +25,9 @@ import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
 import java.io.File
 import java.io.FileOutputStream
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Locale
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -73,9 +75,9 @@ class ReleaseAcceptanceRobolectricTest {
         }
         compose.onNodeWithContentDescription("咖啡图片").assertIsDisplayed()
 
-        val now = Calendar.getInstance()
+        val (year, month) = app.acceptanceYearMonth
         val records = app.journalRepository.observeMonth(
-            now.get(Calendar.YEAR), now.get(Calendar.MONTH) + 1,
+            year, month,
         ).first()
         assertEquals(2, records.size)
         assertEquals(setOf(9), records.map { it.ratingHalfStars }.toSet())
@@ -93,7 +95,7 @@ class ReleaseAcceptanceRobolectricTest {
         )
 
         val afterUpdate = app.journalRepository.observeMonth(
-            now.get(Calendar.YEAR), now.get(Calendar.MONTH) + 1,
+            year, month,
         ).first()
         assertEquals(setOf(ORIGINAL_ITEM_NAME), afterUpdate.map { it.snapshot.itemName }.toSet())
         assertEquals(setOf(null), afterUpdate.map { it.snapshot.imageAssetId }.toSet())
@@ -162,9 +164,29 @@ class ReleaseAcceptanceRobolectricTest {
 }
 
 class InMemoryCoffeeJournalApp : CoffeeJournalApp() {
+    private val fixedReading = acceptanceClockReading()
+    override val journalClock = object : com.niumi.coffeejournal.journal.Clock {
+        override fun read() = fixedReading
+    }
+    val acceptanceYearMonth: Pair<Int, Int> = fixedReading.localDate
+        .let { it.substring(0, 4).toInt() to it.substring(5, 7).toInt() }
+
     override val database: CoffeeDatabase by lazy {
         Room.inMemoryDatabaseBuilder(this, CoffeeDatabase::class.java)
             .allowMainThreadQueries()
             .build()
     }
+}
+
+private fun acceptanceClockReading(): com.niumi.coffeejournal.journal.ClockReading {
+    val calendar = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 12)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    return com.niumi.coffeejournal.journal.ClockReading(
+        calendar.timeInMillis,
+        SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(calendar.time),
+    )
 }
