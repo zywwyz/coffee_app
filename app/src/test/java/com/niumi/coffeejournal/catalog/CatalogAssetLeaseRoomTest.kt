@@ -18,6 +18,7 @@ import com.niumi.coffeejournal.core.model.MaintenanceMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -37,6 +38,7 @@ import org.robolectric.annotation.Config
 class CatalogAssetLeaseRoomTest {
     private lateinit var database: CoffeeDatabase
     private lateinit var repository: RoomCatalogRepository
+    private var viewModelJob: Job? = null
 
     @Before
     fun setUp() {
@@ -50,7 +52,10 @@ class CatalogAssetLeaseRoomTest {
     }
 
     @After
-    fun tearDown() = database.close()
+    fun tearDown() {
+        runBlocking { viewModelJob?.cancelAndJoin() }
+        database.close()
+    }
 
     @Test
     fun `old image cleanup starts only after room commits the new association`() = runBlocking {
@@ -65,7 +70,8 @@ class CatalogAssetLeaseRoomTest {
         )
         repository.upsertItem(item("old-image"))
         val images = DatabaseAwareImageStore(database)
-        val scope = CoroutineScope(Job() + Dispatchers.Unconfined)
+        val job = Job().also { viewModelJob = it }
+        val scope = CoroutineScope(job + Dispatchers.Unconfined)
         val viewModel = CatalogViewModel(
             repository = repository, imageStore = images,
             coroutineScope = scope, leaseCleanupScope = scope,

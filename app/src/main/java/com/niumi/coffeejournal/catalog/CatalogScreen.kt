@@ -248,6 +248,7 @@ fun CatalogScreen(
         onToggle = onToggleUpdateSelection,
         onConfirm = onConfirmUpdate,
         onDismiss = onDismissUpdate,
+        onRetry = { brand -> onUpdateBrand(brand) },
         onScreenshot = { brand ->
             onDismissUpdate()
             onSelectBrand(brand.id)
@@ -296,6 +297,7 @@ private fun CatalogUpdateDialog(
     onToggle: (String) -> Unit,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
+    onRetry: (Brand) -> Unit,
     onScreenshot: (Brand) -> Unit,
     onManual: (Brand) -> Unit,
 ) {
@@ -323,7 +325,12 @@ private fun CatalogUpdateDialog(
                 }
             },
             confirmButton = {
-                CatalogFallbackActions(brand, onScreenshot, onManual)
+                Column {
+                    TextButton(onClick = { brand?.let(onRetry) }, enabled = brand != null) {
+                        Text("重试官网更新")
+                    }
+                    CatalogFallbackActions(brand, onScreenshot, onManual)
+                }
             },
             dismissButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
         )

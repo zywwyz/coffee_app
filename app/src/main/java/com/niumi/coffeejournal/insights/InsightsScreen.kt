@@ -38,12 +38,14 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.niumi.coffeejournal.journal.JournalRepository
+import com.niumi.coffeejournal.TestTags
 import java.util.GregorianCalendar
 import java.util.Locale
 import java.math.BigInteger
@@ -230,7 +232,13 @@ private fun MetricGrid(values: List<Pair<String, String>>) {
                     ) {
                         Column(Modifier.padding(14.dp)) {
                             Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(value, style = MaterialTheme.typography.titleLarge)
+                            Text(
+                                value,
+                                style = MaterialTheme.typography.titleLarge,
+                                modifier = if (label == "实际消费") {
+                                    Modifier.testTag(TestTags.MonthlySpend)
+                                } else Modifier,
+                            )
                         }
                     }
                 }

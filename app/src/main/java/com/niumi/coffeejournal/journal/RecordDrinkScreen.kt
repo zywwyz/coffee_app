@@ -20,12 +20,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.CatalogItem
 import com.niumi.coffeejournal.core.model.ItemType
+import com.niumi.coffeejournal.TestTags
 
 @Composable
 fun RecordDrinkScreen(
@@ -110,7 +112,7 @@ fun RecordDrinkScreen(
         Button(
             onClick = onSave,
             enabled = state.selectedItemId != null && state.priceValid && !editorBusy,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().testTag(TestTags.ConfirmSave),
         ) {
             Text(
                 when {
@@ -162,6 +164,7 @@ private fun MissingImageDialog(
     onSkip: () -> Unit,
 ) {
     AlertDialog(
+        modifier = Modifier.testTag(TestTags.MissingImagePrompt),
         onDismissRequest = onSkip,
         title = { Text("为产品补充图片") },
         text = { Text("官网图片未能下载。可以上传原始屏幕截图，稍后由本机裁剪；也可以选择已裁好的图片，或先使用品牌 Logo。") },

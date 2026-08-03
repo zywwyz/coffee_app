@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -48,6 +49,7 @@ import com.niumi.coffeejournal.core.model.DrinkRecord
 import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.importer.AssetImportRequester
 import com.niumi.coffeejournal.importer.ImageImportMode
+import com.niumi.coffeejournal.TestTags
 import java.util.Calendar
 
 @Composable
@@ -122,7 +124,11 @@ fun JournalScreen(
 ) {
     val thumbnailLoader = remember { CalendarThumbnailLoader() }
     Scaffold(
-        floatingActionButton = { Button(onClick = onRecordDrink) { Text("记录一杯") } },
+        floatingActionButton = {
+            Button(onClick = onRecordDrink, modifier = Modifier.testTag(TestTags.RecordButton)) {
+                Text("记录一杯")
+            }
+        },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -134,7 +140,7 @@ fun JournalScreen(
         ) {
             MonthHeader(state.year, state.month, onPreviousMonth, onNextMonth)
             WeekdayHeader()
-            Column(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().testTag(TestTags.Calendar)) {
                 state.days.chunked(7).forEach { week ->
                     Row(Modifier.fillMaxWidth()) {
                         week.forEach { day ->
@@ -258,7 +264,10 @@ private fun MonthSummary(summary: MonthSummaryUi) {
     Card(Modifier.fillMaxWidth().padding(bottom = 76.dp)) {
         Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("${summary.cupCount} 杯")
-            Text("¥${summary.totalSpendFen / 100}.${(summary.totalSpendFen % 100).toString().padStart(2, '0')}")
+            Text(
+                "¥${summary.totalSpendFen / 100}.${(summary.totalSpendFen % 100).toString().padStart(2, '0')}",
+                modifier = Modifier.testTag(TestTags.MonthlySpend),
+            )
             Text(rating)
         }
     }

@@ -93,6 +93,29 @@ class CatalogUpdateUiRobolectricTest {
         compose.runOnIdle { org.junit.Assert.assertTrue(cancelled) }
     }
 
+    @Test
+    fun `offline update failure offers retry screenshot and manual fallback`() {
+        var retried: String? = null
+        compose.setContent {
+            CoffeeTheme {
+                CatalogScreen(
+                    state = catalogState(), onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {},
+                    onSaveBrand = {}, onSaveItem = {}, onSetItemStatus = { _, _ -> }, onClearError = {},
+                    updateState = CatalogUpdateUiState(
+                        phase = UpdatePhase.FAILURE, brandId = "brand", brandName = "瑞幸",
+                        failureKind = FailureKind.OFFLINE, message = "网络不可用",
+                    ),
+                    onUpdateBrand = { retried = it.id },
+                )
+            }
+        }
+
+        compose.onNodeWithText("重试官网更新").assertIsDisplayed().performClick()
+        compose.onNodeWithText("上传截图").assertIsDisplayed()
+        compose.onNodeWithText("手工录入").assertIsDisplayed()
+        compose.runOnIdle { assertEquals("brand", retried) }
+    }
+
     private fun catalogState() = CatalogUiState(
         tab = CatalogTab.CHAINS,
         brandOverviews = listOf(BrandOverview(brand(), 2, 1_700_000_000_000)),
