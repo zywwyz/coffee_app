@@ -183,4 +183,34 @@ class BackupArchiveCodecTest {
             org.junit.Assert.assertFalse(output.exists())
         } finally { root.deleteRecursively() }
     }
+
+    @Test fun `actual expanded bytes defeat a low reported central directory size`() {
+        val root = createTempDirectory("backup-central-size-").toFile()
+        try {
+            val db = File(root, "source.sqlite").apply {
+                outputStream().use { output -> output.write("SQLite format 3\u0000".toByteArray()); output.write(ByteArray(1024 * 1024)) }
+            }
+            val archive = File(root, "malicious.zip")
+            codec.encode(archive, db, emptyList(), BackupCounts(0,0,0,0,0,0), 1, 1)
+            val bytes = archive.readBytes()
+            val name = "database.sqlite".toByteArray()
+            var patched = false
+            for (index in 0..bytes.size - 46 - name.size) {
+                if (bytes[index] == 0x50.toByte() && bytes[index + 1] == 0x4b.toByte() && bytes[index + 2] == 0x01.toByte() && bytes[index + 3] == 0x02.toByte() &&
+                    bytes.copyOfRange(index + 46, index + 46 + name.size).contentEquals(name)) {
+                    byteArrayOf(1, 0, 0, 0).copyInto(bytes, index + 24)
+                    patched = true
+                    break
+                }
+            }
+            org.junit.Assert.assertTrue("central database entry was patched", patched)
+            archive.writeBytes(bytes)
+            val output = File(root, "output")
+            val strict = SafeBackupArchiveCodec(BackupLimits(maxExpandedBytes = 128 * 1024, maxDatabaseBytes = 2L * 1024 * 1024))
+
+            assertThrows(BackupValidationException::class.java) { strict.decode(archive, output) }
+
+            org.junit.Assert.assertFalse(output.exists())
+        } finally { root.deleteRecursively() }
+    }
 }

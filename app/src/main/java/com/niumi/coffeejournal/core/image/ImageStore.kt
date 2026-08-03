@@ -27,6 +27,11 @@ interface ImageStore {
     suspend fun deleteIfUnreferenced(assetId: String): Boolean
 }
 
+/** Serializes all mutations of managed image files with their image_assets rows. */
+internal object ImageMutationCoordinator {
+    val mutex = Mutex()
+}
+
 enum class ImageKind { PRODUCT, BRAND_LOGO, BEAN_PACKAGE, RECORD_SNAPSHOT }
 
 data class ImageAsset(
@@ -84,7 +89,7 @@ class LocalImageStore(
         importConfirmed(source, kind) { it.bitmap }
 
     override suspend fun deleteIfUnreferenced(assetId: String): Boolean = withContext(Dispatchers.IO) {
-        MUTATION_MUTEX.withLock {
+        ImageMutationCoordinator.mutex.withLock {
             val entity = imageAssetDao.get(assetId) ?: return@withLock false
             val managedFile = managedFileOrNull(entity.localPath) ?: return@withLock false
             if (imageAssetDao.referenceCount(assetId) != 0) return@withLock false
@@ -100,7 +105,7 @@ class LocalImageStore(
         kind: ImageKind,
         transform: (DecodedImage) -> Bitmap,
     ): ImageAsset = withContext(Dispatchers.IO) {
-        MUTATION_MUTEX.withLock {
+        ImageMutationCoordinator.mutex.withLock {
             coroutineContext.ensureActive()
             imageDirectory.mkdirs()
             val decoded = decodeOriented(source)
@@ -220,8 +225,6 @@ class LocalImageStore(
     private companion object {
         const val MAX_DECODE_DIMENSION = 2048
         val SAFE_FILE_NAME = Regex("[0-9a-f]{64}\\.webp")
-        val MUTATION_MUTEX = Mutex()
-
         fun sampleSize(width: Int, height: Int): Int {
             var sample = 1
             while (width / sample > MAX_DECODE_DIMENSION || height / sample > MAX_DECODE_DIMENSION) sample *= 2

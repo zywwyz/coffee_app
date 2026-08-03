@@ -10,6 +10,7 @@ import androidx.room.Room
 import androidx.room.withTransaction
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.niumi.coffeejournal.core.database.CoffeeDatabase
+import com.niumi.coffeejournal.core.image.ImageMutationCoordinator
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -48,6 +49,7 @@ class LocalBackupManager(
     private val beforeRestoreCommit: suspend () -> Unit = {},
     private val onRestoreRowCopied: () -> Unit = {},
     private val afterRestoreCommitted: () -> Unit = {},
+    private val afterRestoreImageLockAcquired: () -> Unit = {},
 ) : BackupManager {
     private val appContext = context.applicationContext
     private val resolver = appContext.contentResolver
@@ -125,6 +127,8 @@ class LocalBackupManager(
               val check = { operationContext.ensureActive() }
               MUTEX.withLock {
                 cleanupStaleStaging()
+                ImageMutationCoordinator.mutex.withLock {
+            afterRestoreImageLockAcquired()
             val stagingPrefix = tempRoot.canonicalPath + File.separator
             if (!backup.root.canonicalPath.startsWith(stagingPrefix) || backup.root.canonicalPath !in ACTIVE_STAGING) throw BackupValidationException("备份验证令牌无效")
             val created = mutableListOf<File>()
@@ -177,6 +181,7 @@ class LocalBackupManager(
             } finally {
                 withContext(NonCancellable) { ACTIVE_STAGING -= backup.root.canonicalPath; backup.root.deleteRecursively() }
             }
+                }
               }
             }
         } catch (cancelled: CancellationException) {

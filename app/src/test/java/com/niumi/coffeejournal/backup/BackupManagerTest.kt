@@ -22,6 +22,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import com.niumi.coffeejournal.core.image.LocalImageStore
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -274,6 +276,30 @@ class BackupManagerTest {
         job.join()
 
         assertFalse(validated.root.exists())
+    }
+
+    @Test fun `restore serializes its image and database mutation with ordinary image deletion`() = runBlocking {
+        val imageDir = File(context.filesDir, "images").apply { mkdirs() }
+        val file = File(imageDir, "shared.webp")
+        Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888).also { bitmap -> file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.WEBP, 90, it) }; bitmap.recycle() }
+        database.imageAssetDao().upsert(ImageAssetEntity("shared", file.absolutePath, sha256(file), "PRODUCT", 1))
+        val archive = File(context.cacheDir, "shared-lock-${System.nanoTime()}.zip")
+        manager.export(Uri.fromFile(archive))
+        val validated = manager.validate(Uri.fromFile(archive))
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val restoring = LocalBackupManager(context, database, afterRestoreImageLockAcquired = { entered.countDown(); release.await() })
+        val restoreJob = launch(Dispatchers.IO) { restoring.restore(validated) }
+        assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        val deleteJob = launch(Dispatchers.IO) { LocalImageStore(context, database.imageAssetDao()).deleteIfUnreferenced("shared") }
+
+        delay(100)
+        assertFalse(deleteJob.isCompleted)
+        release.countDown()
+        restoreJob.join()
+        deleteJob.join()
+
+        assertFalse(restoreJob.isCancelled)
     }
 
     private fun count(table:String):Int=database.openHelper.writableDatabase.query("SELECT COUNT(*) FROM $table").use{it.moveToFirst();it.getInt(0)}

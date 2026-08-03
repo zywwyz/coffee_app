@@ -19,6 +19,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.RuntimeEnvironment
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertNull
 import java.io.File
 import kotlin.io.path.createTempDirectory
 import java.util.concurrent.atomic.AtomicInteger
@@ -63,6 +65,21 @@ class SettingsScreenRobolectricTest {
         compose.waitUntil(5_000) { TrackingBackupManager.discards.get() > 0 }
 
         assertFalse(root.exists())
+    }
+
+    @Test fun `validated lease is synchronously consumable before any recomposition`() {
+        val root = createTempDirectory("settings-immediate-dispose-").toFile()
+        val db = File(root, "database.sqlite").apply { writeText("unused") }
+        val manifest = BackupManifest(1, 1, 1, "0".repeat(64), db.length(), emptyList(), BackupCounts(0,0,0,0,0,0))
+        val backup = ValidatedBackup(root, DecodedBackup(manifest, db, emptyList()))
+        val holder = ValidatedBackupLeaseHolder()
+
+        holder.register(backup)
+        val consumedByDispose = holder.take()
+
+        assertSame(backup, consumedByDispose)
+        assertNull(holder.take())
+        root.deleteRecursively()
     }
 }
 

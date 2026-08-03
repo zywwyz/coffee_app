@@ -113,6 +113,7 @@ class SafeBackupArchiveCodec(
                 }
                 val manifestEntry = zip.getEntry(MANIFEST) ?: fail("缺少 manifest.json")
                 val manifestBytes = zip.getInputStream(manifestEntry).use { readBounded(it, limits.maxManifestBytes, checkCancelled) }
+                if (exceedsCompressionRatio(manifestBytes.size.toLong(), manifestEntry.compressedSize)) fail("备份实际压缩比异常")
                 val manifest = try { json.decodeFromString(BackupManifest.serializer(), manifestBytes.toString(Charsets.UTF_8)) }
                     catch (error: Exception) { fail("清单无法解析", error) }
                 if (manifest.formatVersion != BackupManifest.CURRENT_FORMAT) fail("不支持的备份格式版本 ${manifest.formatVersion}")
@@ -125,14 +126,29 @@ class SafeBackupArchiveCodec(
                     if (!assetIds.add(it.assetId) || !expected.add(it.entry)) fail("图片清单重复")
                 }
                 if (seen != expected) fail("备份包含缺失或额外条目")
-                var expanded = 0L
+                var expanded = manifestBytes.size.toLong()
+                if (expanded > limits.maxExpandedBytes) fail("备份解压总量过大")
                 fun extract(name: String, max: Long): File {
                     val entry = zip.getEntry(name) ?: fail("缺少 $name")
-                    expanded += entry.size
-                    if (expanded > limits.maxExpandedBytes) fail("备份解压总量过大")
                     val out = File(destination, name)
                     out.parentFile?.mkdirs()
-                    zip.getInputStream(entry).use { input -> FileOutputStream(out).use { output -> copyBounded(input, output, max, checkCancelled) } }
+                    zip.getInputStream(entry).use { input ->
+                        FileOutputStream(out).use { output ->
+                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                            var entryExpanded = 0L
+                            while (true) {
+                                checkCancelled()
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                entryExpanded += count
+                                expanded += count
+                                if (entryExpanded > max) fail("条目超过限制")
+                                if (expanded > limits.maxExpandedBytes) fail("备份解压总量过大")
+                                if (exceedsCompressionRatio(entryExpanded, entry.compressedSize)) fail("备份实际压缩比异常")
+                                output.write(buffer, 0, count)
+                            }
+                        }
+                    }
                     return out
                 }
                 val db = extract(DATABASE, limits.maxDatabaseBytes)
@@ -171,6 +187,12 @@ class SafeBackupArchiveCodec(
     private fun requireSafeImageEntry(name: String) {
         if (!IMAGE_ENTRY.matches(name) || !safeName(name)) fail("图片条目名无效")
     }
+    private fun exceedsCompressionRatio(expanded: Long, compressed: Long): Boolean {
+        if (expanded == 0L) return false
+        if (compressed <= 0L) return true
+        val limit = if (compressed > Long.MAX_VALUE / limits.maxCompressionRatio) Long.MAX_VALUE else compressed * limits.maxCompressionRatio
+        return expanded > limit
+    }
     private fun safeName(name: String) = name.isNotEmpty() && !name.startsWith('/') && !name.startsWith('\\') && '\\' !in name && name.split('/').none { it == ".." || it == "." || it.isEmpty() }
     private fun putBytes(zip: ZipOutputStream, name: String, bytes: ByteArray) { zip.putNextEntry(ZipEntry(name)); zip.write(bytes); zip.closeEntry() }
     private fun putFile(zip: ZipOutputStream, name: String, file: File, check: () -> Unit) { zip.putNextEntry(ZipEntry(name)); FileInputStream(file).use { copyBounded(it, zip, Long.MAX_VALUE, check) }; zip.closeEntry() }
@@ -200,4 +222,9 @@ data class BackupLimits(
     val maxEntries: Int = 10_002,
     val maxImages: Int = 10_000,
     val maxCompressionRatio: Long = 200,
-)
+) {
+    init {
+        require(maxArchiveBytes > 0 && maxExpandedBytes > 0 && maxDatabaseBytes > 0 && maxImageBytes > 0 && maxManifestBytes > 0)
+        require(maxEntries >= 2 && maxImages >= 0 && maxCompressionRatio > 0)
+    }
+}

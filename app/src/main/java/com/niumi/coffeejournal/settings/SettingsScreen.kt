@@ -26,22 +26,32 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.cancel
+import java.util.concurrent.atomic.AtomicReference
+
+internal class ValidatedBackupLeaseHolder(initial: ValidatedBackup? = null) {
+    private val reference = AtomicReference(initial)
+
+    fun register(backup: ValidatedBackup): ValidatedBackup? = reference.getAndSet(backup)
+    fun take(): ValidatedBackup? = reference.getAndSet(null)
+    fun take(expected: ValidatedBackup): ValidatedBackup? =
+        if (reference.compareAndSet(expected, null)) expected else null
+}
 
 @Composable
 fun SettingsScreen(manager: BackupManager, initialValidatedBackup: ValidatedBackup? = null) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
+    val validatedLease = remember { ValidatedBackupLeaseHolder(initialValidatedBackup) }
     var validated by remember { mutableStateOf(initialValidatedBackup) }
     var running by remember { mutableStateOf<Job?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var lastBackup by remember { mutableLongStateOf(prefs.getLong(LAST_BACKUP, 0)) }
     val cleanupScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.IO) }
-    val latestValidated = rememberUpdatedState(validated)
     DisposableEffect(Unit) {
         onDispose {
-            latestValidated.value?.let { pending ->
+            validatedLease.take()?.let { pending ->
                 cleanupScope.launch(start = CoroutineStart.UNDISPATCHED) { manager.discard(pending) }
             }
             cleanupScope.cancel()
@@ -68,7 +78,9 @@ fun SettingsScreen(manager: BackupManager, initialValidatedBackup: ValidatedBack
     }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) launch {
-            validated = manager.validate(uri)
+            val backup = manager.validate(uri)
+            validatedLease.register(backup)?.let { previous -> manager.discard(previous) }
+            validated = backup
             status = null
         }
     }
@@ -104,8 +116,10 @@ fun SettingsScreen(manager: BackupManager, initialValidatedBackup: ValidatedBack
     validated?.let { backup ->
         AlertDialog(
             onDismissRequest = {
-                validated = null
-                launch { manager.discard(backup) }
+                validatedLease.take(backup)?.let { owned ->
+                    validated = null
+                    launch { manager.discard(owned) }
+                }
             },
             title = { Text("替换全部本地数据？") },
             text = {
@@ -114,12 +128,16 @@ fun SettingsScreen(manager: BackupManager, initialValidatedBackup: ValidatedBack
             },
             confirmButton = {
                 Button(onClick = {
-                    validated = null
-                    launch { manager.restore(backup); status = "恢复完成" }
+                    validatedLease.take(backup)?.let { owned ->
+                        validated = null
+                        launch { manager.restore(owned); status = "恢复完成" }
+                    }
                 }) { Text("确认替换") }
             },
             dismissButton = {
-                TextButton(onClick = { validated = null; launch { manager.discard(backup) } }) { Text("取消") }
+                TextButton(onClick = {
+                    validatedLease.take(backup)?.let { owned -> validated = null; launch { manager.discard(owned) } }
+                }) { Text("取消") }
             },
         )
     }
