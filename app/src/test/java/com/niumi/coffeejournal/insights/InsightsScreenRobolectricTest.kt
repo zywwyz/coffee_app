@@ -80,6 +80,15 @@ class InsightsScreenRobolectricTest {
     }
 
     @Test
+    fun `canvas points and fixed width labels share centers while scrolling`() {
+        val centers = chartPointCenters(864f, 12)
+        org.junit.Assert.assertEquals(36f, centers.first(), 0f)
+        org.junit.Assert.assertEquals(828f, centers.last(), 0f)
+        val scroll = 240f
+        org.junit.Assert.assertEquals(centers[5] - scroll, (5.5f * 72f) - scroll, 0f)
+    }
+
+    @Test
     fun `empty state remains useful`() {
         val empty = state().copy(monthly = InsightsCalculator.monthly(2026, 8, emptyList(), emptyList()))
         compose.setContent { CoffeeTheme { InsightsScreen(empty, {}, {}) } }

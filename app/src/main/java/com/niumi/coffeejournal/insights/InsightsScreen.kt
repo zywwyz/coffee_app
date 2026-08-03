@@ -2,6 +2,7 @@ package com.niumi.coffeejournal.insights
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -302,47 +304,64 @@ private fun TrendChart(points: List<TrendPoint>) {
         .ifBlank { "暂无数据" }
     val barColor = MaterialTheme.colorScheme.secondary
     val ratingColor = MaterialTheme.colorScheme.primary
+    val chartScroll = rememberScrollState()
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("■ 消费柱", color = barColor)
             Text("● 评分折线", color = ratingColor)
         }
-        Canvas(
-            Modifier.fillMaxWidth().height(150.dp).semantics { contentDescription = description },
-        ) {
-        val maxSpend = points.mapNotNull(TrendPoint::spendFen).maxOrNull()?.takeIf { it > 0 } ?: 1L
-        val cell = size.width / points.size.coerceAtLeast(1)
-        var lastRating: Offset? = null
-        points.forEachIndexed { index, point ->
-            point.spendFen?.let { spend ->
-                val barHeight = size.height * .72f * (spend.toDouble() / maxSpend.toDouble()).toFloat()
-                drawRoundRect(
-                    color = barColor.copy(alpha = .55f),
-                    topLeft = Offset(index * cell + cell * .18f, size.height - barHeight),
-                    size = androidx.compose.ui.geometry.Size(cell * .45f, barHeight),
-                )
-            }
-            point.averageRating?.let { rating ->
-                val current = Offset(index * cell + cell * .5f, size.height * (1f - (rating / 5.0).toFloat()))
-                lastRating?.let { drawLine(ratingColor, it, current, 4.dp.toPx(), StrokeCap.Round) }
-                drawCircle(ratingColor, 4.dp.toPx(), current)
-                lastRating = current
-            }
-        }
-        }
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            points.forEach { point ->
-                Column(Modifier.padding(vertical = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(point.label)
-                    point.spendFen?.let { Text(formatFen(it)) }
-                    point.averageRating?.let { Text("${String.format(Locale.ROOT, "%.1f", it)}★") }
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val pointWidth = 72.dp
+            val contentWidth = maxOf(maxWidth, pointWidth * points.size.coerceAtLeast(1))
+            val cellWidth = contentWidth / points.size.coerceAtLeast(1)
+            Column(Modifier.fillMaxWidth().horizontalScroll(chartScroll)) {
+                Column(Modifier.width(contentWidth)) {
+                    Canvas(
+                        Modifier.fillMaxWidth().height(150.dp).semantics { contentDescription = description },
+                    ) {
+                        val maxSpend = points.mapNotNull(TrendPoint::spendFen).maxOrNull()?.takeIf { it > 0 } ?: 1L
+                        val centers = chartPointCenters(size.width, points.size)
+                        val cell = size.width / points.size.coerceAtLeast(1)
+                        var lastRating: Offset? = null
+                        points.forEachIndexed { index, point ->
+                            point.spendFen?.let { spend ->
+                                val barHeight = size.height * .72f * (spend.toDouble() / maxSpend.toDouble()).toFloat()
+                                drawRoundRect(
+                                    color = barColor.copy(alpha = .55f),
+                                    topLeft = Offset(centers[index] - cell * .225f, size.height - barHeight),
+                                    size = androidx.compose.ui.geometry.Size(cell * .45f, barHeight),
+                                )
+                            }
+                            point.averageRating?.let { rating ->
+                                val current = Offset(centers[index], size.height * (1f - (rating / 5.0).toFloat()))
+                                lastRating?.let { drawLine(ratingColor, it, current, 4.dp.toPx(), StrokeCap.Round) }
+                                drawCircle(ratingColor, 4.dp.toPx(), current)
+                                lastRating = current
+                            }
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth()) {
+                        points.forEach { point ->
+                            Column(
+                                Modifier.width(cellWidth).padding(vertical = 2.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Text(point.label)
+                                point.spendFen?.let { Text(formatFen(it)) }
+                                point.averageRating?.let { Text("${String.format(Locale.ROOT, "%.1f", it)}★") }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+internal fun chartPointCenters(chartWidthPx: Float, pointCount: Int): List<Float> {
+    if (pointCount <= 0) return emptyList()
+    val cell = chartWidthPx / pointCount
+    return List(pointCount) { index -> (index + .5f) * cell }
 }
 
 @Composable
