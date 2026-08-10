@@ -262,4 +262,7 @@ interface DraftDao {
 
     @Query("DELETE FROM draft_records WHERE id = :id AND revisionId = :revisionId")
     suspend fun deleteIfRevision(id: String, revisionId: String): Int
+
+    @Query("DELETE FROM draft_records WHERE id = :id AND editingRecordId = :recordId")
+    suspend fun deleteIfEditingRecord(id: String, recordId: String): Int
 }

@@ -7,14 +7,23 @@ import com.niumi.coffeejournal.core.model.DrinkDraft
 import com.niumi.coffeejournal.core.model.DrinkRecord
 import com.niumi.coffeejournal.core.model.DrinkSnapshot
 import com.niumi.coffeejournal.core.model.ItemType
+import com.niumi.coffeejournal.catalog.CatalogRepository
+import com.niumi.coffeejournal.core.model.Brand
+import com.niumi.coffeejournal.core.model.BrandType
+import com.niumi.coffeejournal.core.model.CatalogItem
+import com.niumi.coffeejournal.core.model.ItemStatus
+import com.niumi.coffeejournal.core.model.MaintenanceMode
 import java.util.TimeZone
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -101,6 +110,98 @@ class JournalRecordLifecycleTest {
         assertEquals("asset", database.imageAssetDao().get("asset")?.id)
     }
 
+    @Test fun `deleting an edited record clears its persisted draft atomically`() = runBlocking {
+        database.drinkDao().insert(record(1_754_006_460_000L).toEntityForLifecycleTest())
+        store.startDraft(draft(1_754_006_460_000L, "待保存修改").copy(
+            editingRecordId = "record", expectedRecordRevision = 0,
+        ))
+
+        store.delete("record")
+
+        assertNull(store.get("record"))
+        assertNull(RoomDrinkStore(database, FixedClock).restoreDraft())
+    }
+
+    @Test fun `starting an edit after delete creates no draft`() = runBlocking {
+        database.drinkDao().insert(record(1_754_006_460_000L).toEntityForLifecycleTest())
+        store.delete("record")
+
+        assertNull(store.startEditDraft("record", "edit-revision"))
+        assertNull(store.restoreDraft())
+    }
+
+    @Test fun `starting an edit then deleting clears both record and draft`() = runBlocking {
+        database.drinkDao().insert(record(1_754_006_460_000L).toEntityForLifecycleTest())
+
+        assertEquals("record", store.startEditDraft("record", "edit-revision")?.editingRecordId)
+        store.delete("record")
+
+        assertNull(store.get("record"))
+        assertNull(store.restoreDraft())
+    }
+
+    @Test fun `deleting another record preserves the current edit draft`() = runBlocking {
+        database.drinkDao().insert(record(1_754_006_460_000L).toEntityForLifecycleTest())
+        database.drinkDao().insert(record(1_754_006_460_001L).copy(id = "other").toEntityForLifecycleTest())
+        val editingDraft = draft(1_754_006_460_000L, "待保存修改").copy(
+            editingRecordId = "record", expectedRecordRevision = 0,
+        )
+        store.startDraft(editingDraft)
+
+        store.delete("other")
+
+        assertNull(store.get("other"))
+        assertEquals(editingDraft, store.restoreDraft())
+    }
+
+    @Test fun `delete transaction failure leaves both record and matching draft intact`() = runBlocking {
+        val saved = record(1_754_006_460_000L)
+        database.drinkDao().insert(saved.toEntityForLifecycleTest())
+        val editingDraft = draft(1_754_006_460_000L, "待保存修改").copy(
+            editingRecordId = "record", expectedRecordRevision = 0,
+        )
+        store.startDraft(editingDraft)
+        database.openHelper.writableDatabase.execSQL(
+            """CREATE TRIGGER fail_draft_clear BEFORE DELETE ON draft_records
+               WHEN OLD.editingRecordId = 'record' BEGIN SELECT RAISE(ABORT, 'forced failure'); END""",
+        )
+
+        try {
+            store.delete("record")
+            fail("Expected transaction failure")
+        } catch (_: Exception) {
+            // The trigger aborts draft deletion; Room must roll back the preceding record deletion too.
+        }
+
+        assertEquals(saved, store.get("record"))
+        assertEquals(editingDraft, store.restoreDraft())
+    }
+
+    @Test fun `discarding the current draft leaves saved records intact`() = runBlocking {
+        val saved = record(1_754_006_460_000L)
+        database.drinkDao().insert(saved.toEntityForLifecycleTest())
+        val draft = draft(1_754_006_460_000L, "放弃的输入")
+        store.startDraft(draft)
+
+        assertTrue(store.discardDraft(draft.revisionId))
+
+        assertNull(store.restoreDraft())
+        assertEquals(saved, store.get(saved.id))
+    }
+
+    @Test fun `deleting an edited record does not poison a recreated repository new save`() = runBlocking {
+        database.drinkDao().insert(record(1_754_006_460_000L).toEntityForLifecycleTest())
+        val repository = DefaultJournalRepository(LifecycleCatalog, store, FixedClock)
+        repository.editDraft("record")
+
+        repository.delete("record")
+
+        val recreated = DefaultJournalRepository(LifecycleCatalog, RoomDrinkStore(database, FixedClock), FixedClock)
+        assertNull(recreated.restoreDraft())
+        val savedId = recreated.save(recreated.newDraft(ItemType.CHAIN_PRODUCT, "item"))
+        assertEquals("item", recreated.get(savedId)?.sourceItemId)
+    }
+
     @Test fun `local date follows selected instant in mainland timezone`() {
         val zone = TimeZone.getTimeZone("Asia/Shanghai")
         assertEquals("2025-07-31", localDateForEpoch(1_753_974_000_000L, zone))
@@ -136,6 +237,20 @@ class JournalRecordLifecycleTest {
 
     private object FixedClock : Clock {
         override fun read() = ClockReading(1_760_000_000_000L, "2025-10-07")
+    }
+
+    private object LifecycleCatalog : CatalogRepository {
+        private val brand = Brand("brand", BrandType.CHAIN, "测试品牌", null, MaintenanceMode.MANUAL_ONLY, null)
+        private val item = CatalogItem(
+            "item", "brand", ItemType.CHAIN_PRODUCT, "测试产品", null, null, null, null, null, "热", ItemStatus.ACTIVE,
+        )
+        override fun observeBrands(type: BrandType): Flow<List<Brand>> = flowOf(listOf(brand))
+        override fun observeItems(brandId: String): Flow<List<CatalogItem>> = flowOf(listOf(item))
+        override suspend fun getBrand(brandId: String): Brand = brand
+        override suspend fun getItem(itemId: String): CatalogItem = item
+        override suspend fun upsertBrand(brand: Brand) = Unit
+        override suspend fun upsertItem(item: CatalogItem) = Unit
+        override suspend fun lastPriceFen(itemId: String): Long? = null
     }
 
     private fun DrinkRecord.toEntityForLifecycleTest() =

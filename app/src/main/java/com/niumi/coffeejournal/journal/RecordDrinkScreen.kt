@@ -21,6 +21,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -50,6 +54,7 @@ fun RecordDrinkScreen(
     onNoteChange: (String) -> Unit,
     onConsumedAtChange: (Long) -> Unit = {},
     onSave: () -> Unit,
+    onDiscardDraft: () -> Unit = {},
     onBack: () -> Unit,
     onScreenshot: () -> Unit,
     onSelectImage: () -> Unit,
@@ -58,6 +63,7 @@ fun RecordDrinkScreen(
     val editorBusy = state.saving || state.selecting || state.attachingImage
     val hasDraft = state.selectedItemId != null || state.invalidItem || state.editingRecordId != null
     val context = LocalContext.current
+    var confirmDiscard by remember { mutableStateOf(false) }
     val selectedTime = Calendar.getInstance().apply { timeInMillis = state.consumedAtEpochMillis }
     Column(
         modifier = Modifier.fillMaxSize().testTag(TestTags.RecordEditorScroll)
@@ -173,6 +179,13 @@ fun RecordDrinkScreen(
             enabled = !editorBusy,
         )
         state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        if (hasDraft) {
+            OutlinedButton(
+                onClick = { confirmDiscard = true },
+                enabled = !editorBusy,
+                modifier = Modifier.fillMaxWidth().testTag(TestTags.DiscardDraft),
+            ) { Text("放弃草稿并新建") }
+        }
         Button(
             onClick = onSave,
             enabled = state.selectedItemId != null && state.priceValid && !editorBusy,
@@ -191,6 +204,17 @@ fun RecordDrinkScreen(
 
     if (state.needsImagePrompt) {
         MissingImageDialog(!editorBusy, onScreenshot, onSelectImage, onSkipImage)
+    }
+    if (confirmDiscard) {
+        AlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text("放弃当前草稿？") },
+            text = { Text("未保存的输入将被删除，已保存的记录不会受影响。") },
+            confirmButton = {
+                TextButton(onClick = { confirmDiscard = false; onDiscardDraft() }) { Text("放弃并新建") }
+            },
+            dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text("继续编辑") } },
+        )
     }
 }
 

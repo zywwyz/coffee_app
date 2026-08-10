@@ -154,6 +154,45 @@ class JournalViewModelTest {
     }
 
     @Test
+    fun `deleting the record being edited clears the in memory editor`() = runBlocking {
+        val journal = FakeJournalRepository().apply {
+            editDraft = DrinkDraft(
+                "edit-revision", ItemType.CHAIN_PRODUCT, "item", null, null, null, "未保存",
+                editingRecordId = "record", expectedRecordRevision = 0,
+            )
+        }
+        val viewModel = JournalViewModel(
+            journal, FakeCatalogRepository(), 2026, 8, CoroutineScope(Job() + Dispatchers.Unconfined),
+        )
+
+        viewModel.editRecord("record")
+        yield()
+        viewModel.deleteRecord("record")
+        yield()
+
+        assertEquals(listOf("record"), journal.deletedRecords)
+        assertNull(viewModel.uiState.value.editor.editingRecordId)
+        assertNull(viewModel.uiState.value.editor.selectedItemId)
+        assertFalse(viewModel.uiState.value.editor.saving)
+    }
+
+    @Test
+    fun `discarding a draft clears the editor only after repository accepts its revision`() = runBlocking {
+        val journal = FakeJournalRepository()
+        val viewModel = JournalViewModel(
+            journal, FakeCatalogRepository(), 2026, 8, CoroutineScope(Job() + Dispatchers.Unconfined),
+        )
+        viewModel.selectItem(ItemType.CHAIN_PRODUCT, "item")
+
+        viewModel.discardDraft()
+        yield()
+
+        assertEquals(listOf("revision"), journal.discardedRevisions)
+        assertNull(viewModel.uiState.value.editor.selectedItemId)
+        assertNull(viewModel.uiState.value.editor.editingRecordId)
+    }
+
+    @Test
     fun `missing item image opens non blocking supplement prompt`() = runBlocking {
         val catalog = FakeCatalogRepository(item = item().copy(imageAssetId = null, status = ItemStatus.NEEDS_IMAGE))
         val viewModel = JournalViewModel(
@@ -276,6 +315,9 @@ class JournalViewModelTest {
         var saveCalls = 0
         var saveGate: CompletableDeferred<Unit>? = null
         var saveError: Exception? = null
+        var editDraft: DrinkDraft? = null
+        val deletedRecords = mutableListOf<String>()
+        val discardedRevisions = mutableListOf<String>()
 
         override fun observeMonth(year: Int, month: Int): Flow<List<DrinkRecord>> = this.month
         override suspend fun newDraft(type: ItemType, itemId: String) = DrinkDraft(
@@ -300,7 +342,12 @@ class JournalViewModelTest {
             return true
         }
 
-        override suspend fun delete(recordId: String) = Unit
+        override suspend fun editDraft(recordId: String): DrinkDraft = requireNotNull(editDraft)
+        override suspend fun discardDraft(revisionId: String): Boolean {
+            discardedRevisions += revisionId
+            return true
+        }
+        override suspend fun delete(recordId: String) { deletedRecords += recordId }
     }
 
     private inner class FakeCatalogRepository(

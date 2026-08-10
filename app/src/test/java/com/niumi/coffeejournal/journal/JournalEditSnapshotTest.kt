@@ -56,6 +56,14 @@ class JournalEditSnapshotTest {
         var record = initial
         override fun observeRange(startLocalDate: String, endLocalDate: String): Flow<List<DrinkRecord>> = flowOf(listOf(record))
         override suspend fun startDraft(draft: DrinkDraft) = Unit
+        override suspend fun startEditDraft(recordId: String, revisionId: String): DrinkDraft? =
+            record.takeIf { it.id == recordId }?.let { saved ->
+                DrinkDraft(
+                    revisionId, saved.itemType, saved.sourceItemId, saved.brewMethod,
+                    saved.ratingHalfStars, saved.actualPriceFen, saved.note.orEmpty(),
+                    saved.occurredAtEpochMillis, saved.id, saved.revision,
+                )
+            }
         override suspend fun get(recordId: String): DrinkRecord? = record.takeIf { it.id == recordId }
         override suspend fun saveRecordAndClearDraft(record: DrinkRecord, revisionId: String) = error("not create")
         override suspend fun update(record: DrinkRecord, expectedRevision: Int, draftRevisionId: String): Boolean {

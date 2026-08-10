@@ -222,9 +222,15 @@ class JournalViewModel(
     }
 
     fun deleteRecord(recordId: String) {
+        selectionGeneration++
+        selectionJob?.cancel()
+        mutableState.value = mutableState.value.copy(
+            editor = mutableState.value.editor.copy(selecting = false),
+        )
         scope.launch {
             try {
                 journalRepository.delete(recordId)
+                if (currentDraft?.editingRecordId == recordId) clearCurrentDraft()
                 if (mutableState.value.selectedDate != null) {
                     mutableState.value = mutableState.value.copy(selectedDate = mutableState.value.selectedDate)
                 }
@@ -232,6 +238,24 @@ class JournalViewModel(
                 throw error
             } catch (_: Exception) {
                 setEditorError("删除失败，请重试")
+            }
+        }
+    }
+
+    fun discardDraft() {
+        val draft = currentDraft ?: return
+        if (mutableState.value.editor.saving || mutableState.value.editor.selecting || mutableState.value.editor.attachingImage) return
+        scope.launch {
+            try {
+                if (journalRepository.discardDraft(draft.revisionId) && currentDraft?.revisionId == draft.revisionId) {
+                    clearCurrentDraft()
+                } else if (currentDraft?.revisionId == draft.revisionId) {
+                    setEditorError("草稿已变更，请重试")
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                if (currentDraft?.revisionId == draft.revisionId) setEditorError("放弃草稿失败，请重试")
             }
         }
     }
@@ -301,14 +325,7 @@ class JournalViewModel(
             try {
                 journalRepository.save(draft)
                 if (currentDraft?.revisionId == draft.revisionId) {
-                    currentDraft = null
-                    mutableState.value = mutableState.value.copy(
-                        editor = RecordEditorUi(
-                            sourceType = editor.sourceType,
-                            consumedAtEpochMillis = clock.read().epochMillis,
-                        ),
-                        saveCompletedToken = mutableState.value.saveCompletedToken + 1,
-                    )
+                    clearCurrentDraft(saveCompleted = true)
                 }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
@@ -347,6 +364,15 @@ class JournalViewModel(
             )
         }
         draftQueue.trySend(updated)
+    }
+
+    private fun clearCurrentDraft(saveCompleted: Boolean = false) {
+        val sourceType = mutableState.value.editor.sourceType
+        currentDraft = null
+        mutableState.value = mutableState.value.copy(
+            editor = RecordEditorUi(sourceType = sourceType, consumedAtEpochMillis = clock.read().epochMillis),
+            saveCompletedToken = mutableState.value.saveCompletedToken + if (saveCompleted) 1 else 0,
+        )
     }
 
     private fun observeMonth() {

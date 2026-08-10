@@ -121,6 +121,24 @@ class JournalConcurrencyTest {
         assertEquals("revision-fast", journal.startedDrafts.last().revisionId)
     }
 
+    @Test fun `delete invalidates an edit result that returns after its draft was cleared`() = runBlocking {
+        val committed = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val journal = DelayedEditJournal(committed, release)
+        val viewModel = viewModel(journal, RaceCatalogRepository())
+
+        viewModel.editRecord("record")
+        committed.await()
+        viewModel.deleteRecord("record")
+        yield()
+        release.complete(Unit)
+        yield()
+
+        assertTrue(journal.persistedDraft == null)
+        assertEquals(null, viewModel.uiState.value.editor.editingRecordId)
+        assertEquals(null, viewModel.uiState.value.editor.selectedItemId)
+    }
+
     @Test
     fun `stale item flow cannot populate products after source changes`() = runBlocking {
         val itemFlowGate = CompletableDeferred<Unit>()
@@ -325,6 +343,28 @@ class JournalConcurrencyTest {
         override suspend fun save(draft: DrinkDraft) = "record"
         override suspend fun saveDraft(draft: DrinkDraft) = true
         override suspend fun delete(recordId: String) = Unit
+    }
+
+    private class DelayedEditJournal(
+        private val committed: CompletableDeferred<Unit>,
+        private val release: CompletableDeferred<Unit>,
+    ) : JournalRepository {
+        var persistedDraft: DrinkDraft? = null
+        override fun observeMonth(year: Int, month: Int): Flow<List<DrinkRecord>> = flowOf(emptyList())
+        override suspend fun newDraft(type: ItemType, itemId: String): DrinkDraft = error("unused")
+        override suspend fun editDraft(recordId: String): DrinkDraft {
+            val draft = DrinkDraft(
+                "edit-revision", ItemType.CHAIN_PRODUCT, "record-item", null, null, null, "pending",
+                editingRecordId = recordId, expectedRecordRevision = 0,
+            )
+            persistedDraft = draft
+            committed.complete(Unit)
+            withContext(NonCancellable) { release.await() }
+            return draft
+        }
+        override suspend fun save(draft: DrinkDraft): String = error("unused")
+        override suspend fun saveDraft(draft: DrinkDraft): Boolean = true
+        override suspend fun delete(recordId: String) { if (persistedDraft?.editingRecordId == recordId) persistedDraft = null }
     }
 
     private class RaceCatalogRepository(

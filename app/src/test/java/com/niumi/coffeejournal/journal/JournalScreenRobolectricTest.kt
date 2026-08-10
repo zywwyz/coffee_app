@@ -188,6 +188,33 @@ class JournalScreenRobolectricTest {
     }
 
     @Test
+    fun `discard draft asks for confirmation before clearing unsaved input`() {
+        var discarded = false
+        compose.setContent {
+            CoffeeTheme {
+                RecordDrinkScreen(
+                    state = RecordEditorUi(selectedItemId = "item", note = "未保存输入"),
+                    brands = emptyList(), items = emptyList(),
+                    onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {},
+                    onRatingChange = {}, onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {},
+                    onSave = {}, onDiscardDraft = { discarded = true }, onBack = {},
+                    onScreenshot = {}, onSelectImage = {}, onSkipImage = {},
+                )
+            }
+        }
+
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.RecordEditorScroll).performTouchInput {
+            swipeUp()
+            swipeUp()
+            swipeUp()
+            swipeUp()
+        }
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.DiscardDraft).assertIsDisplayed().performClick()
+        compose.onNodeWithText("放弃并新建").performClick()
+        compose.runOnIdle { assert(discarded) }
+    }
+
+    @Test
     fun `editor shows editable date time and clear rating control`() {
         compose.setContent {
             CoffeeTheme {
@@ -208,8 +235,7 @@ class JournalScreenRobolectricTest {
         compose.onNodeWithText("2025-08-01").assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithText("20:00").assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.RecordEditorScroll).performTouchInput {
-            swipeUp()
-            swipeUp()
+            swipeUp(startY = height * 0.75f, endY = height * 0.35f)
         }
         compose.onNodeWithText("未评分").assertIsDisplayed().assertIsEnabled()
     }

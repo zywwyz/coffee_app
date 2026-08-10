@@ -89,6 +89,7 @@ fun JournalFeature(
             onNoteChange = journalViewModel::setNote,
             onConsumedAtChange = journalViewModel::setConsumedAt,
             onSave = journalViewModel::save,
+            onDiscardDraft = journalViewModel::discardDraft,
             onBack = { editorOpen = false },
             onScreenshot = {
                 val previousAssetId = state.items.firstOrNull { it.id == state.editor.selectedItemId }?.imageAssetId

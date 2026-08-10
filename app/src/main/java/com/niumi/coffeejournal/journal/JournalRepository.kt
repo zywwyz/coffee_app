@@ -30,6 +30,7 @@ interface JournalRepository {
     suspend fun get(recordId: String): DrinkRecord? = null
     suspend fun save(draft: DrinkDraft): String
     suspend fun saveDraft(draft: DrinkDraft): Boolean
+    suspend fun discardDraft(revisionId: String): Boolean = false
     suspend fun delete(recordId: String)
 }
 
@@ -53,12 +54,14 @@ object SystemClock : Clock {
 interface DrinkStore {
     fun observeRange(startLocalDate: String, endLocalDate: String): Flow<List<DrinkRecord>>
     suspend fun startDraft(draft: DrinkDraft)
+    suspend fun startEditDraft(recordId: String, revisionId: String): DrinkDraft? = null
     suspend fun replaceDraft(expectedRevisionId: String, draft: DrinkDraft): Boolean = false
     suspend fun restoreDraft(): DrinkDraft? = null
     suspend fun get(recordId: String): DrinkRecord? = null
     suspend fun saveRecordAndClearDraft(record: DrinkRecord, revisionId: String)
     suspend fun update(record: DrinkRecord, expectedRevision: Int, draftRevisionId: String): Boolean = false
     suspend fun saveDraft(draft: DrinkDraft): Boolean
+    suspend fun discardDraft(revisionId: String): Boolean = false
     suspend fun delete(recordId: String)
 }
 
@@ -76,6 +79,24 @@ class RoomDrinkStore(
 
     override suspend fun startDraft(draft: DrinkDraft) {
         database.draftDao().upsert(draft.toEntity(clock.read().epochMillis))
+    }
+
+    override suspend fun startEditDraft(recordId: String, revisionId: String): DrinkDraft? = database.withTransaction {
+        val record = database.drinkDao().get(recordId)?.toDomain() ?: return@withTransaction null
+        val draft = DrinkDraft(
+            revisionId = revisionId,
+            itemType = record.itemType,
+            sourceItemId = record.sourceItemId,
+            brewMethod = record.brewMethod,
+            ratingHalfStars = record.ratingHalfStars,
+            actualPriceFen = record.actualPriceFen,
+            note = record.note.orEmpty(),
+            consumedAtEpochMillis = record.occurredAtEpochMillis,
+            editingRecordId = record.id,
+            expectedRecordRevision = record.revision,
+        )
+        database.draftDao().upsert(draft.toEntity(clock.read().epochMillis))
+        draft
     }
 
     override suspend fun replaceDraft(expectedRevisionId: String, draft: DrinkDraft): Boolean = database.withTransaction {
@@ -136,8 +157,15 @@ class RoomDrinkStore(
         true
     }
 
+    override suspend fun discardDraft(revisionId: String): Boolean = database.withTransaction {
+        database.draftDao().deleteIfRevision(CURRENT_DRAFT_ID, revisionId) == 1
+    }
+
     override suspend fun delete(recordId: String) {
-        database.drinkDao().get(recordId)?.let { database.drinkDao().delete(it) }
+        database.withTransaction {
+            database.drinkDao().get(recordId)?.let { database.drinkDao().delete(it) }
+            database.draftDao().deleteIfEditingRecord(CURRENT_DRAFT_ID, recordId)
+        }
     }
 
     private companion object {
@@ -221,21 +249,8 @@ class DefaultJournalRepository(
     override suspend fun get(recordId: String): DrinkRecord? = drinkStore.get(recordId)
 
     override suspend fun editDraft(recordId: String): DrinkDraft {
-        val record = drinkStore.get(recordId) ?: throw RecordNotFoundException(recordId)
-        val draft = DrinkDraft(
-            revisionId = UUID.randomUUID().toString(),
-            itemType = record.itemType,
-            sourceItemId = record.sourceItemId,
-            brewMethod = record.brewMethod,
-            ratingHalfStars = record.ratingHalfStars,
-            actualPriceFen = record.actualPriceFen,
-            note = record.note.orEmpty(),
-            consumedAtEpochMillis = record.occurredAtEpochMillis,
-            editingRecordId = record.id,
-            expectedRecordRevision = record.revision,
-        )
-        drinkStore.startDraft(draft)
-        return draft
+        return drinkStore.startEditDraft(recordId, UUID.randomUUID().toString())
+            ?: throw RecordNotFoundException(recordId)
     }
 
     override suspend fun save(draft: DrinkDraft): String {
@@ -290,6 +305,8 @@ class DefaultJournalRepository(
     }
 
     override suspend fun saveDraft(draft: DrinkDraft): Boolean = drinkStore.saveDraft(draft)
+
+    override suspend fun discardDraft(revisionId: String): Boolean = drinkStore.discardDraft(revisionId)
 
     override suspend fun delete(recordId: String) = drinkStore.delete(recordId)
 }
