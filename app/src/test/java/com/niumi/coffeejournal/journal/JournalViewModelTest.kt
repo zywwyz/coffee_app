@@ -139,6 +139,21 @@ class JournalViewModelTest {
     }
 
     @Test
+    fun `record conflict tells the user to reopen instead of offering an invalid retry`() = runBlocking {
+        val journal = FakeJournalRepository().apply { saveError = RecordConflictException("record") }
+        val viewModel = JournalViewModel(
+            journal, FakeCatalogRepository(), 2026, 8, CoroutineScope(Job() + Dispatchers.Unconfined),
+        )
+        viewModel.selectItem(ItemType.CHAIN_PRODUCT, "item")
+
+        viewModel.save()
+        yield()
+
+        assertFalse(viewModel.uiState.value.editor.saving)
+        assertEquals("记录已在其他位置修改，请重新打开", viewModel.uiState.value.editor.errorMessage)
+    }
+
+    @Test
     fun `missing item image opens non blocking supplement prompt`() = runBlocking {
         val catalog = FakeCatalogRepository(item = item().copy(imageAssetId = null, status = ItemStatus.NEEDS_IMAGE))
         val viewModel = JournalViewModel(
@@ -260,6 +275,7 @@ class JournalViewModelTest {
         val drafts = mutableListOf<DrinkDraft>()
         var saveCalls = 0
         var saveGate: CompletableDeferred<Unit>? = null
+        var saveError: Exception? = null
 
         override fun observeMonth(year: Int, month: Int): Flow<List<DrinkRecord>> = this.month
         override suspend fun newDraft(type: ItemType, itemId: String) = DrinkDraft(
@@ -275,6 +291,7 @@ class JournalViewModelTest {
         override suspend fun save(draft: DrinkDraft): String {
             saveCalls++
             saveGate?.await()
+            saveError?.let { throw it }
             return "record"
         }
 

@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
@@ -14,7 +16,7 @@ import androidx.room.RoomDatabase
         CatalogUpdateEntity::class,
         DraftRecordEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class CoffeeDatabase : RoomDatabase() {
@@ -38,6 +40,19 @@ abstract class CoffeeDatabase : RoomDatabase() {
                 context.applicationContext,
                 CoffeeDatabase::class.java,
                 DATABASE_NAME,
-            ).build()
+            ).addMigrations(MIGRATION_1_2).build()
+
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE drink_records ADD COLUMN createdAtEpochMillis INTEGER NOT NULL DEFAULT 1")
+                database.execSQL("ALTER TABLE drink_records ADD COLUMN updatedAtEpochMillis INTEGER NOT NULL DEFAULT 1")
+                database.execSQL("ALTER TABLE drink_records ADD COLUMN revision INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("UPDATE drink_records SET createdAtEpochMillis=occurredAtEpochMillis, updatedAtEpochMillis=occurredAtEpochMillis")
+                database.execSQL("ALTER TABLE draft_records ADD COLUMN consumedAtEpochMillis INTEGER NOT NULL DEFAULT 1")
+                database.execSQL("ALTER TABLE draft_records ADD COLUMN editingRecordId TEXT")
+                database.execSQL("ALTER TABLE draft_records ADD COLUMN expectedRecordRevision INTEGER")
+                database.execSQL("UPDATE draft_records SET consumedAtEpochMillis=updatedAtEpochMillis")
+            }
+        }
     }
 }

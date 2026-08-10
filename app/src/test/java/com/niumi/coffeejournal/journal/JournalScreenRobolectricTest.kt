@@ -2,6 +2,7 @@ package com.niumi.coffeejournal.journal
 
 import android.graphics.Bitmap
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -9,6 +10,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
@@ -16,8 +19,12 @@ import com.niumi.coffeejournal.core.model.CatalogItem
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
+import com.niumi.coffeejournal.core.model.DrinkRecord
+import com.niumi.coffeejournal.core.model.DrinkSnapshot
 import java.io.File
 import java.io.FileOutputStream
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -178,6 +185,56 @@ class JournalScreenRobolectricTest {
         }
 
         compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.ConfirmSave).assertIsNotEnabled()
+    }
+
+    @Test
+    fun `editor shows editable date time and clear rating control`() {
+        compose.setContent {
+            CoffeeTheme {
+                RecordDrinkScreen(
+                    state = RecordEditorUi(
+                        selectedItemId = "item",
+                        consumedAtEpochMillis = 1_754_049_600_000L,
+                        ratingHalfStars = 9,
+                    ),
+                    brands = emptyList(), items = emptyList(),
+                    onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {},
+                    onRatingChange = {}, onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {},
+                    onSave = {}, onBack = {}, onScreenshot = {}, onSelectImage = {}, onSkipImage = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("2025-08-01").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("20:00").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.RecordEditorScroll).performTouchInput {
+            swipeUp()
+            swipeUp()
+        }
+        compose.onNodeWithText("未评分").assertIsDisplayed().assertIsEnabled()
+    }
+
+    @Test
+    fun `day detail edits and confirms before delete`() {
+        val record = DrinkRecord(
+            "r", 1, "2026-08-05", ItemType.CHAIN_PRODUCT, "item", null, null, null, null,
+            DrinkSnapshot("品牌", "产品", null, null, null),
+        )
+        val state = JournalUiState.empty(2026, 8).copy(records = listOf(record), selectedDate = "2026-08-05")
+        var edited: String? = null
+        var deleted: String? = null
+        compose.setContent {
+            CoffeeTheme {
+                JournalScreen(state, {}, {}, {}, {}, onEditRecord = { edited = it }, onDeleteRecord = { deleted = it })
+            }
+        }
+
+        compose.onNodeWithText("编辑").performClick()
+        compose.runOnIdle { assertEquals("r", edited) }
+        compose.onNodeWithText("删除").performClick()
+        compose.runOnIdle { assertNull(deleted) }
+        compose.onNodeWithText("确认删除").performClick()
+        compose.runOnIdle { assertEquals("r", deleted) }
     }
 
     private fun temporaryBitmap(prefix: String): File {

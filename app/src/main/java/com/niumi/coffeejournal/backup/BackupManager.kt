@@ -69,7 +69,7 @@ class LocalBackupManager(
                         val archive = File(root, "coffee-journal.zip")
                         val manifest = codec.encode(
                             target = archive, database = snapshot.database, images = snapshot.images,
-                            counts = snapshot.counts, schemaVersion = 1, exportedAtEpochMillis = now(),
+                            counts = snapshot.counts, schemaVersion = CoffeeDatabaseSchema.CURRENT, exportedAtEpochMillis = now(),
                             checkCancelled = check,
                         )
                         val verificationRoot = File(root, "verification")
@@ -234,6 +234,10 @@ class LocalBackupManager(
         try {
             check()
             openBackupDatabase(decoded.databaseFile).use {
+                if (databaseVersion(it) != decoded.manifest.schemaVersion) {
+                    throw BackupValidationException("数据库版本与清单不一致")
+                }
+                validateSchema(it, decoded.manifest.schemaVersion)
                 singleResult(it, "PRAGMA integrity_check").takeIf { value -> value == "ok" } ?: throw BackupValidationException("数据库完整性检查失败")
                 checkForeignKeys(it)
                 val actual = counts(it)
@@ -271,7 +275,59 @@ class LocalBackupManager(
         if (exists(db, "SELECT 1 FROM drink_records WHERE id='' OR sourceItemId='' OR snapshotBrandName='' OR snapshotItemName='' OR itemType NOT IN ('CHAIN_PRODUCT','PERSONAL_BEAN') LIMIT 1")) throw BackupValidationException("记录字段无效")
         if (exists(db, "SELECT 1 FROM image_assets WHERE id='' OR sha256 GLOB '*[^0-9a-f]*' OR length(sha256)!=64 OR kind NOT IN ('PRODUCT','BRAND_LOGO','BEAN_PACKAGE','RECORD_SNAPSHOT') LIMIT 1")) throw BackupValidationException("图片资产字段无效")
         if (exists(db, "SELECT 1 FROM draft_records WHERE id='' OR revisionId='' OR (itemType IS NOT NULL AND itemType NOT IN ('CHAIN_PRODUCT','PERSONAL_BEAN')) LIMIT 1")) throw BackupValidationException("草稿字段无效")
+        if (databaseVersion(db) >= 2) {
+            if (exists(db, "SELECT 1 FROM drink_records WHERE occurredAtEpochMillis<=0 OR createdAtEpochMillis<=0 OR updatedAtEpochMillis<=0 OR revision<0 LIMIT 1")) throw BackupValidationException("记录时间或修订号无效")
+            if (exists(db, "SELECT 1 FROM draft_records WHERE consumedAtEpochMillis<=0 OR (editingRecordId IS NULL)!=(expectedRecordRevision IS NULL) OR expectedRecordRevision<0 LIMIT 1")) throw BackupValidationException("草稿时间或编辑版本无效")
+        }
     }
+
+    private fun databaseVersion(db: SQLiteDatabase): Int =
+        db.rawQuery("PRAGMA user_version", null).use { cursor -> cursor.moveToFirst(); cursor.getInt(0) }
+
+    /** Compare imported SQLite metadata to the app-owned Room schema before any restore mutation. */
+    private fun validateSchema(input: SQLiteDatabase, version: Int) {
+        if (version !in 1..CoffeeDatabaseSchema.CURRENT) throw BackupValidationException("不支持的数据库版本 $version")
+        val expected = readSchema({ sql -> database.openHelper.writableDatabase.query(sql) }, version)
+        val actualTables = input.rawQuery(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'", null,
+        ).use { cursor -> buildSet { while (cursor.moveToNext()) add(cursor.getString(0)) } }
+        if (actualTables != TABLES.toSet() + ROOM_MASTER_TABLE + ANDROID_METADATA_TABLE) throw BackupValidationException("数据库表结构不匹配")
+        val actual = readSchema({ sql -> input.rawQuery(sql, null) }, version)
+        TABLES.forEach { table ->
+            val got = actual.getValue(table); val want = expected.getValue(table)
+            if (got.columns != want.columns) throw BackupValidationException("数据库 $table columns 不匹配")
+            if (got.foreignKeys != want.foreignKeys) throw BackupValidationException("数据库 $table foreign keys 不匹配")
+            if (got.indices != want.indices) throw BackupValidationException("数据库 $table indices 不匹配")
+        }
+        val identity = input.rawQuery("SELECT identity_hash FROM $ROOM_MASTER_TABLE WHERE id=42", null).use {
+            if (!it.moveToFirst()) null else it.getString(0)
+        }
+        if (identity != CoffeeDatabaseSchema.identityHash(version)) throw BackupValidationException("数据库 schema 标识不匹配")
+    }
+
+    private fun readSchema(query: (String) -> Cursor, version: Int): Map<String, TableSchema> =
+        TABLES.associateWith { table ->
+            val columns = query("PRAGMA table_info('$table')").use { cursor -> buildList {
+                while (cursor.moveToNext()) add(ColumnSchema(cursor.getString(1), cursor.getString(2).uppercase(), cursor.getInt(3), cursor.getString(4), cursor.getInt(5)))
+            } }.filterNot { version == 1 && it.name in V2_COLUMNS[table].orEmpty() }
+            val foreignKeys = query("PRAGMA foreign_key_list('$table')").use { cursor -> buildList {
+                while (cursor.moveToNext()) add(ForeignKeySchema(cursor.getString(2), cursor.getString(3), cursor.getString(4), cursor.getString(5), cursor.getString(6)))
+            } }
+            val indices = query("PRAGMA index_list('$table')").use { cursor -> buildList {
+                while (cursor.moveToNext()) {
+                    val name = cursor.getString(1)
+                    add(IndexSchema(name, cursor.getInt(2), cursor.getString(3), query("PRAGMA index_info('$name')").use { info ->
+                        buildList { while (info.moveToNext()) add(info.getString(2)) }
+                    }))
+                }
+            } }
+            TableSchema(columns, foreignKeys, indices)
+        }
+
+    private data class TableSchema(val columns: List<ColumnSchema>, val foreignKeys: List<ForeignKeySchema>, val indices: List<IndexSchema>)
+    private data class ColumnSchema(val name: String, val type: String, val notNull: Int, val defaultValue: String?, val primaryKey: Int)
+    private data class ForeignKeySchema(val table: String, val from: String, val to: String, val onUpdate: String, val onDelete: String)
+    private data class IndexSchema(val name: String, val unique: Int, val origin: String, val columns: List<String>)
 
     private fun copyAll(source: SQLiteDatabase, destination: SupportSQLiteDatabase, localPaths: Map<String,String>, check: () -> Unit, onCopied: () -> Unit) {
         source.rawQuery("SELECT * FROM image_assets", null).use { copyCursor(it, destination, "image_assets", localPaths, check, onCopied) }
@@ -286,6 +342,17 @@ class LocalBackupManager(
                 val name=cursor.getColumnName(i)
                 if(table=="image_assets" && name=="localPath") values.put(name, localPaths[cursor.getString(cursor.getColumnIndexOrThrow("id"))] ?: cursor.getString(i))
                 else when(cursor.getType(i)){ Cursor.FIELD_TYPE_NULL->values.putNull(name); Cursor.FIELD_TYPE_INTEGER->values.put(name,cursor.getLong(i)); Cursor.FIELD_TYPE_FLOAT->values.put(name,cursor.getDouble(i)); Cursor.FIELD_TYPE_STRING->values.put(name,cursor.getString(i)); Cursor.FIELD_TYPE_BLOB->values.put(name,cursor.getBlob(i)) }
+            }
+            if (table == "drink_records" && !values.containsKey("createdAtEpochMillis")) {
+                val occurred = values.getAsLong("occurredAtEpochMillis")
+                values.put("createdAtEpochMillis", occurred)
+                values.put("updatedAtEpochMillis", occurred)
+                values.put("revision", 0)
+            }
+            if (table == "draft_records" && !values.containsKey("consumedAtEpochMillis")) {
+                values.put("consumedAtEpochMillis", values.getAsLong("updatedAtEpochMillis"))
+                values.putNull("editingRecordId")
+                values.putNull("expectedRecordRevision")
             }
             if(destination.insert(table, android.database.sqlite.SQLiteDatabase.CONFLICT_ABORT, values)<0) throw BackupValidationException("写入 $table 失败")
             onCopied()
@@ -325,5 +392,15 @@ class LocalBackupManager(
                 .exceptionOrNull()?.let { original.addSuppressed(BackupValidationException("失败的导出目标无法清空", it)) }
         }
     }
-    companion object { private val MUTEX=Mutex(); private val ACTIVE_STAGING=mutableSetOf<String>(); private val TABLES=listOf("image_assets","brands","catalog_items","drink_records","catalog_updates","draft_records"); private const val MAX_ARCHIVE_BYTES=512L*1024*1024; private const val MAX_IMAGE_BYTES=20L*1024*1024 }
+    companion object {
+        private val MUTEX=Mutex(); private val ACTIVE_STAGING=mutableSetOf<String>()
+        private val TABLES=listOf("image_assets","brands","catalog_items","drink_records","catalog_updates","draft_records")
+        private const val ROOM_MASTER_TABLE = "room_master_table"
+        private const val ANDROID_METADATA_TABLE = "android_metadata"
+        private val V2_COLUMNS = mapOf(
+            "drink_records" to setOf("createdAtEpochMillis", "updatedAtEpochMillis", "revision"),
+            "draft_records" to setOf("consumedAtEpochMillis", "editingRecordId", "expectedRecordRevision"),
+        )
+        private const val MAX_ARCHIVE_BYTES=512L*1024*1024; private const val MAX_IMAGE_BYTES=20L*1024*1024
+    }
 }

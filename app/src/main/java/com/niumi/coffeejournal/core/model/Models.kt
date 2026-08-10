@@ -79,8 +79,14 @@ data class DrinkRecord(
     val actualPriceFen: Long?,
     val note: String?,
     val snapshot: DrinkSnapshot,
+    val createdAtEpochMillis: Long = occurredAtEpochMillis,
+    val updatedAtEpochMillis: Long = occurredAtEpochMillis,
+    val revision: Int = 0,
 ) {
     init {
+        require(occurredAtEpochMillis >= 0) { "Drink time cannot be negative" }
+        require(createdAtEpochMillis >= 0 && updatedAtEpochMillis >= 0) { "Audit times cannot be negative" }
+        require(revision >= 0) { "Revision cannot be negative" }
         ratingHalfStars?.let(::Rating)
         actualPriceFen?.let(::Money)
     }
@@ -133,9 +139,17 @@ data class DrinkDraft(
     val ratingHalfStars: Int?,
     val actualPriceFen: Long?,
     val note: String,
+    val consumedAtEpochMillis: Long = 0,
+    val editingRecordId: String? = null,
+    val expectedRecordRevision: Int? = null,
 ) {
     init {
         require(revisionId.isNotBlank()) { "Draft revision id cannot be blank" }
+        require(consumedAtEpochMillis >= 0) { "Drink time cannot be negative" }
+        require((editingRecordId == null) == (expectedRecordRevision == null)) {
+            "Edit id and expected revision must be supplied together"
+        }
+        expectedRecordRevision?.let { require(it >= 0) { "Expected revision cannot be negative" } }
         ratingHalfStars?.let(::Rating)
         actualPriceFen?.let(::Money)
     }

@@ -1,6 +1,7 @@
 package com.niumi.coffeejournal.backup
 
 import android.content.Context
+import android.database.sqlite.SQLiteDatabase
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.room.Room
@@ -111,6 +112,105 @@ class BackupManagerTest {
             assertThrows(BackupValidationException::class.java) { runBlocking { manager.validate(Uri.fromFile(archive)) } }
             assertNotNull(database.brandDao().get("keep"))
         } finally { root.deleteRecursively() }
+    }
+
+    @Test fun `schema validation rejects every untrusted schema variant before writing active data`() = runBlocking {
+        val variants = listOf<Pair<String, SQLiteDatabase.() -> Unit>>(
+            "extra table" to { execSQL("CREATE TABLE attacker (id TEXT)") },
+            "extra column" to { execSQL("ALTER TABLE brands ADD COLUMN attacker TEXT") },
+            "missing column" to { execSQL("ALTER TABLE drink_records DROP COLUMN revision") },
+            "altered type" to { rebuildUpdates("id INTEGER NOT NULL PRIMARY KEY, brandId TEXT NOT NULL, fetchedAtEpochMillis INTEGER NOT NULL, status TEXT NOT NULL, sourceUrl TEXT, errorMessage TEXT, FOREIGN KEY(brandId) REFERENCES brands(id) ON UPDATE CASCADE ON DELETE RESTRICT") },
+            "altered not null default" to { rebuildUpdates("id TEXT NOT NULL PRIMARY KEY, brandId TEXT NOT NULL DEFAULT 'x', fetchedAtEpochMillis INTEGER NOT NULL, status TEXT NOT NULL, sourceUrl TEXT, errorMessage TEXT, FOREIGN KEY(brandId) REFERENCES brands(id) ON UPDATE CASCADE ON DELETE RESTRICT") },
+            "primary key" to { rebuildUpdates("id TEXT NOT NULL, brandId TEXT NOT NULL, fetchedAtEpochMillis INTEGER NOT NULL, status TEXT NOT NULL, sourceUrl TEXT, errorMessage TEXT, FOREIGN KEY(brandId) REFERENCES brands(id) ON UPDATE CASCADE ON DELETE RESTRICT") },
+            "foreign key" to { rebuildUpdates("id TEXT NOT NULL PRIMARY KEY, brandId TEXT NOT NULL, fetchedAtEpochMillis INTEGER NOT NULL, status TEXT NOT NULL, sourceUrl TEXT, errorMessage TEXT") },
+            "index" to { execSQL("DROP INDEX index_brands_type_normalizedName") },
+            "room identity" to { execSQL("UPDATE room_master_table SET identity_hash='attacker' WHERE id=42") },
+        )
+        variants.forEach { (name, mutate) -> assertRejectedWithoutWrites(name, mutate = mutate) }
+    }
+
+    @Test fun `schema validation rejects manifest user version mismatch before writing active data`() = runBlocking {
+        assertRejectedWithoutWrites("manifest version", manifestVersion = 1, mutate = { })
+    }
+
+    @Test fun `valid schema v1 archive validates and restores into the current database`() = runBlocking {
+        val imageDir = File(context.filesDir, "images").apply { mkdirs() }
+        val logoFile = writeTestPng(File(imageDir, "v1-logo.png"), 0xFF673AB7.toInt())
+        val snapshotFile = writeTestPng(File(imageDir, "v1-snapshot.png"), 0xFF009688.toInt())
+        val sourceName = "v1-source-${System.nanoTime()}.db"
+        val source = Room.databaseBuilder(context, CoffeeDatabase::class.java, sourceName).allowMainThreadQueries().build()
+        val occurredAt = 1_700_000_000_000L
+        val draftUpdatedAt = occurredAt + 500L
+        try {
+            source.imageAssetDao().upsert(ImageAssetEntity("v1-logo", logoFile.absolutePath, sha256(logoFile), "BRAND_LOGO", occurredAt - 2))
+            source.imageAssetDao().upsert(ImageAssetEntity("v1-snapshot", snapshotFile.absolutePath, sha256(snapshotFile), "RECORD_SNAPSHOT", occurredAt - 1))
+            source.brandDao().upsert(BrandEntity("v1-brand", "CHAIN", "旧版品牌", "旧版品牌", "v1-logo", "MANUAL_ONLY", "https://example.test/brand"))
+            source.catalogItemDao().upsert(CatalogItemEntity("v1-item", "v1-brand", "CHAIN_PRODUCT", "旧版拿铁", "旧版拿铁", "v1-snapshot", status = "ACTIVE"))
+            source.drinkDao().insert(DrinkRecordEntity(
+                id = "v1-record", occurredAtEpochMillis = occurredAt, localDate = "2023-11-14", itemType = "CHAIN_PRODUCT", sourceItemId = "v1-item",
+                note = "来自 v1", snapshotBrandName = "旧版品牌", snapshotItemName = "旧版拿铁",
+                snapshotImageAssetId = "v1-snapshot", snapshotBrandLogoAssetId = "v1-logo",
+                createdAtEpochMillis = occurredAt - 99, updatedAtEpochMillis = occurredAt - 1, revision = 8,
+            ))
+            source.catalogUpdateDao().insert(CatalogUpdateEntity("v1-update", "v1-brand", occurredAt + 1, "CONFIRMED", "https://example.test/feed", null))
+            source.draftDao().upsert(DraftRecordEntity(
+                "v1-draft", "v1-revision", "CHAIN_PRODUCT", "v1-item", null, 8, 1999, "未完成草稿", draftUpdatedAt,
+                consumedAtEpochMillis = draftUpdatedAt + 99, editingRecordId = "v1-record", expectedRecordRevision = 8,
+            ))
+            source.close()
+
+            val sourceFile = context.getDatabasePath(sourceName)
+            SQLiteDatabase.openDatabase(sourceFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { v1 ->
+                v1.rebuildAsSchemaV1()
+            }
+            val archive = File(context.cacheDir, "schema-v1-${System.nanoTime()}.zip")
+            SafeBackupArchiveCodec().encode(
+                target = archive,
+                database = sourceFile,
+                images = listOf(
+                    BackupImage("v1-logo", "images/${sha256(logoFile)}.png", logoFile, "BRAND_LOGO"),
+                    BackupImage("v1-snapshot", "images/${sha256(snapshotFile)}.png", snapshotFile, "RECORD_SNAPSHOT"),
+                ),
+                counts = BackupCounts(1, 1, 1, 2, 1, 1),
+                schemaVersion = 1,
+                exportedAtEpochMillis = occurredAt,
+            )
+
+            val validated = manager.validate(Uri.fromFile(archive))
+            assertEquals(1, validated.manifest.schemaVersion)
+            manager.restore(validated)
+
+            assertEquals(1, count("brands"))
+            assertEquals(1, count("catalog_items"))
+            assertEquals(1, count("drink_records"))
+            assertEquals(2, count("image_assets"))
+            assertEquals(1, count("catalog_updates"))
+            assertEquals(1, count("draft_records"))
+            assertEquals("旧版品牌", database.brandDao().get("v1-brand")!!.name)
+            assertEquals("v1-snapshot", database.catalogItemDao().get("v1-item")!!.imageAssetId)
+            database.drinkDao().get("v1-record")!!.also { record ->
+                assertEquals(occurredAt, record.createdAtEpochMillis)
+                assertEquals(occurredAt, record.updatedAtEpochMillis)
+                assertEquals(0, record.revision)
+                assertEquals("v1-snapshot", record.snapshotImageAssetId)
+                assertEquals("v1-logo", record.snapshotBrandLogoAssetId)
+            }
+            database.draftDao().get("v1-draft")!!.also { draft ->
+                assertEquals(draftUpdatedAt, draft.consumedAtEpochMillis)
+                assertNull(draft.editingRecordId)
+                assertNull(draft.expectedRecordRevision)
+                assertEquals("未完成草稿", draft.note)
+            }
+            assertEquals("CONFIRMED", database.openHelper.writableDatabase.query("SELECT status FROM catalog_updates WHERE id='v1-update'").use { it.moveToFirst(); it.getString(0) })
+            listOf("v1-logo", "v1-snapshot").forEach { assetId ->
+                val asset = database.imageAssetDao().get(assetId)!!
+                assertTrue(File(asset.localPath).isFile)
+                assertEquals(asset.sha256, sha256(File(asset.localPath)))
+            }
+        } finally {
+            if (source.isOpen) source.close()
+            context.deleteDatabase(sourceName)
+        }
     }
 
     @Test fun `restore failure rolls back every active row`() = runBlocking {
@@ -303,5 +403,50 @@ class BackupManagerTest {
     }
 
     private fun count(table:String):Int=database.openHelper.writableDatabase.query("SELECT COUNT(*) FROM $table").use{it.moveToFirst();it.getInt(0)}
+    private suspend fun assertRejectedWithoutWrites(name: String, manifestVersion: Int = 2, mutate: SQLiteDatabase.() -> Unit) {
+        database.brandDao().upsert(BrandEntity("keep-$name", "CHAIN", "保留", "保留-$name", null, "MANUAL_ONLY", null))
+        val source = Room.databaseBuilder(context, CoffeeDatabase::class.java, "schema-source-${System.nanoTime()}.db").allowMainThreadQueries().build()
+        try {
+            val archive = File(context.cacheDir, "schema-$name-${System.nanoTime()}.zip")
+            LocalBackupManager(context, source).export(Uri.fromFile(archive))
+            val decoded = SafeBackupArchiveCodec().decode(archive, File(context.cacheDir, "schema-unpack-${System.nanoTime()}"))
+            SQLiteDatabase.openDatabase(decoded.databaseFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use(mutate)
+            val rewritten = File(context.cacheDir, "schema-rewritten-${System.nanoTime()}.zip")
+            SafeBackupArchiveCodec().encode(rewritten, decoded.databaseFile, emptyList(), decoded.manifest.counts, manifestVersion, 1)
+            assertThrows(BackupValidationException::class.java) { runBlocking { manager.validate(Uri.fromFile(rewritten)) } }
+            assertNotNull(database.brandDao().get("keep-$name"))
+        } finally { source.close() }
+    }
+    private fun SQLiteDatabase.rebuildUpdates(columns: String) {
+        execSQL("ALTER TABLE catalog_updates RENAME TO updates_old")
+        execSQL("CREATE TABLE catalog_updates ($columns)")
+        execSQL("DROP TABLE updates_old")
+    }
+    private fun SQLiteDatabase.rebuildAsSchemaV1() {
+        execSQL("PRAGMA foreign_keys=OFF")
+        execSQL("ALTER TABLE drink_records RENAME TO drink_records_v2")
+        // Copied from app/schemas/.../CoffeeDatabase/1.json to make this a real v1 schema.
+        execSQL("CREATE TABLE drink_records (id TEXT NOT NULL, occurredAtEpochMillis INTEGER NOT NULL, localDate TEXT NOT NULL, itemType TEXT NOT NULL, sourceItemId TEXT NOT NULL, brewMethod TEXT, ratingHalfStars INTEGER, actualPriceFen INTEGER, note TEXT, snapshotBrandName TEXT NOT NULL, snapshotItemName TEXT NOT NULL, snapshotOrigin TEXT, snapshotProcessing TEXT, snapshotImageAssetId TEXT, snapshotBrandLogoAssetId TEXT, snapshotRoastLevel TEXT, snapshotFlavorNotes TEXT, PRIMARY KEY(id), FOREIGN KEY(snapshotImageAssetId) REFERENCES image_assets(id) ON UPDATE CASCADE ON DELETE RESTRICT, FOREIGN KEY(snapshotBrandLogoAssetId) REFERENCES image_assets(id) ON UPDATE CASCADE ON DELETE RESTRICT)")
+        execSQL("INSERT INTO drink_records (id,occurredAtEpochMillis,localDate,itemType,sourceItemId,brewMethod,ratingHalfStars,actualPriceFen,note,snapshotBrandName,snapshotItemName,snapshotOrigin,snapshotProcessing,snapshotImageAssetId,snapshotBrandLogoAssetId,snapshotRoastLevel,snapshotFlavorNotes) SELECT id,occurredAtEpochMillis,localDate,itemType,sourceItemId,brewMethod,ratingHalfStars,actualPriceFen,note,snapshotBrandName,snapshotItemName,snapshotOrigin,snapshotProcessing,snapshotImageAssetId,snapshotBrandLogoAssetId,snapshotRoastLevel,snapshotFlavorNotes FROM drink_records_v2")
+        execSQL("DROP TABLE drink_records_v2")
+        execSQL("CREATE INDEX index_drink_records_localDate_occurredAtEpochMillis ON drink_records(localDate, occurredAtEpochMillis)")
+        execSQL("CREATE INDEX index_drink_records_snapshotImageAssetId ON drink_records(snapshotImageAssetId)")
+        execSQL("CREATE INDEX index_drink_records_snapshotBrandLogoAssetId ON drink_records(snapshotBrandLogoAssetId)")
+        execSQL("ALTER TABLE draft_records RENAME TO draft_records_v2")
+        execSQL("CREATE TABLE draft_records (id TEXT NOT NULL, revisionId TEXT NOT NULL, itemType TEXT, sourceItemId TEXT, brewMethod TEXT, ratingHalfStars INTEGER, actualPriceFen INTEGER, note TEXT NOT NULL, updatedAtEpochMillis INTEGER NOT NULL, PRIMARY KEY(id))")
+        execSQL("INSERT INTO draft_records (id,revisionId,itemType,sourceItemId,brewMethod,ratingHalfStars,actualPriceFen,note,updatedAtEpochMillis) SELECT id,revisionId,itemType,sourceItemId,brewMethod,ratingHalfStars,actualPriceFen,note,updatedAtEpochMillis FROM draft_records_v2")
+        execSQL("DROP TABLE draft_records_v2")
+        execSQL("UPDATE room_master_table SET identity_hash='630300b58f2f33802ecc0d756158b804' WHERE id=42")
+        execSQL("PRAGMA user_version=1")
+        execSQL("PRAGMA foreign_keys=ON")
+    }
+    private fun writeTestPng(file: File, color: Int): File {
+        Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888).also { bitmap ->
+            bitmap.eraseColor(color)
+            file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+        }
+        return file
+    }
     private fun sha256(file:File):String{val d=MessageDigest.getInstance("SHA-256");file.inputStream().use{i->val b=ByteArray(1024);while(true){val n=i.read(b);if(n<0)break;d.update(b,0,n)}};return d.digest().joinToString(""){"%02x".format(it)}}
 }

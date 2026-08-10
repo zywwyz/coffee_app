@@ -27,6 +27,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class JournalConcurrencyTest {
+    @Test fun `cancelled committed selection reloads persisted draft before retrying B and C`() = runBlocking {
+        val committedA = CompletableDeferred<Unit>()
+        val journal = CommitThenCancelJournal(committedA)
+        val viewModel = viewModel(journal, RaceCatalogRepository())
+        viewModel.selectItem(ItemType.CHAIN_PRODUCT, "seed")
+        viewModel.selectItem(ItemType.CHAIN_PRODUCT, "A")
+        committedA.await()
+        viewModel.selectItem(ItemType.CHAIN_PRODUCT, "B")
+        yield()
+        assertEquals("B", viewModel.uiState.value.editor.selectedItemId)
+        assertEquals("revision-B", journal.persisted?.revisionId)
+        assertEquals("B", journal.persisted?.sourceItemId)
+        assertEquals(null, viewModel.uiState.value.editor.errorMessage)
+        viewModel.selectItem(ItemType.CHAIN_PRODUCT, "C")
+        yield()
+        assertEquals("C", viewModel.uiState.value.editor.selectedItemId)
+        assertEquals("revision-C", journal.persisted?.revisionId)
+        assertEquals("C", journal.persisted?.sourceItemId)
+    }
     @Test
     fun `save is rejected while latest product selection is loading`() = runBlocking {
         val selectionGate = CompletableDeferred<Unit>()
@@ -287,6 +306,24 @@ class JournalConcurrencyTest {
             return true
         }
 
+        override suspend fun delete(recordId: String) = Unit
+    }
+
+    private class CommitThenCancelJournal(private val committedA: CompletableDeferred<Unit>) : JournalRepository {
+        var persisted: DrinkDraft? = null
+        override fun observeMonth(year: Int, month: Int): Flow<List<DrinkRecord>> = flowOf(emptyList())
+        override suspend fun newDraft(type: ItemType, itemId: String): DrinkDraft =
+            DrinkDraft("revision-$itemId", type, itemId, null, 9, 990, "note").also { persisted = it }
+        override suspend fun replaceDraftForItem(current: DrinkDraft, type: ItemType, itemId: String): DrinkDraft {
+            if (persisted?.revisionId != current.revisionId) throw DraftConflictException()
+            val next = current.copy(revisionId = "revision-$itemId", itemType = type, sourceItemId = itemId)
+            persisted = next
+            if (itemId == "A") { committedA.complete(Unit); kotlinx.coroutines.awaitCancellation() }
+            return next
+        }
+        override suspend fun currentDraft(): DrinkDraft? = persisted
+        override suspend fun save(draft: DrinkDraft) = "record"
+        override suspend fun saveDraft(draft: DrinkDraft) = true
         override suspend fun delete(recordId: String) = Unit
     }
 

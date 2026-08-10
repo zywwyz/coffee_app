@@ -130,8 +130,13 @@ data class DrinkRecordEntity(
     val snapshotBrandLogoAssetId: String? = null,
     val snapshotRoastLevel: String? = null,
     val snapshotFlavorNotes: String? = null,
+    @ColumnInfo(defaultValue = "1") val createdAtEpochMillis: Long = occurredAtEpochMillis,
+    @ColumnInfo(defaultValue = "1") val updatedAtEpochMillis: Long = occurredAtEpochMillis,
+    @ColumnInfo(defaultValue = "0") val revision: Int = 0,
 ) {
     init {
+        require(occurredAtEpochMillis >= 0 && createdAtEpochMillis >= 0 && updatedAtEpochMillis >= 0)
+        require(revision >= 0)
         ratingHalfStars?.let(::Rating)
         actualPriceFen?.let(::Money)
     }
@@ -173,8 +178,13 @@ data class DraftRecordEntity(
     val actualPriceFen: Long?,
     val note: String,
     val updatedAtEpochMillis: Long,
+    @ColumnInfo(defaultValue = "1") val consumedAtEpochMillis: Long = updatedAtEpochMillis,
+    val editingRecordId: String? = null,
+    val expectedRecordRevision: Int? = null,
 ) {
     init {
+        require(consumedAtEpochMillis > 0)
+        require((editingRecordId == null) == (expectedRecordRevision == null))
         ratingHalfStars?.let(::Rating)
         actualPriceFen?.let(::Money)
     }

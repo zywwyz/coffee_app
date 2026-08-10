@@ -114,6 +114,44 @@ interface DrinkDao {
     @Update
     suspend fun update(record: DrinkRecordEntity)
 
+    @Query(
+        """
+        UPDATE drink_records SET
+          occurredAtEpochMillis=:occurredAtEpochMillis, localDate=:localDate,
+          itemType=:itemType, sourceItemId=:sourceItemId, brewMethod=:brewMethod,
+          ratingHalfStars=:ratingHalfStars, actualPriceFen=:actualPriceFen, note=:note,
+          snapshotBrandName=:snapshotBrandName, snapshotItemName=:snapshotItemName,
+          snapshotOrigin=:snapshotOrigin, snapshotProcessing=:snapshotProcessing,
+          snapshotImageAssetId=:snapshotImageAssetId,
+          snapshotBrandLogoAssetId=:snapshotBrandLogoAssetId,
+          snapshotRoastLevel=:snapshotRoastLevel, snapshotFlavorNotes=:snapshotFlavorNotes,
+          updatedAtEpochMillis=:updatedAtEpochMillis, revision=:newRevision
+        WHERE id=:id AND revision=:expectedRevision
+        """,
+    )
+    suspend fun updateIfRevision(
+        id: String,
+        expectedRevision: Int,
+        occurredAtEpochMillis: Long,
+        localDate: String,
+        itemType: String,
+        sourceItemId: String,
+        brewMethod: String?,
+        ratingHalfStars: Int?,
+        actualPriceFen: Long?,
+        note: String?,
+        snapshotBrandName: String,
+        snapshotItemName: String,
+        snapshotOrigin: String?,
+        snapshotProcessing: String?,
+        snapshotImageAssetId: String?,
+        snapshotBrandLogoAssetId: String?,
+        snapshotRoastLevel: String?,
+        snapshotFlavorNotes: String?,
+        updatedAtEpochMillis: Long,
+        newRevision: Int,
+    ): Int
+
     @Delete
     suspend fun delete(record: DrinkRecordEntity)
 

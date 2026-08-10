@@ -87,6 +87,7 @@ fun JournalFeature(
             onPriceChange = journalViewModel::setPriceInput,
             onBrewMethodChange = journalViewModel::setBrewMethod,
             onNoteChange = journalViewModel::setNote,
+            onConsumedAtChange = journalViewModel::setConsumedAt,
             onSave = journalViewModel::save,
             onBack = { editorOpen = false },
             onScreenshot = {
@@ -110,6 +111,12 @@ fun JournalFeature(
             onNextMonth = journalViewModel::nextMonth,
             onDayClick = journalViewModel::selectDate,
             onRecordDrink = { editorOpen = true },
+            onEditRecord = { recordId ->
+                journalViewModel.selectDate(null)
+                journalViewModel.editRecord(recordId)
+                editorOpen = true
+            },
+            onDeleteRecord = journalViewModel::deleteRecord,
         )
     }
 }
@@ -121,6 +128,8 @@ fun JournalScreen(
     onNextMonth: () -> Unit,
     onDayClick: (String?) -> Unit,
     onRecordDrink: () -> Unit,
+    onEditRecord: (String) -> Unit = {},
+    onDeleteRecord: (String) -> Unit = {},
 ) {
     val thumbnailLoader = remember { CalendarThumbnailLoader() }
     Scaffold(
@@ -163,6 +172,8 @@ fun JournalScreen(
             localDate = state.selectedDate,
             records = state.selectedDayRecords,
             onDismiss = { onDayClick(null) },
+            onEdit = onEditRecord,
+            onDelete = onDeleteRecord,
         )
     }
 }
@@ -274,7 +285,14 @@ private fun MonthSummary(summary: MonthSummaryUi) {
 }
 
 @Composable
-private fun DayDetailDialog(localDate: String, records: List<DrinkRecord>, onDismiss: () -> Unit) {
+private fun DayDetailDialog(
+    localDate: String,
+    records: List<DrinkRecord>,
+    onDismiss: () -> Unit,
+    onEdit: (String) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    var deleteCandidate by remember { mutableStateOf<DrinkRecord?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(localDate) },
@@ -292,10 +310,28 @@ private fun DayDetailDialog(localDate: String, records: List<DrinkRecord>, onDis
                             ).joinToString(" · "),
                         )
                         record.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                        Row {
+                            TextButton(onClick = { onEdit(record.id) }) { Text("编辑") }
+                            TextButton(onClick = { deleteCandidate = record }) { Text("删除") }
+                        }
                     }
                 }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
     )
+    deleteCandidate?.let { record ->
+        AlertDialog(
+            onDismissRequest = { deleteCandidate = null },
+            title = { Text("删除这条记录？") },
+            text = { Text("${record.snapshot.brandName} · ${record.snapshot.itemName} 将从日历和总结中移除，产品图片不会被删除。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDelete(record.id)
+                    deleteCandidate = null
+                }) { Text("确认删除") }
+            },
+            dismissButton = { TextButton(onClick = { deleteCandidate = null }) { Text("取消") } },
+        )
+    }
 }

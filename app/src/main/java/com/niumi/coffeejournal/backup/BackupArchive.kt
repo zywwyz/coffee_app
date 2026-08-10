@@ -117,7 +117,9 @@ class SafeBackupArchiveCodec(
                 val manifest = try { json.decodeFromString(BackupManifest.serializer(), manifestBytes.toString(Charsets.UTF_8)) }
                     catch (error: Exception) { fail("清单无法解析", error) }
                 if (manifest.formatVersion != BackupManifest.CURRENT_FORMAT) fail("不支持的备份格式版本 ${manifest.formatVersion}")
-                if (manifest.schemaVersion != 1) fail("不支持的数据库版本 ${manifest.schemaVersion}")
+                if (manifest.schemaVersion !in 1..CoffeeDatabaseSchema.CURRENT) {
+                    fail("不支持的数据库版本 ${manifest.schemaVersion}")
+                }
                 if (manifest.images.size > limits.maxImages || manifest.counts.images != manifest.images.size) fail("图片清单计数无效")
                 val expected = mutableSetOf(MANIFEST, DATABASE)
                 val assetIds = HashSet<String>()
