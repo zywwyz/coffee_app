@@ -1,0 +1,18 @@
+# 当前项目的 Codex 多 Agent 配置
+
+[agents]
+
+# 启用多 Agent。
+# 当前 Codex 默认已开启，这里显式声明，方便维护。
+enabled = true
+
+# 最多允许同时存在 3 个子 Agent。
+# 个人 App 开发通常没有必要开太多，否则容易增加 token 消耗和协调成本。
+max_concurrent_threads_per_session = 3
+
+# 未明确指定模型的子 Agent 默认使用 Terra。
+# 这是成本保险，避免子 Agent 意外继承主 Agent 的 Sol。
+default_subagent_model = "gpt-5.6-terra"
+
+# 未明确指定推理强度时，默认使用 low。
+default_subagent_reasoning_effort = "low"
