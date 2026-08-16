@@ -30,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -70,6 +71,7 @@ fun CatalogFeature(
     updateGateway: CatalogUpdateGateway? = null,
     onRequestAsset: CatalogAssetPicker = { _, _, _ -> },
     onRequestScreenshotAsset: CatalogAssetPicker,
+    onOpenSettings: () -> Unit = {},
 ) {
     val catalogViewModel: CatalogViewModel = viewModel(factory = CatalogViewModel.factory(repository, imageStore))
     val state by catalogViewModel.uiState.collectAsStateWithLifecycle()
@@ -96,6 +98,7 @@ fun CatalogFeature(
         onToggleUpdateSelection = { updateViewModel?.toggleSelected(it) },
         onConfirmUpdate = { updateViewModel?.confirmSelected() },
         onDismissUpdate = { updateViewModel?.dismiss() },
+        onOpenSettings = onOpenSettings,
     )
 }
 
@@ -121,6 +124,7 @@ fun CatalogScreen(
     onToggleUpdateSelection: (String) -> Unit = {},
     onConfirmUpdate: () -> Unit = {},
     onDismissUpdate: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
 ) {
     var brandEditor by remember { mutableStateOf<Brand?>(null) }
     var showNewBrand by remember { mutableStateOf(false) }
@@ -144,7 +148,10 @@ fun CatalogScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        Text("我的咖啡豆库", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(16.dp))
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("我的咖啡豆库", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(vertical = 16.dp).testTag(com.niumi.coffeejournal.TestTags.RootScreenTitle))
+            TextButton(onClick = onOpenSettings, modifier = Modifier.testTag(com.niumi.coffeejournal.TestTags.RootScreenSettings)) { Text("设置") }
+        }
         PrimaryTabRow(selectedTabIndex = state.tab.ordinal) {
             Tab(state.tab == CatalogTab.CHAINS, { onSelectTab(CatalogTab.CHAINS) }, text = { Text("连锁品牌") })
             Tab(state.tab == CatalogTab.BEANS, { onSelectTab(CatalogTab.BEANS) }, text = { Text("我的豆子") })

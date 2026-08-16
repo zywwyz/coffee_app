@@ -51,7 +51,7 @@ import java.util.Locale
 import java.math.BigInteger
 
 @Composable
-fun InsightsFeature(repository: JournalRepository) {
+fun InsightsFeature(repository: JournalRepository, onOpenSettings: () -> Unit = {}) {
     val factory = remember(repository) {
         object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
@@ -75,6 +75,7 @@ fun InsightsFeature(repository: JournalRepository) {
         onNextMonth = model::nextMonth,
         onPreviousYear = model::previousYear,
         onNextYear = model::nextYear,
+        onOpenSettings = onOpenSettings,
     )
 }
 
@@ -87,13 +88,17 @@ fun InsightsScreen(
     onNextMonth: () -> Unit = {},
     onPreviousYear: () -> Unit = {},
     onNextYear: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
 ) {
     var selectedRecord by remember { mutableStateOf<RatedRecordSummary?>(null) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 32.dp),
     ) {
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
-            Text("咖啡回顾", style = MaterialTheme.typography.headlineMedium)
+        Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("咖啡回顾", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.testTag(TestTags.RootScreenTitle))
+                TextButton(onClick = onOpenSettings, modifier = Modifier.testTag(TestTags.RootScreenSettings)) { Text("设置") }
+            }
             Text("把每一杯，慢慢看清", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         PrimaryTabRow(selectedTabIndex = if (state.mode == InsightsMode.MONTHLY) 0 else 1) {

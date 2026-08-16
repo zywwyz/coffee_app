@@ -9,12 +9,13 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.testTag
+import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.catalog.CatalogRepository
 import com.niumi.coffeejournal.catalog.CatalogFeature
 import com.niumi.coffeejournal.catalog.CatalogAssetKind
@@ -58,7 +59,7 @@ private data class RootDestination(
 )
 
 private val RootDestinations = listOf(
-    RootDestination(Journal, "日记", "咖啡"),
+    RootDestination(Journal, "咖啡日历", "咖啡"),
     RootDestination(Catalog, "豆库", "豆"),
     RootDestination(Insights, "总结", "图"),
 )
@@ -110,24 +111,17 @@ private fun AppNavigationContent(
     val selectedRoot = backStack.last()
 
     Scaffold(
-        topBar = {
-            if (backupManager != null) {
-                androidx.compose.foundation.layout.Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    if (selectedRoot == Settings) {
-                        TextButton(onClick = { if (backStack.size > 1) backStack.removeAt(backStack.lastIndex) }) { Text("返回") }
-                    } else {
-                        TextButton(onClick = { backStack.add(Settings) }) { Text("设置") }
-                    }
-                }
-            }
-        },
         bottomBar = {
             NavigationBar {
                 RootDestinations.forEach { destination ->
                     NavigationBarItem(
+                        modifier = Modifier.testTag(
+                            when (destination.key) {
+                                Journal -> TestTags.BottomCalendarTab
+                                Catalog -> TestTags.BottomCatalogTab
+                                else -> TestTags.BottomInsightsTab
+                            },
+                        ),
                         selected = selectedRoot == destination.key,
                         onClick = {
                             if (backStack.last() != destination.key) {
@@ -149,9 +143,9 @@ private fun AppNavigationContent(
             entryProvider = entryProvider {
                 entry<Journal> {
                     if (journalRepository != null && catalogRepository != null) {
-                        JournalFeature(journalRepository, catalogRepository, imagePathResolver, assetImportRequester)
+                        JournalFeature(journalRepository, catalogRepository, imagePathResolver, assetImportRequester) { backStack.add(Settings) }
                     } else {
-                        RootContent("咖啡日历", "记录今天的咖啡")
+                        RootContent("咖啡日历", "记录今天的咖啡") { backStack.add(Settings) }
                     }
                 }
                 entry<Catalog> {
@@ -171,17 +165,18 @@ private fun AppNavigationContent(
                                 assetImportRequester(imageKind, mode, null) { selection -> callback(selection) }
                             },
                             onRequestScreenshotAsset = catalogScreenshotAssetPicker(assetImportRequester),
+                            onOpenSettings = { backStack.add(Settings) },
                         )
                     }
-                    else RootContent("连锁品牌", "管理连锁产品与个人豆库")
+                    else RootContent("我的咖啡豆库", "管理连锁产品与个人豆库") { backStack.add(Settings) }
                 }
                 entry<Insights> {
-                    if (journalRepository != null) InsightsFeature(journalRepository)
-                    else RootContent("月度总结", "查看饮用、评分与消费趋势")
+                    if (journalRepository != null) InsightsFeature(journalRepository) { backStack.add(Settings) }
+                    else RootContent("咖啡回顾", "查看饮用、评分与消费趋势") { backStack.add(Settings) }
                 }
                 entry<Settings> {
-                    if (backupManager != null) SettingsScreen(backupManager)
-                    else RootContent("设置", "备份与恢复")
+                    if (backupManager != null) SettingsScreen(backupManager, onBack = { backStack.removeAt(backStack.lastIndex) })
+                    else RootContent("设置", "备份与恢复") { backStack.removeAt(backStack.lastIndex) }
                 }
             },
         )
@@ -195,7 +190,7 @@ internal fun catalogScreenshotAssetPicker(requester: AssetImportRequester): Cata
     }
 
 @Composable
-private fun RootContent(title: String, subtitle: String) {
+private fun RootContent(title: String, subtitle: String, onAction: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -205,5 +200,6 @@ private fun RootContent(title: String, subtitle: String) {
     ) {
         Text(text = title, style = MaterialTheme.typography.headlineMedium)
         Text(text = subtitle, style = MaterialTheme.typography.bodyLarge)
+        androidx.compose.material3.TextButton(onClick = onAction) { Text(if (title == "设置") "返回" else "设置") }
     }
 }

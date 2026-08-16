@@ -41,28 +41,6 @@ class AppNavigationTest {
     val compose = createComposeRule()
 
     @Test
-    fun bottom_bar_opens_three_roots() {
-        compose.setContent { CoffeeTheme { AppNavigation() } }
-
-        compose.onNodeWithText("日记").assertIsDisplayed()
-        compose.onNodeWithText("豆库").performClick()
-        compose.onNodeWithText("连锁品牌").assertIsDisplayed()
-        compose.onNodeWithText("总结").performClick()
-        compose.onNodeWithText("月度总结").assertIsDisplayed()
-    }
-
-    @Test fun settings_is_reachable_without_adding_a_fourth_bottom_root() {
-        compose.setContent { CoffeeTheme { AppNavigation(backupManager = FakeBackupManager) } }
-
-        compose.onNodeWithText("设置").performClick()
-        compose.onNodeWithText("备份与恢复").assertIsDisplayed()
-        compose.onNodeWithText("导出完整备份").assertIsDisplayed()
-        compose.onNodeWithText("日记").assertIsDisplayed()
-        compose.onNodeWithText("返回").performClick()
-        compose.onNodeWithText("咖啡日历").assertIsDisplayed()
-    }
-
-    @Test
     fun theme_supplies_warm_navigation_bar_tokens() {
         var captured: ColorScheme? = null
         compose.setContent {

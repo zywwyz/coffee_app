@@ -58,6 +58,7 @@ fun JournalFeature(
     catalogRepository: CatalogRepository,
     imagePathResolver: ImagePathResolver,
     assetImportRequester: AssetImportRequester = { _, _, _, _ -> },
+    onOpenSettings: () -> Unit = {},
 ) {
     val today = remember { Calendar.getInstance() }
     val journalViewModel: JournalViewModel = viewModel(
@@ -118,6 +119,7 @@ fun JournalFeature(
                 editorOpen = true
             },
             onDeleteRecord = journalViewModel::deleteRecord,
+            onOpenSettings = onOpenSettings,
         )
     }
 }
@@ -131,9 +133,16 @@ fun JournalScreen(
     onRecordDrink: () -> Unit,
     onEditRecord: (String) -> Unit = {},
     onDeleteRecord: (String) -> Unit = {},
+    onOpenSettings: () -> Unit = {},
 ) {
     val thumbnailLoader = remember { CalendarThumbnailLoader() }
     Scaffold(
+        topBar = {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("咖啡日历", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.testTag(TestTags.RootScreenTitle))
+                TextButton(onClick = onOpenSettings, modifier = Modifier.testTag(TestTags.RootScreenSettings)) { Text("设置") }
+            }
+        },
         floatingActionButton = {
             Button(onClick = onRecordDrink, modifier = Modifier.testTag(TestTags.RecordButton)) {
                 Text("记录一杯")
