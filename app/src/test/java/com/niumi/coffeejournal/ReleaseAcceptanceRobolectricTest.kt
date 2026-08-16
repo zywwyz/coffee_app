@@ -130,11 +130,11 @@ class ReleaseAcceptanceRobolectricTest {
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText(BRAND_NAME).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithText(BRAND_NAME).performClick()
+        compose.onNodeWithText(BRAND_NAME).performScrollTo().performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText(ORIGINAL_ITEM_NAME).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithText(ORIGINAL_ITEM_NAME).performClick()
+        compose.onNodeWithText(ORIGINAL_ITEM_NAME).performScrollTo().performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithTag(TestTags.MissingImagePrompt).fetchSemanticsNodes().isNotEmpty()
         }
