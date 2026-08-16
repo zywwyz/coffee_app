@@ -13,6 +13,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -235,7 +237,7 @@ private fun ChainBrandProductsDestination(repository: CatalogRepository, imageSt
     val catalogState by catalog.uiState.collectAsState()
     var editingBrand by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.niumi.coffeejournal.core.model.Brand?>(null) }
     brand?.let {
-        BrandProductsScreen(it, items, imagePathResolver, onBack, onEditBrand = { editingBrand = it }, onAddProduct = { editor.open(it) }, onEditProduct = { item -> editor.open(it, item) })
+        BrandProductsScreen(it, items, imagePathResolver, onBack, onEditBrand = { editingBrand = it }, onAddProduct = { editor.openNew(it) }, onEditProduct = { item -> editor.openEdit(it, item) })
         ManualProductEditorDialog(editor, assetImportRequester, imagePathResolver)
     }
     editingBrand?.let { editable ->
