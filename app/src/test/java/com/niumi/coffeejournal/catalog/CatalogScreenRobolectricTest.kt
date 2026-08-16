@@ -93,7 +93,7 @@ class CatalogScreenRobolectricTest {
             }
         }
 
-        compose.onNodeWithText("新增豆子").performClick()
+        compose.onNodeWithText("新增豆子").performScrollTo().performClick()
         compose.onNodeWithText("产地（可选）").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("默认冲煮方式（可选）").performScrollTo().assertIsDisplayed()
     }
@@ -137,7 +137,7 @@ class CatalogScreenRobolectricTest {
                 )
             }
         }
-        compose.onNodeWithText("新增豆子").performClick()
+        compose.onNodeWithText("新增豆子").performScrollTo().performClick()
         compose.onNodeWithText("名称").performTextInput("澳白")
         compose.onNodeWithText("产地（可选）").performTextInput("云南")
         compose.onNodeWithText("保存").performClick()
@@ -182,7 +182,7 @@ class CatalogScreenRobolectricTest {
                 )
             }
         }
-        compose.onNodeWithText("新增豆子").performClick()
+        compose.onNodeWithText("新增豆子").performScrollTo().performClick()
         compose.onNodeWithText("名称").performTextInput("澳白")
         compose.onNodeWithText("保存").performClick()
         compose.waitForIdle()
@@ -211,7 +211,7 @@ class CatalogScreenRobolectricTest {
                 )
             }
         }
-        compose.onNodeWithText("新增豆子").performClick()
+        compose.onNodeWithText("新增豆子").performScrollTo().performClick()
         compose.onNodeWithText("选择图片").performScrollTo().performClick()
         compose.onNodeWithText("保存").performClick()
 
@@ -248,7 +248,7 @@ class CatalogScreenRobolectricTest {
             }
         }
 
-        compose.onNodeWithText("新增豆子").performClick()
+        compose.onNodeWithText("新增豆子").performScrollTo().performClick()
         compose.onNodeWithText("选择图片").performScrollTo().performClick()
         compose.runOnIdle {
             org.junit.Assert.assertNotNull(stagedLeaseId)

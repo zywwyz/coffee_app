@@ -4,6 +4,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.performClick
 import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.core.model.Brand
@@ -36,7 +38,7 @@ class BrandProductsScreenTest {
         compose.onNodeWithTag(TestTags.BrandProductGrid).assertIsDisplayed()
         compose.onNodeWithTag(TestTags.BrandProductCardPrefix + "item").assertIsDisplayed()
         compose.onNodeWithText("冷萃").assertIsDisplayed()
-        compose.onNodeWithText("黑咖").assertIsDisplayed()
+        compose.onAllNodesWithText("黑咖").assertCountEquals(2)
     }
 
     @Test fun `custom child header exposes edit but bundled header does not`() {
