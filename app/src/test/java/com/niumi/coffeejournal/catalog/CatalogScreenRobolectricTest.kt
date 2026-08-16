@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
@@ -30,7 +31,7 @@ class CatalogScreenRobolectricTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun `small catalog shows tabs brand metadata and scrollable add action`() {
+    fun `chain catalog shows compact brand grid without legacy metadata`() {
         compose.setContent {
             CoffeeTheme {
                 CatalogScreen(
@@ -42,9 +43,9 @@ class CatalogScreenRobolectricTest {
 
         compose.onNodeWithText("连锁品牌").assertIsDisplayed()
         compose.onNodeWithText("我的豆子").assertIsDisplayed()
-        compose.onNodeWithText("1 个产品").assertIsDisplayed()
-        compose.onNodeWithText("尚未更新").assertIsDisplayed()
-        compose.onNodeWithText("新增连锁品牌").assertIsDisplayed()
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.ChainBrandGrid).assertIsDisplayed()
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.ChainBrandCardPrefix + "brand").assertIsDisplayed()
+        compose.onNodeWithText("新增品牌").assertIsDisplayed()
     }
 
     @Test

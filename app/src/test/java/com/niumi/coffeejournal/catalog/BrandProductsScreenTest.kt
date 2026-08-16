@@ -1,0 +1,39 @@
+package com.niumi.coffeejournal.catalog
+
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import com.niumi.coffeejournal.TestTags
+import com.niumi.coffeejournal.core.model.Brand
+import com.niumi.coffeejournal.core.model.BrandType
+import com.niumi.coffeejournal.core.model.CatalogItem
+import com.niumi.coffeejournal.core.model.ChainProductKind
+import com.niumi.coffeejournal.core.model.ItemStatus
+import com.niumi.coffeejournal.core.model.ItemType
+import com.niumi.coffeejournal.ui.theme.CoffeeTheme
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], qualifiers = "w320dp-h480dp")
+class BrandProductsScreenTest {
+    @get:Rule val compose = createComposeRule()
+
+    @Test fun `product page presents labeled two column product grid`() {
+        compose.setContent { CoffeeTheme {
+            BrandProductsScreen(
+                brand = Brand("brand", BrandType.CHAIN, "品牌", null),
+                items = listOf(CatalogItem("item", "brand", ItemType.CHAIN_PRODUCT, "冷萃", null, null, null, null, null, null, ItemStatus.ACTIVE, chainProductKind = ChainProductKind.BLACK)),
+                imagePathResolver = { null }, onBack = {}, onEditBrand = {}, onAddProduct = {}, onEditProduct = {},
+            )
+        } }
+        compose.onNodeWithTag(TestTags.BrandProductGrid).assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.BrandProductCardPrefix + "item").assertIsDisplayed()
+        compose.onNodeWithText("冷萃").assertIsDisplayed()
+        compose.onNodeWithText("黑咖").assertIsDisplayed()
+    }
+}

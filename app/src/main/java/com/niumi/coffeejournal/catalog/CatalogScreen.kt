@@ -9,6 +9,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -34,6 +38,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.ContentScale
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.niumi.coffeejournal.core.model.Brand
@@ -51,6 +56,8 @@ import com.niumi.coffeejournal.importer.CatalogSourceProvider
 import com.niumi.coffeejournal.importer.ChangeType
 import com.niumi.coffeejournal.importer.FailureKind
 import com.niumi.coffeejournal.importer.UpdatePhase
+import com.niumi.coffeejournal.core.image.ImagePathResolver
+import com.niumi.coffeejournal.core.image.ResolvedLocalAssetImage
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -68,11 +75,13 @@ typealias CatalogAssetPicker = (
 fun CatalogFeature(
     repository: CatalogRepository,
     imageStore: com.niumi.coffeejournal.core.image.ImageStore? = null,
+    imagePathResolver: ImagePathResolver = ImagePathResolver { null },
     updateSources: CatalogSourceProvider? = null,
     updateGateway: CatalogUpdateGateway? = null,
     onRequestAsset: CatalogAssetPicker = { _, _, _ -> },
     onRequestScreenshotAsset: CatalogAssetPicker,
     onOpenSettings: () -> Unit = {},
+    onOpenChainBrand: (String) -> Unit = {},
 ) {
     val catalogViewModel: CatalogViewModel = viewModel(factory = CatalogViewModel.factory(repository, imageStore))
     val state by catalogViewModel.uiState.collectAsStateWithLifecycle()
@@ -100,6 +109,8 @@ fun CatalogFeature(
         onConfirmUpdate = { updateViewModel?.confirmSelected() },
         onDismissUpdate = { updateViewModel?.dismiss() },
         onOpenSettings = onOpenSettings,
+        onOpenChainBrand = onOpenChainBrand,
+        imagePathResolver = imagePathResolver,
     )
 }
 
@@ -126,6 +137,8 @@ fun CatalogScreen(
     onConfirmUpdate: () -> Unit = {},
     onDismissUpdate: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onOpenChainBrand: (String) -> Unit = {},
+    imagePathResolver: ImagePathResolver = ImagePathResolver { null },
 ) {
     var brandEditor by remember { mutableStateOf<Brand?>(null) }
     var showNewBrand by remember { mutableStateOf(false) }
@@ -157,14 +170,16 @@ fun CatalogScreen(
             Tab(state.tab == CatalogTab.CHAINS, { onSelectTab(CatalogTab.CHAINS) }, text = { Text("连锁品牌") })
             Tab(state.tab == CatalogTab.BEANS, { onSelectTab(CatalogTab.BEANS) }, text = { Text("我的豆子") })
         }
-        Column(
+        if (state.tab == CatalogTab.CHAINS) {
+            ChainBrandRoot(
+                brands = state.brandOverviews.map { it.brand }, imagePathResolver = imagePathResolver,
+                onOpen = onOpenChainBrand, onAdd = { showNewBrand = true },
+            )
+        } else Column(
             modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Button(
-                onClick = { showNewBrand = true }, enabled = !state.saving,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text(if (state.tab == CatalogTab.CHAINS) "新增连锁品牌" else "新增烘焙品牌") }
+            Button(onClick = { showNewBrand = true }, enabled = !state.saving, modifier = Modifier.fillMaxWidth()) { Text("新增烘焙品牌") }
 
             state.brandOverviews.forEach { overview ->
                 BrandCard(
@@ -173,7 +188,7 @@ fun CatalogScreen(
                     enabled = !state.saving,
                     onOpen = { onSelectBrand(overview.brand.id) },
                     onEdit = { brandEditor = overview.brand },
-                    showUpdate = state.tab == CatalogTab.CHAINS,
+                    showUpdate = false,
                     onUpdate = { onUpdateBrand(overview.brand) },
                 )
             }
@@ -270,6 +285,19 @@ fun CatalogScreen(
             showNewItem = true
         },
     )
+}
+
+@Composable
+private fun ChainBrandRoot(brands: List<Brand>, imagePathResolver: ImagePathResolver, onOpen: (String) -> Unit, onAdd: () -> Unit) {
+    LazyVerticalGrid(GridCells.Fixed(3), modifier = Modifier.fillMaxSize().padding(12.dp).testTag(com.niumi.coffeejournal.TestTags.ChainBrandGrid), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        items(brands, key = { it.id }) { brand ->
+            Column(Modifier.testTag(com.niumi.coffeejournal.TestTags.ChainBrandCardPrefix + brand.id).clickable { onOpen(brand.id) }) {
+                ResolvedLocalAssetImage(brand.logoAssetId, null, imagePathResolver, "品牌 ${brand.name}", ContentScale.Crop, Modifier.fillMaxWidth().aspectRatio(1f))
+                Text(brand.name, maxLines = 1)
+            }
+        }
+        item { Button(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text("新增品牌") } }
+    }
 }
 
 @Composable
@@ -463,12 +491,16 @@ private fun BrandEditorDialog(
     var logoAssetId by remember(initial) { mutableStateOf(initial?.logoAssetId) }
     var sourceUrl by remember(initial) { mutableStateOf(initial?.publicSourceUrl.orEmpty()) }
     var mode by remember(initial) { mutableStateOf(initial?.maintenanceMode ?: MaintenanceMode.MANUAL_ONLY) }
+    var logoError by remember(initial) { mutableStateOf(false) }
     DisposableEffect(leaseId) { onDispose { onDiscardAssetLease(leaseId) } }
     LaunchedEffect(leaseId) { onRetainAssetLease(leaseId, initial?.logoAssetId) }
     EditorDialog(
         title = if (initial == null) "新增品牌" else "编辑品牌", saving = saving,
         onDismiss = { onDiscardAssetLease(leaseId); onDismiss() },
-        onSave = { onSave(BrandEditor(type, name, logoAssetId, mode, sourceUrl, initial?.id, leaseId)) },
+        onSave = {
+            if (type == BrandType.CHAIN && logoAssetId == null) logoError = true
+            else onSave(BrandEditor(type, name, logoAssetId, mode, sourceUrl, initial?.id, leaseId))
+        },
     ) {
         Field(name, { name = it }, "品牌名称", enabled = !saving)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -481,6 +513,7 @@ private fun BrandEditorDialog(
                 onRequestAsset(logoAssetId, CatalogAssetKind.BRAND_LOGO) { selection ->
                     if (onStageAsset(leaseId, initial?.logoAssetId, selection.assetId)) {
                         logoAssetId = selection.assetId
+                        logoError = false
                         true
                     } else false
                 }
@@ -489,6 +522,7 @@ private fun BrandEditorDialog(
         ) {
             Text(if (logoAssetId == null) "选择 Logo" else "更换 Logo")
         }
+        if (logoError) Text("请先选择 Logo", color = MaterialTheme.colorScheme.error)
     }
 }
 

@@ -11,6 +11,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -20,6 +22,10 @@ import com.niumi.coffeejournal.catalog.CatalogRepository
 import com.niumi.coffeejournal.catalog.CatalogFeature
 import com.niumi.coffeejournal.catalog.CatalogAssetKind
 import com.niumi.coffeejournal.catalog.CatalogAssetPicker
+import com.niumi.coffeejournal.catalog.BrandProductsScreen
+import com.niumi.coffeejournal.catalog.ManualProductEditorDialog
+import com.niumi.coffeejournal.catalog.ManualProductEditorViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.niumi.coffeejournal.core.image.ImagePathResolver
 import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.core.image.ImageStore
@@ -51,6 +57,9 @@ data object Insights : NavKey
 
 @Serializable
 data object Settings : NavKey
+
+@Serializable
+data class ChainBrandProducts(val brandId: String) : NavKey
 
 private data class RootDestination(
     val key: NavKey,
@@ -109,9 +118,11 @@ private fun AppNavigationContent(
 ) {
     val backStack = rememberNavBackStack(Journal)
     val selectedRoot = backStack.last()
+    val showRootNavigation = selectedRoot is Journal || selectedRoot is Catalog || selectedRoot is Insights
 
     Scaffold(
         bottomBar = {
+            if (showRootNavigation)
             NavigationBar {
                 RootDestinations.forEach { destination ->
                     NavigationBarItem(
@@ -153,6 +164,7 @@ private fun AppNavigationContent(
                         CatalogFeature(
                             repository = catalogRepository,
                             imageStore = imageStore,
+                            imagePathResolver = imagePathResolver,
                             updateSources = catalogUpdateSources,
                             updateGateway = catalogUpdateGateway,
                             onRequestAsset = { _, kind, callback ->
@@ -166,9 +178,17 @@ private fun AppNavigationContent(
                             },
                             onRequestScreenshotAsset = catalogScreenshotAssetPicker(assetImportRequester),
                             onOpenSettings = { backStack.add(Settings) },
+                            onOpenChainBrand = { backStack.add(ChainBrandProducts(it)) },
                         )
                     }
                     else RootContent("我的咖啡豆库", "管理连锁产品与个人豆库") { backStack.add(Settings) }
+                }
+                entry<ChainBrandProducts> { destination ->
+                    if (catalogRepository != null) {
+                        ChainBrandProductsDestination(catalogRepository, imageStore, assetImportRequester, destination.brandId, imagePathResolver) {
+                            backStack.removeAt(backStack.lastIndex)
+                        }
+                    }
                 }
                 entry<Insights> {
                     if (journalRepository != null) InsightsFeature(journalRepository) { backStack.add(Settings) }
@@ -201,5 +221,16 @@ private fun RootContent(title: String, subtitle: String, onAction: () -> Unit) {
         Text(text = title, style = MaterialTheme.typography.headlineMedium)
         Text(text = subtitle, style = MaterialTheme.typography.bodyLarge)
         androidx.compose.material3.TextButton(onClick = onAction) { Text(if (title == "设置") "返回" else "设置") }
+    }
+}
+
+@Composable
+private fun ChainBrandProductsDestination(repository: CatalogRepository, imageStore: ImageStore?, assetImportRequester: AssetImportRequester, brandId: String, imagePathResolver: ImagePathResolver, onBack: () -> Unit) {
+    val brand by produceState<com.niumi.coffeejournal.core.model.Brand?>(null, brandId) { value = repository.getBrand(brandId) }
+    val items by repository.observeItems(brandId).collectAsState(initial = emptyList())
+    val editor: ManualProductEditorViewModel = viewModel(factory = ManualProductEditorViewModel.factory(repository, imageStore))
+    brand?.let {
+        BrandProductsScreen(it, items, imagePathResolver, onBack, onEditBrand = {}, onAddProduct = { editor.open(it) }, onEditProduct = { item -> editor.open(it, item) })
+        ManualProductEditorDialog(editor, assetImportRequester, imagePathResolver)
     }
 }
