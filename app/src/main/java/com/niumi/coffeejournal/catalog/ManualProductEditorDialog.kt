@@ -19,12 +19,16 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.core.image.ImageKind
+import com.niumi.coffeejournal.core.image.ImagePathResolver
 import com.niumi.coffeejournal.core.model.ChainProductKind
 import com.niumi.coffeejournal.importer.AssetImportRequester
 import com.niumi.coffeejournal.importer.ImageImportMode
@@ -33,6 +37,7 @@ import com.niumi.coffeejournal.importer.ImageImportMode
 fun ManualProductEditorDialog(
     viewModel: ManualProductEditorViewModel,
     assetImportRequester: AssetImportRequester,
+    imagePathResolver: ImagePathResolver = ImagePathResolver { null },
 ) {
     val state by viewModel.state.collectAsState()
     if (!state.open) return
@@ -47,8 +52,13 @@ fun ManualProductEditorDialog(
                         FilterChip(selected = state.kind == kind, onClick = { viewModel.setKind(kind) }, label = { Text(label) }, enabled = !state.saving)
                     }
                 }
+                val previewAssetId = state.imageAssetId ?: state.brand?.logoAssetId
+                val bitmap by produceState<android.graphics.Bitmap?>(null, previewAssetId) {
+                    value = imagePathResolver.resolve(previewAssetId)?.let(android.graphics.BitmapFactory::decodeFile)
+                }
                 Box(Modifier.fillMaxWidth().aspectRatio(1f).background(MaterialTheme.colorScheme.surfaceVariant).semantics { contentDescription = TestTags.ManualProductPreview }.padding(12.dp)) {
-                    Text(if (state.imageAssetId != null) "实拍图" else "品牌 Logo")
+                    if (bitmap != null) Image(bitmap!!.asImageBitmap(), contentDescription = if (state.imageAssetId != null) "产品实拍图" else "品牌 Logo", modifier = Modifier.fillMaxWidth())
+                    else Text(if (previewAssetId == null) "暂无图片" else "图片无法加载")
                 }
                 OutlinedButton(onClick = {
                     assetImportRequester(ImageKind.PRODUCT, ImageImportMode.WHOLE_IMAGE, state.imageAssetId) { selection -> viewModel.acceptImportedAsset(selection.assetId) }
