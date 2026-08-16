@@ -179,7 +179,7 @@ private fun AppNavigationContent(
                 entry<Journal> {
                     if (journalRepository != null && catalogRepository != null) {
                         JournalFeature(
-                            journalRepository, catalogRepository, imagePathResolver, assetImportRequester,
+                            journalRepository, catalogRepository, imagePathResolver, assetImportRequester, imageStore,
                             calendarDisplayPreference,
                         ) { backStack.add(Settings) }
                     } else {

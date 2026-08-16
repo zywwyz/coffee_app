@@ -44,6 +44,7 @@ import com.niumi.coffeejournal.catalog.ManualProductEditorDialog
 import com.niumi.coffeejournal.catalog.ManualProductEditorEvent
 import com.niumi.coffeejournal.catalog.ManualProductEditorViewModel
 import com.niumi.coffeejournal.core.image.ImagePathResolver
+import com.niumi.coffeejournal.core.image.ImageStore
 import com.niumi.coffeejournal.core.image.LocalAssetImage
 import com.niumi.coffeejournal.core.model.DrinkRecord
 import com.niumi.coffeejournal.core.model.ItemType
@@ -59,6 +60,7 @@ fun JournalFeature(
     catalogRepository: CatalogRepository,
     imagePathResolver: ImagePathResolver,
     assetImportRequester: AssetImportRequester = { _, _, _, _ -> },
+    imageStore: ImageStore? = null,
     calendarDisplayPreference: CalendarDisplayPreference = DefaultCalendarDisplayPreference,
     onOpenSettings: () -> Unit = {},
 ) {
@@ -76,7 +78,7 @@ fun JournalFeature(
     val state by journalViewModel.uiState.collectAsStateWithLifecycle()
     val productEditor: ManualProductEditorViewModel = viewModel(
         key = "journal-manual-product-editor",
-        factory = ManualProductEditorViewModel.factory(catalogRepository),
+        factory = ManualProductEditorViewModel.factory(catalogRepository, imageStore),
     )
     var editorOpen by remember { mutableStateOf(false) }
     LaunchedEffect(state.saveCompletedToken) {
