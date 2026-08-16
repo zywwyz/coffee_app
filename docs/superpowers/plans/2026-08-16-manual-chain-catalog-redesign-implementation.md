@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the unreliable network/OCR catalog with an offline manual brand/product library, ship 12 real bundled brand logos, support record-time quick product creation, migrate Room and backups safely to v3, and remove the native ActionBar that covers all three root tabs.
+**Goal:** Replace the unreliable network/OCR catalog with an offline manual brand/product library, ship 12 real bundled brand logos, support record-time quick product creation and two persistent calendar image modes, migrate Room/backups safely to v3, rename the App to “咖啡日历”, and remove the native ActionBar that covers all three root tabs.
 
 **Architecture:** Keep Room and the content-addressed private image store as the source of truth. Add a nullable persisted `chainProductKind` whose domain values are `BLACK`, `FRUIT`, `MILK`, and migration-only `PENDING`; keep legacy catalog columns and the unused `catalog_updates` table solely for backup compatibility. Install bundled logos through the normal `ImageStore` so logos participate in existing image references and backups, use Navigation3 for a real brand-products child route, and share one manual chain-product editor ViewModel between catalog and journal flows.
 
@@ -21,6 +21,7 @@
 - `core/image/ImageStore.kt` — preserve whole-image bytes for gallery/bundled images; keep content addressing.
 - `core/image/WholeImageImportHost.kt` — gallery-only reusable picker and association cleanup.
 - `core/image/LocalAssetImage.kt` — reusable product → brand Logo → generic placeholder rendering.
+- `journal/CalendarDisplayPreference.kt` — persisted `品牌／咖啡` calendar choice.
 - `catalog/BundledBrandCatalog.kt` — 12 stable seed IDs, order, names, and drawable IDs.
 - `catalog/CatalogRepository.kt` — seed reconciliation, deterministic ordering, manual validation.
 - `catalog/ManualProductEditorViewModel.kt` — reusable product form, image lease lifecycle, and saved-item event.
@@ -46,17 +47,25 @@ export GRADLE_USER_HOME="$PWD/.gradle"
 export PATH="$COFFEE_JAVA_HOME/bin:$COFFEE_ANDROID_HOME/platform-tools:$PATH"
 ```
 
-### Task 1: Remove the native ActionBar at the window root
+### Task 1: Rename the App and remove native/global top bars
 
 **Files:**
 - Create: `app/src/main/res/values/themes.xml`
+- Create: `app/src/main/res/values/strings.xml`
 - Modify: `app/src/main/AndroidManifest.xml`
+- Modify: `app/src/main/java/com/niumi/coffeejournal/navigation/AppNavigation.kt`
+- Modify: `app/src/main/java/com/niumi/coffeejournal/journal/JournalScreen.kt`
+- Modify: `app/src/main/java/com/niumi/coffeejournal/catalog/CatalogScreen.kt`
+- Modify: `app/src/main/java/com/niumi/coffeejournal/insights/InsightsScreen.kt`
+- Modify: `app/src/main/java/com/niumi/coffeejournal/settings/SettingsScreen.kt`
+- Modify: `app/src/main/java/com/niumi/coffeejournal/TestTags.kt`
 - Create: `app/src/test/java/com/niumi/coffeejournal/MainActivityWindowThemeTest.kt`
+- Modify: `app/src/test/java/com/niumi/coffeejournal/navigation/AppNavigationTest.kt`
 - Modify: `app/src/test/java/com/niumi/coffeejournal/ReleaseAcceptanceRobolectricTest.kt`
 
 - [ ] **Step 1: Write the failing window-theme regression test**
 
-Create a Robolectric test that uses the existing `InMemoryCoffeeJournalApp`, launches the real `MainActivity`, and proves both the manifest theme and runtime window have no native ActionBar:
+Create a Robolectric test that uses the existing `InMemoryCoffeeJournalApp`, launches the real `MainActivity`, and proves the label, manifest theme, and runtime window are correct:
 
 ```kotlin
 @RunWith(RobolectricTestRunner::class)
@@ -65,12 +74,13 @@ class MainActivityWindowThemeTest {
     @Test fun main_activity_uses_the_explicit_no_action_bar_theme() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         assertEquals(R.style.Theme_CoffeeJournal, activity.applicationInfo.theme)
+        assertEquals("咖啡日历", activity.applicationInfo.loadLabel(activity.packageManager).toString())
         assertNull(activity.actionBar)
     }
 }
 ```
 
-Add a real-Activity Compose assertion to visit 日记、豆库、总结 and assert their first headings are displayed (`记录一杯` or the calendar, `我的咖啡豆库`, `咖啡回顾`).
+Add a real-Activity Compose assertion to visit 咖啡日历、豆库、总结 and assert their owned headings are displayed (`咖啡日历`, `我的咖啡豆库`, `咖啡回顾`). Assert the first bottom label is exactly `咖啡日历`, no node has text `Coffee Journal`, and each root heading has its own settings semantics.
 
 - [ ] **Step 2: Run the test and verify the current theme fails**
 
@@ -80,7 +90,7 @@ Run:
 ./.local-tools/gradle-8.13/bin/gradle testDebugUnitTest --tests 'com.niumi.coffeejournal.MainActivityWindowThemeTest' --no-daemon
 ```
 
-Expected: FAIL because `Theme_CoffeeJournal` does not exist and the default platform theme creates the `Coffee Journal` ActionBar.
+Expected: FAIL because `Theme_CoffeeJournal`/`app_name` do not exist, the first root is still `日记`, and the default platform theme creates the `Coffee Journal` ActionBar.
 
 - [ ] **Step 3: Add the single source-level fix**
 
@@ -97,17 +107,25 @@ Create:
 </resources>
 ```
 
-Apply `android:theme="@style/Theme.CoffeeJournal"` on `<application>`. Do not add padding to Journal, Catalog, or Insights to hide the symptom.
+Create `strings.xml` with `<string name="app_name">咖啡日历</string>`. Apply `android:label="@string/app_name"` and `android:theme="@style/Theme.CoffeeJournal"` on `<application>`. Do not add padding to Journal, Catalog, or Insights to hide the symptom.
+
+Remove the outer `Scaffold.topBar` from `AppNavigation`. Rename the first `RootDestination` label to `咖啡日历`. Give Journal, Catalog, and Insights their own title row plus a settings icon/button callback; give Settings its own back action. These title rows are page content, not a shared/global top bar.
 
 - [ ] **Step 4: Verify the root cause is closed**
 
-Run the targeted theme test plus `ReleaseAcceptanceRobolectricTest`. Expected: PASS; `activity.actionBar == null`, and all three root headings are displayed.
+Run:
+
+```bash
+./.local-tools/gradle-8.13/bin/gradle testDebugUnitTest --tests 'com.niumi.coffeejournal.MainActivityWindowThemeTest' --tests 'com.niumi.coffeejournal.navigation.AppNavigationTest' --tests 'com.niumi.coffeejournal.ReleaseAcceptanceRobolectricTest' --no-daemon
+```
+
+Expected: PASS; label is `咖啡日历`, `activity.actionBar == null`, no shared top bar exists, and all three owned root headings are displayed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/src/main/AndroidManifest.xml app/src/main/res/values/themes.xml app/src/test/java/com/niumi/coffeejournal/MainActivityWindowThemeTest.kt app/src/test/java/com/niumi/coffeejournal/ReleaseAcceptanceRobolectricTest.kt
-git commit -m "fix: remove native action bar overlap"
+git add app/src/main/AndroidManifest.xml app/src/main/res/values/themes.xml app/src/main/res/values/strings.xml app/src/main/java/com/niumi/coffeejournal/navigation/AppNavigation.kt app/src/main/java/com/niumi/coffeejournal/journal/JournalScreen.kt app/src/main/java/com/niumi/coffeejournal/catalog/CatalogScreen.kt app/src/main/java/com/niumi/coffeejournal/insights/InsightsScreen.kt app/src/main/java/com/niumi/coffeejournal/settings/SettingsScreen.kt app/src/main/java/com/niumi/coffeejournal/TestTags.kt app/src/test/java/com/niumi/coffeejournal/MainActivityWindowThemeTest.kt app/src/test/java/com/niumi/coffeejournal/navigation/AppNavigationTest.kt app/src/test/java/com/niumi/coffeejournal/ReleaseAcceptanceRobolectricTest.kt
+git commit -m "fix: rename app and remove overlapping top bars"
 ```
 
 ### Task 2: Add Room v3 chain-product classification and backup compatibility atomically
@@ -263,7 +281,7 @@ Also test identical bytes deduplicate, invalid images are rejected, an image ove
 
 - [ ] **Step 2: Implement a streaming original-byte path for `importWhole`**
 
-Keep `importCropped` temporarily until Task 8 removes old callers. Change only `importWhole` to:
+Keep `importCropped` temporarily until Task 9 removes old callers. Change only `importWhole` to:
 
 1. stream the content URI into a private temporary file with a 20 MiB bound;
 2. verify decodeable bounds;
@@ -500,7 +518,21 @@ Assert the child page:
 
 - [ ] **Step 2: Extract reusable local image rendering**
 
-Move the Journal-only `LocalCoffeeImage` pattern into `core/image/LocalAssetImage.kt`. It accepts `primaryAssetId`, `fallbackAssetId`, `ImagePathResolver`, `ContentScale.Crop`, and a semantic description. It must resolve/load asynchronously and render a generic coffee placeholder only after both IDs fail.
+Move the Journal-only `LocalCoffeeImage` pattern into `core/image/LocalAssetImage.kt` as two type-consistent entry points:
+
+```kotlin
+@Composable fun LocalAssetImage(
+    primaryPath: String?, fallbackPath: String?, contentDescription: String,
+    contentScale: ContentScale = ContentScale.Crop,
+)
+
+@Composable fun ResolvedLocalAssetImage(
+    primaryAssetId: String?, fallbackAssetId: String?, resolver: ImagePathResolver,
+    contentDescription: String, contentScale: ContentScale = ContentScale.Crop,
+)
+```
+
+The resolved form resolves IDs and delegates to the path form. Both render a generic coffee placeholder only after primary and fallback fail. Journal uses the path form because `JournalViewModel` already resolves immutable snapshot IDs; catalog/editor screens use the resolved form.
 
 - [ ] **Step 3: Implement the three-column brand root**
 
@@ -535,7 +567,98 @@ git add app/src/main/java/com/niumi/coffeejournal/catalog app/src/main/java/com/
 git commit -m "feat: show compact brand and product grids"
 ```
 
-### Task 7: Add products from the daily record and auto-select them
+### Task 7: Add persistent 品牌／咖啡 calendar views
+
+**Files:**
+- Create: `app/src/main/java/com/niumi/coffeejournal/journal/CalendarDisplayPreference.kt`
+- Modify: `app/src/main/java/com/niumi/coffeejournal/journal/JournalProjection.kt`
+- Modify: `app/src/main/java/com/niumi/coffeejournal/journal/JournalViewModel.kt`
+- Modify: `app/src/main/java/com/niumi/coffeejournal/journal/JournalScreen.kt`
+- Modify: `app/src/main/java/com/niumi/coffeejournal/CoffeeJournalApp.kt`
+- Modify: `app/src/main/java/com/niumi/coffeejournal/MainActivity.kt`
+- Modify: `app/src/main/java/com/niumi/coffeejournal/navigation/AppNavigation.kt`
+- Modify: `app/src/main/java/com/niumi/coffeejournal/TestTags.kt`
+- Create: `app/src/test/java/com/niumi/coffeejournal/journal/CalendarDisplayPreferenceTest.kt`
+- Modify: `app/src/test/java/com/niumi/coffeejournal/journal/JournalViewModelTest.kt`
+- Modify: `app/src/test/java/com/niumi/coffeejournal/journal/JournalScreenRobolectricTest.kt`
+- Modify: `app/src/test/java/com/niumi/coffeejournal/ReleaseAcceptanceRobolectricTest.kt`
+
+- [ ] **Step 1: Write persistence/projection/UI red tests**
+
+Cover:
+
+- empty/corrupt preference defaults to `COFFEE`;
+- write `BRAND`, construct a fresh preference/ViewModel, and read `BRAND`;
+- `BRAND` selects only `brandLogoPath` and falls directly to generic placeholder;
+- `COFFEE` selects `imagePath`, then `brandLogoPath`, then generic placeholder;
+- switching modes leaves `records`, summary, representative record, day count, and `×N` unchanged;
+- month navigation preserves the selected mode;
+- UI labels are exactly `品牌` and `咖啡`, with only one selected;
+- switching does not call any Journal/Catalog repository write method.
+
+- [ ] **Step 2: Define the preference boundary**
+
+Create:
+
+```kotlin
+enum class CalendarDisplayMode { BRAND, COFFEE }
+
+interface CalendarDisplayPreference {
+    fun read(): CalendarDisplayMode
+    fun write(mode: CalendarDisplayMode)
+}
+```
+
+`SharedPreferencesCalendarDisplayPreference` uses private preferences named `calendar_ui`, key `display_mode`, `COFFEE` as the default, and `runCatching { valueOf(raw) }.getOrDefault(COFFEE)` for corrupted values. This is UI preference state, not Room/backup business data.
+
+- [ ] **Step 3: Add mode to state without re-projecting records**
+
+Add `calendarDisplayMode: CalendarDisplayMode = COFFEE` to `JournalUiState`. Inject the preference into `JournalViewModel`; initialize from `read()`. Implement:
+
+```kotlin
+fun setCalendarDisplayMode(mode: CalendarDisplayMode) {
+    if (mutableState.value.calendarDisplayMode == mode) return
+    mutableState.value = mutableState.value.copy(calendarDisplayMode = mode)
+    calendarDisplayPreference.write(mode)
+}
+```
+
+Preserve the field in `changeMonth`. Keep `projectMonth`, latest-record tie-breaking, and `drinkCount` unchanged; mode changes only which already-resolved path the composable requests.
+
+- [ ] **Step 4: Render the exact two-option control and fallback rules**
+
+Directly below the owned `咖啡日历` page title, add Material 3 `SingleChoiceSegmentedButtonRow` with two `SegmentedButton`s labelled exactly `品牌` and `咖啡`.
+
+For each recorded day:
+
+```kotlin
+val primary = if (mode == CalendarDisplayMode.BRAND) day.brandLogoPath else day.imagePath
+val fallback = if (mode == CalendarDisplayMode.COFFEE) day.brandLogoPath else null
+LocalAssetImage(primaryPath = primary, fallbackPath = fallback, contentScale = ContentScale.Crop)
+```
+
+Keep the date number and `×N` overlay in both modes.
+
+- [ ] **Step 5: Inject the production preference**
+
+Expose one `calendarDisplayPreference` from `CoffeeJournalApp`, pass it through `MainActivity → AppNavigation → JournalFeature → JournalViewModel.factory`, and override/fake it in acceptance tests so tests never share host preferences.
+
+- [ ] **Step 6: Run targeted calendar tests and commit**
+
+Run:
+
+```bash
+./.local-tools/gradle-8.13/bin/gradle testDebugUnitTest --tests 'com.niumi.coffeejournal.journal.CalendarDisplayPreferenceTest' --tests 'com.niumi.coffeejournal.journal.JournalViewModelTest' --tests 'com.niumi.coffeejournal.journal.JournalScreenRobolectricTest' --tests 'com.niumi.coffeejournal.ReleaseAcceptanceRobolectricTest' --no-daemon
+```
+
+Expected: PASS in both modes with persistence and no repository writes.
+
+```bash
+git add app/src/main/java/com/niumi/coffeejournal/journal app/src/main/java/com/niumi/coffeejournal/CoffeeJournalApp.kt app/src/main/java/com/niumi/coffeejournal/MainActivity.kt app/src/main/java/com/niumi/coffeejournal/navigation/AppNavigation.kt app/src/main/java/com/niumi/coffeejournal/TestTags.kt app/src/test/java/com/niumi/coffeejournal/journal app/src/test/java/com/niumi/coffeejournal/ReleaseAcceptanceRobolectricTest.kt
+git commit -m "feat: switch calendar between brand and coffee views"
+```
+
+### Task 8: Add products from the daily record and auto-select them
 
 **Files:**
 - Modify: `app/src/main/java/com/niumi/coffeejournal/journal/JournalScreen.kt`
@@ -588,7 +711,7 @@ git add app/src/main/java/com/niumi/coffeejournal/journal app/src/test/java/com/
 git commit -m "feat: quick add products while recording"
 ```
 
-### Task 8: Delete website update, OCR, screenshot, and crop logic
+### Task 9: Delete website update, OCR, screenshot, and crop logic
 
 **Files:**
 - Create: `app/src/main/java/com/niumi/coffeejournal/core/image/WholeImageImportHost.kt`
@@ -662,7 +785,7 @@ git add -A app/src/main app/src/test app/build.gradle.kts gradle/libs.versions.t
 git commit -m "refactor: remove catalog network and ocr flows"
 ```
 
-### Task 9: Final docs, cross-feature verification, and reviews
+### Task 10: Final docs, cross-feature verification, and reviews
 
 **Files:**
 - Modify: `README.md`
@@ -675,6 +798,8 @@ git commit -m "refactor: remove catalog network and ocr flows"
 Rewrite README sections for:
 
 - three-column brand grid and brand child product page;
+- App/launcher name and first bottom Tab renamed to `咖啡日历`, with no global top bar;
+- persistent `品牌／咖啡` calendar switch and both fallback rules;
 - 12 preinstalled Logo-only brands;
 - manual brand and product creation/edit;
 - black/fruit/milk types and pending legacy products;
@@ -720,7 +845,7 @@ Verify:
 - record APK byte size and SHA-256;
 - `git diff --check` and `git status --short` are clean.
 
-If an Android device is connected, install with `adb install -r`, visit all three root tabs to visually confirm no ActionBar overlap, open all 12 brands in airplane mode, add/edit a real product photo, quick-add from the record page, and export/validate/restore a backup. If no device is connected, report those checks as explicitly unrun.
+If an Android device is connected, install with `adb install -r`, confirm the launcher and first Tab both say `咖啡日历`, visit all three root tabs to verify each owned heading and no ActionBar/global-top-bar overlap, switch `品牌／咖啡` and restart to verify persistence, open all 12 brands in airplane mode and visually confirm each real Logo, add/edit a real product photo, quick-add from the record page, and export/validate/restore a backup. If no device is connected, report those checks as explicitly unrun.
 
 - [ ] **Step 6: Update project state and commit**
 
