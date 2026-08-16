@@ -42,6 +42,26 @@ class ImagePathResolverTest {
         assertNull(resolver.resolve("corrupt"))
     }
 
+    @Test
+    fun `resolver only accepts managed image extensions`() = runBlocking {
+        val image = File.createTempFile("unsupported", ".gif").also { target ->
+            temporaryBitmap("unsupported-source").copyTo(target, overwrite = true)
+        }
+        val resolver = RoomImagePathResolver(FakeImageAssetDao(mapOf("asset" to asset("asset", image))))
+
+        assertNull(resolver.resolve("asset"))
+    }
+
+    @Test
+    fun `resolver remains compatible with stored webp paths`() = runBlocking {
+        val image = File.createTempFile("legacy", ".webp").apply {
+            writeBytes(java.util.Base64.getDecoder().decode("UklGRiIAAABXRUJQVlA4IBYAAACQAQCdASoBAAEAAUAmJaQAA3AA/vuUAAA="))
+        }
+        val resolver = RoomImagePathResolver(FakeImageAssetDao(mapOf("asset" to asset("asset", image))))
+
+        assertEquals(image.absolutePath, resolver.resolve("asset"))
+    }
+
     private fun asset(id: String, file: File) = ImageAssetEntity(id, file.absolutePath, "$id-sha", "product", 1)
 
     private fun temporaryBitmap(prefix: String): File = File.createTempFile(prefix, ".png").also { file ->
