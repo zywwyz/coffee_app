@@ -10,7 +10,7 @@
 
 ### 当前开发阶段
 
-当前个人 Debug 侧载范围已取得发布 GO。真机试用后已确认下一里程碑：重做连锁豆库，改为三列品牌 Logo → 双列实拍产品的纯手动流程，并删除不可用的官网更新、截图 OCR 与裁剪。设计已分段确认，正式规格等待整体确认，尚未修改生产代码。
+当前个人 Debug 侧载范围已取得发布 GO。真机试用后已确认下一里程碑：重做连锁豆库，改为三列品牌 Logo → 双列实拍产品的纯手动流程，并删除不可用的官网更新、截图 OCR 与裁剪。整体规格已确认；另确认当前 Manifest 缺少 NoActionBar 主题，导致系统 `Coffee Journal` ActionBar 遮挡三个根 Tab 的顶部内容，本次一并修复。尚未修改生产代码。
 
 ---
 
@@ -150,6 +150,7 @@ ZIP 解压限额和压缩比按实际流式读取字节计算，不能信任中�
 - 当前设备侧已完成一次 Debug APK 试用，但新版系统图片选择、品牌／产品编辑和完整恢复仍待真机验证。
 - 个人侧载的是 debuggable Debug APK；Release APK 尚未配置个人签名。
 - 12 个真实品牌 Logo 的官方资产来源、尺寸归一和商标说明需在实施时记录。
+- `AndroidManifest.xml` 未指定应用主题，系统原生 ActionBar 与 Compose 页面重叠；应在 Activity 窗口主题层修复，不能给三个页面分别堆叠 padding。
 - 项目多 Agent 配置使用当前运行时支持的 Terra（explorer / implementer / reviewer）与 Sol（critical reviewer）。
 
 ---
