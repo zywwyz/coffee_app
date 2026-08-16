@@ -6,6 +6,9 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.assertDoesNotExist
+import com.niumi.coffeejournal.TestTags
 import androidx.compose.ui.graphics.Color
 import com.niumi.coffeejournal.ui.theme.Caramel
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
@@ -89,6 +92,15 @@ class AppNavigationTest {
         assertEquals(ImageImportMode.SCREENSHOT, requestMode)
     }
 
+    @Test
+    fun chain brand opens child page and hides root navigation() {
+        compose.setContent { CoffeeTheme { AppNavigation(FakeJournalRepository, ChainCatalogRepository) } }
+        compose.onNodeWithText("豆库").performClick()
+        compose.onNodeWithTag(TestTags.ChainBrandCardPrefix + "custom").performClick()
+        compose.onNodeWithText("自定义连锁").assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.BottomCatalogTab).assertDoesNotExist()
+    }
+
     private object FakeJournalRepository : JournalRepository {
         override fun observeMonth(year: Int, month: Int): Flow<List<DrinkRecord>> = flowOf(emptyList())
         override suspend fun newDraft(type: ItemType, itemId: String): DrinkDraft = error("unused")
@@ -101,6 +113,17 @@ class AppNavigationTest {
         override fun observeBrands(type: BrandType): Flow<List<Brand>> = flowOf(emptyList())
         override fun observeItems(brandId: String): Flow<List<CatalogItem>> = flowOf(emptyList())
         override suspend fun getBrand(brandId: String): Brand = error("unused")
+        override suspend fun getItem(itemId: String): CatalogItem = error("unused")
+        override suspend fun upsertBrand(brand: Brand) = Unit
+        override suspend fun upsertItem(item: CatalogItem) = Unit
+        override suspend fun lastPriceFen(itemId: String): Long? = null
+    }
+
+    private object ChainCatalogRepository : CatalogRepository {
+        private val brand = Brand("custom", BrandType.CHAIN, "自定义连锁", "logo", com.niumi.coffeejournal.core.model.MaintenanceMode.MANUAL_ONLY, null)
+        override fun observeBrands(type: BrandType): Flow<List<Brand>> = flowOf(if (type == BrandType.CHAIN) listOf(brand) else emptyList())
+        override fun observeItems(brandId: String): Flow<List<CatalogItem>> = flowOf(emptyList())
+        override suspend fun getBrand(brandId: String): Brand = brand
         override suspend fun getItem(itemId: String): CatalogItem = error("unused")
         override suspend fun upsertBrand(brand: Brand) = Unit
         override suspend fun upsertItem(item: CatalogItem) = Unit
