@@ -59,6 +59,7 @@ fun RecordDrinkScreen(
     onScreenshot: () -> Unit,
     onSelectImage: () -> Unit,
     onSkipImage: () -> Unit,
+    onAddProduct: () -> Unit = {},
 ) {
     val editorBusy = state.saving || state.selecting || state.attachingImage
     val hasDraft = state.selectedItemId != null || state.invalidItem || state.editingRecordId != null
@@ -94,6 +95,9 @@ fun RecordDrinkScreen(
         }
         SelectionRow("选择品牌", brands, state.selectedBrandId, !state.saving, { it.id }, { it.name }, onBrandSelect)
         SelectionRow("选择产品", items, state.selectedItemId, !state.saving, { it.id }, { it.name }, onItemSelect)
+        if (state.sourceType == ItemType.CHAIN_PRODUCT && state.selectedBrandId != null) {
+            OutlinedButton(onClick = onAddProduct, enabled = !editorBusy) { Text("添加新产品") }
+        }
         Text("饮用日期与时间", style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(

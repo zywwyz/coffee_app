@@ -120,7 +120,7 @@ class JournalViewModel(
         observeItemsForBrand(brandId)
     }
 
-    fun selectItem(type: ItemType, itemId: String) {
+    fun selectItem(type: ItemType, itemId: String, onCompleted: ((Boolean) -> Unit)? = null) {
         if (mutableState.value.editor.saving || mutableState.value.editor.attachingImage) return
         val generation = ++selectionGeneration
         selectionJob?.cancel()
@@ -169,6 +169,7 @@ class JournalViewModel(
                             errorMessage = null,
                         ),
                     )
+                    onCompleted?.invoke(true)
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: Exception) {
@@ -181,6 +182,7 @@ class JournalViewModel(
                             ),
                         )
                     }
+                    onCompleted?.invoke(false)
                 }
             }
         }

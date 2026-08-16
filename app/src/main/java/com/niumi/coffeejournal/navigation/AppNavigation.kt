@@ -258,6 +258,9 @@ private fun ChainBrandProductsDestination(repository: CatalogRepository, imageSt
     val editor: ManualProductEditorViewModel = viewModel(factory = ManualProductEditorViewModel.factory(repository, imageStore))
     val catalog: CatalogViewModel = viewModel(factory = CatalogViewModel.factory(repository, imageStore))
     val catalogState by catalog.uiState.collectAsState()
+    LaunchedEffect(editor) {
+        editor.events.collect { editor.completeSaved() }
+    }
     var editingBrand by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.niumi.coffeejournal.core.model.Brand?>(null) }
     var handledSaveToken by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(catalogState.saveCompletedToken) }
     LaunchedEffect(catalogState.saveCompletedToken) {

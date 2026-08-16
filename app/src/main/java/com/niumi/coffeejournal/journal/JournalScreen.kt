@@ -40,9 +40,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.niumi.coffeejournal.catalog.CatalogRepository
+import com.niumi.coffeejournal.catalog.ManualProductEditorDialog
+import com.niumi.coffeejournal.catalog.ManualProductEditorEvent
+import com.niumi.coffeejournal.catalog.ManualProductEditorViewModel
 import com.niumi.coffeejournal.core.image.ImagePathResolver
 import com.niumi.coffeejournal.core.image.LocalAssetImage
 import com.niumi.coffeejournal.core.model.DrinkRecord
+import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.importer.AssetImportRequester
 import com.niumi.coffeejournal.importer.ImageImportMode
@@ -70,9 +74,22 @@ fun JournalFeature(
         ),
     )
     val state by journalViewModel.uiState.collectAsStateWithLifecycle()
+    val productEditor: ManualProductEditorViewModel = viewModel(
+        key = "journal-manual-product-editor",
+        factory = ManualProductEditorViewModel.factory(catalogRepository),
+    )
     var editorOpen by remember { mutableStateOf(false) }
     LaunchedEffect(state.saveCompletedToken) {
         if (state.saveCompletedToken > 0) editorOpen = false
+    }
+    LaunchedEffect(productEditor) {
+        productEditor.events.collect { event ->
+            if (event is ManualProductEditorEvent.Saved) {
+                journalViewModel.selectItem(ItemType.CHAIN_PRODUCT, event.itemId) { selected ->
+                    if (selected) productEditor.completeSaved()
+                }
+            }
+        }
     }
 
     if (editorOpen) {
@@ -104,7 +121,11 @@ fun JournalFeature(
                 }
             },
             onSkipImage = journalViewModel::skipImagePrompt,
+            onAddProduct = {
+                state.brands.firstOrNull { it.id == state.editor.selectedBrandId }?.let(productEditor::openNew)
+            },
         )
+        ManualProductEditorDialog(productEditor, assetImportRequester, imagePathResolver)
     } else {
         JournalScreen(
             state = state,

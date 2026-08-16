@@ -84,7 +84,6 @@ class ManualProductEditorViewModel(
                         current.editing?.imageAssetId?.takeIf { it != item.imageAssetId }?.let { deleteQuietly(it) }
                         stagedAssetId = null
                     }
-                    mutableState.value = ManualProductEditorState()
                     mutableEvents.emit(ManualProductEditorEvent.Saved(item.id, brand.id))
                 } catch (error: CancellationException) {
                     withContext(NonCancellable) { cleanupStaged() }; throw error
@@ -100,6 +99,10 @@ class ManualProductEditorViewModel(
                 }
             }
         }
+    }
+    /** Closes a saved editor after its caller has completed any follow-up action. */
+    fun completeSaved() {
+        if (mutableState.value.saving) mutableState.value = ManualProductEditorState()
     }
     private suspend fun cleanupStaged() { stagedAssetId?.let { deleteQuietly(it) }; stagedAssetId = null }
     private suspend fun deleteQuietly(assetId: String) { withContext(NonCancellable) { runCatching { imageStore?.deleteIfUnreferenced(assetId) } } }

@@ -99,6 +99,26 @@ class JournalScreenRobolectricTest {
     }
 
     @Test
+    fun `chain brand selection exposes quick add product action`() {
+        var requested = false
+        compose.setContent {
+            CoffeeTheme {
+                RecordDrinkScreen(
+                    state = JournalUiState.empty(2026, 8).editor.copy(selectedBrandId = "brand"),
+                    brands = emptyList(), items = emptyList(),
+                    onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {},
+                    onRatingChange = {}, onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {},
+                    onSave = {}, onBack = {}, onScreenshot = {}, onSelectImage = {}, onSkipImage = {},
+                    onAddProduct = { requested = true },
+                )
+            }
+        }
+
+        compose.onNodeWithText("添加新产品").assertIsEnabled().performClick()
+        compose.runOnIdle { assert(requested) }
+    }
+
+    @Test
     fun `recorded day renders decoded local product image instead of placeholder`() {
         val image = temporaryBitmap("product")
         val state = JournalUiState.empty(2026, 8).let { empty ->
