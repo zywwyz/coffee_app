@@ -10,11 +10,14 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -236,6 +239,11 @@ private fun ChainBrandProductsDestination(repository: CatalogRepository, imageSt
     val catalog: CatalogViewModel = viewModel(factory = CatalogViewModel.factory(repository, imageStore))
     val catalogState by catalog.uiState.collectAsState()
     var editingBrand by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.niumi.coffeejournal.core.model.Brand?>(null) }
+    var handledSaveToken by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(catalogState.saveCompletedToken) }
+    LaunchedEffect(catalogState.saveCompletedToken) {
+        if (catalogState.saveCompletedToken > handledSaveToken) editingBrand = null
+        handledSaveToken = catalogState.saveCompletedToken
+    }
     brand?.let {
         BrandProductsScreen(it, items, imagePathResolver, onBack, onEditBrand = { editingBrand = it }, onAddProduct = { editor.openNew(it) }, onEditProduct = { item -> editor.openEdit(it, item) })
         ManualProductEditorDialog(editor, assetImportRequester, imagePathResolver)
@@ -243,12 +251,15 @@ private fun ChainBrandProductsDestination(repository: CatalogRepository, imageSt
     editingBrand?.let { editable ->
         BrandEditorDialog(
             initial = editable, type = com.niumi.coffeejournal.core.model.BrandType.CHAIN, saving = catalogState.saving,
-            onDismiss = { editingBrand = null }, onSave = { catalog.saveBrand(it); editingBrand = null },
+            onDismiss = { editingBrand = null }, onSave = catalog::saveBrand,
             onRequestAsset = { previous, kind, callback ->
                 check(kind == CatalogAssetKind.BRAND_LOGO)
                 assetImportRequester(ImageKind.BRAND_LOGO, ImageImportMode.WHOLE_IMAGE, previous, callback)
             },
             onRetainAssetLease = catalog::retainAssetLease, onStageAsset = catalog::stageAsset, onDiscardAssetLease = catalog::discardAssetLease,
         )
+    }
+    catalogState.errorMessage?.let { message ->
+        AlertDialog(onDismissRequest = catalog::clearError, title = { Text("无法保存") }, text = { Text(message) }, confirmButton = { TextButton(onClick = catalog::clearError) { Text("知道了") } })
     }
 }
