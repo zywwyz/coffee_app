@@ -92,7 +92,11 @@ class ManualProductEditorViewModel(
                     mutableState.value = current.copy(saving = false, errorMessage = "同一分类下已存在同名条目")
                 } catch (_: Exception) {
                     withContext(NonCancellable) { cleanupStaged() }
-                    mutableState.value = current.copy(saving = false, errorMessage = "保存失败，请重试")
+                    mutableState.value = current.copy(
+                        imageAssetId = current.editing?.imageAssetId,
+                        saving = false,
+                        errorMessage = "保存失败，请重试",
+                    )
                 }
             }
         }

@@ -21,7 +21,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.foundation.Image
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -29,6 +30,9 @@ import androidx.compose.ui.unit.dp
 import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.core.image.ImagePathResolver
+import com.niumi.coffeejournal.core.image.ThumbnailLoader
+import com.niumi.coffeejournal.core.image.CalendarThumbnailLoader
+import androidx.compose.runtime.remember
 import com.niumi.coffeejournal.core.model.ChainProductKind
 import com.niumi.coffeejournal.importer.AssetImportRequester
 import com.niumi.coffeejournal.importer.ImageImportMode
@@ -38,6 +42,7 @@ fun ManualProductEditorDialog(
     viewModel: ManualProductEditorViewModel,
     assetImportRequester: AssetImportRequester,
     imagePathResolver: ImagePathResolver = ImagePathResolver { null },
+    thumbnailLoader: ThumbnailLoader = remember { CalendarThumbnailLoader() },
 ) {
     val state by viewModel.state.collectAsState()
     if (!state.open) return
@@ -53,11 +58,11 @@ fun ManualProductEditorDialog(
                     }
                 }
                 val previewAssetId = state.imageAssetId ?: state.brand?.logoAssetId
-                val bitmap by produceState<android.graphics.Bitmap?>(null, previewAssetId) {
-                    value = imagePathResolver.resolve(previewAssetId)?.let(android.graphics.BitmapFactory::decodeFile)
+                val bitmap by produceState<ImageBitmap?>(null, previewAssetId, thumbnailLoader) {
+                    value = loadManualProductPreview(previewAssetId, imagePathResolver, thumbnailLoader)
                 }
                 Box(Modifier.fillMaxWidth().aspectRatio(1f).background(MaterialTheme.colorScheme.surfaceVariant).semantics { contentDescription = TestTags.ManualProductPreview }.padding(12.dp)) {
-                    if (bitmap != null) Image(bitmap!!.asImageBitmap(), contentDescription = if (state.imageAssetId != null) "产品实拍图" else "品牌 Logo", modifier = Modifier.fillMaxWidth())
+                    if (bitmap != null) Image(bitmap = bitmap!!, contentDescription = if (state.imageAssetId != null) "产品实拍图" else "品牌 Logo", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth())
                     else Text(if (previewAssetId == null) "暂无图片" else "图片无法加载")
                 }
                 OutlinedButton(onClick = {
@@ -71,6 +76,12 @@ fun ManualProductEditorDialog(
         dismissButton = { TextButton(onClick = viewModel::dismiss, enabled = !state.saving) { Text("取消") } },
     )
 }
+
+internal suspend fun loadManualProductPreview(
+    assetId: String?,
+    imagePathResolver: ImagePathResolver,
+    thumbnailLoader: ThumbnailLoader,
+) = thumbnailLoader.load(imagePathResolver.resolve(assetId))
 
 internal fun publicKindLabel(kind: ChainProductKind): String = when (kind) {
     ChainProductKind.BLACK -> "黑咖"

@@ -44,8 +44,11 @@ class ManualProductEditorViewModelTest {
         assertEquals(listOf("one", "two"), images.deleted)
     }
     @Test fun `failed save cleans staged image`() = runBlocking {
-        val images = Images(); val vm = ManualProductEditorViewModel(FakeRepository(fail = true), images, CoroutineScope(Dispatchers.Unconfined)); vm.openNew(brand()); vm.acceptImportedAsset("new"); vm.setName("美式"); vm.setKind(ChainProductKind.BLACK); vm.save(); yield()
+        val images = Images(); val repo = FakeRepository(fail = true); val vm = ManualProductEditorViewModel(repo, images, CoroutineScope(Dispatchers.Unconfined)); vm.openNew(brand()); vm.acceptImportedAsset("new"); vm.setName("美式"); vm.setKind(ChainProductKind.BLACK); vm.save(); yield()
         assertEquals(listOf("new"), images.deleted)
+        assertNull(vm.state.value.imageAssetId)
+        vm.acceptImportedAsset("retry"); vm.save(); yield()
+        assertEquals("retry", repo.items.value.single().imageAssetId)
     }
     @Test fun `successful save retains staged image`() = runBlocking {
         val images = Images(); val vm = ManualProductEditorViewModel(FakeRepository(), images, CoroutineScope(Dispatchers.Unconfined)); vm.openNew(brand()); vm.acceptImportedAsset("new"); vm.setName("美式"); vm.setKind(ChainProductKind.BLACK); vm.save(); yield()
@@ -58,10 +61,10 @@ class ManualProductEditorViewModelTest {
     }
     private fun brand() = Brand("brand", BrandType.CHAIN, "品牌", null, MaintenanceMode.MANUAL_ONLY, null)
     private fun item() = CatalogItem("item", "brand", ItemType.CHAIN_PRODUCT, "旧名称", null, null, null, null, null, null, ItemStatus.ACTIVE, chainProductKind=ChainProductKind.MILK)
-    private class FakeRepository(initial: CatalogItem? = null, private val duplicate:Boolean=false, private val fail:Boolean=false, private val gate:CompletableDeferred<Unit>?=null) : CatalogRepository {
+    private class FakeRepository(initial: CatalogItem? = null, private val duplicate:Boolean=false, private var fail:Boolean=false, private val gate:CompletableDeferred<Unit>?=null) : CatalogRepository {
         val items = MutableStateFlow(listOfNotNull(initial)); override fun observeBrands(type: BrandType)=emptyFlow<List<Brand>>(); override fun observeItems(brandId:String)=items
         override suspend fun getBrand(brandId:String)=error("unused"); override suspend fun getItem(itemId:String)=items.value.single()
-        override suspend fun upsertBrand(brand:Brand)=Unit; override suspend fun upsertItem(item:CatalogItem){gate?.await(); if(duplicate) throw DuplicateCatalogNameException(item.name); if(fail) error("fail"); items.value=items.value.filterNot{it.id==item.id}+item}; override suspend fun lastPriceFen(itemId:String)=null
+        override suspend fun upsertBrand(brand:Brand)=Unit; override suspend fun upsertItem(item:CatalogItem){gate?.await(); if(duplicate) throw DuplicateCatalogNameException(item.name); if(fail) { fail=false; error("fail") }; items.value=items.value.filterNot{it.id==item.id}+item}; override suspend fun lastPriceFen(itemId:String)=null
     }
     private class Images : ImageStore { val deleted=mutableListOf<String>(); override suspend fun deleteIfUnreferenced(assetId:String):Boolean { deleted += assetId; return true }; override suspend fun importCropped(source:Uri,crop:CropRect,kind:ImageKind)=error("unused"); override suspend fun importWhole(source:Uri,kind:ImageKind)=error("unused") }
 }
