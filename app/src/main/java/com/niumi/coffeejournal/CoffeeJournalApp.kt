@@ -28,7 +28,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import com.niumi.coffeejournal.backup.BackupManager
 import com.niumi.coffeejournal.backup.LocalBackupManager
 
@@ -83,16 +83,9 @@ open class CoffeeJournalApp : Application() {
         CatalogUpdateApplier(database, officialImages)
     }
 
-    override fun onCreate() {
-        super.onCreate()
-        applicationScope.launch {
-            try {
-                catalogRepository.ensureSeedBrands()
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                // CatalogViewModel retries and presents a recoverable error when the user opens 豆库.
-            }
-        }
+    /** Called by the real UI entry point, never merely by Application construction. */
+    open fun initializeCatalogOnStartup(): Job = applicationScope.launch {
+        runCatching { catalogRepository.ensureSeedBrands() }
+        // CatalogViewModel retries and presents a recoverable error when the user opens 豆库.
     }
 }

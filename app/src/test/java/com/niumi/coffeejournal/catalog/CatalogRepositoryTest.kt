@@ -456,6 +456,8 @@ class CatalogRepositoryTest {
         override fun observe() = delegate.observe()
         override fun observeByType(type: String) = delegate.observeByType(type)
         override suspend fun get(id: String) = delegate.get(id)
+        override suspend fun getByNormalizedNames(type: String, names: List<String>) =
+            delegate.getByNormalizedNames(type, names)
         override suspend fun existsNamedOther(type: String, name: String, id: String): Boolean {
             if (!injected) {
                 injected = true

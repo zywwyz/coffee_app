@@ -43,6 +43,9 @@ interface BrandDao {
     @Query("SELECT * FROM brands WHERE id = :id")
     suspend fun get(id: String): BrandEntity?
 
+    @Query("SELECT * FROM brands WHERE type = :type AND normalizedName IN (:names)")
+    suspend fun getByNormalizedNames(type: String, names: List<String>): List<BrandEntity>
+
     @Query(
         "SELECT EXISTS(SELECT 1 FROM brands WHERE type = :type AND normalizedName = :name AND id != :id)",
     )

@@ -130,14 +130,22 @@ class RoomCatalogRepository(
 
     override suspend fun ensureSeedBrands() {
         seedMutex.withLock {
-            brandDao.seedIgnoringExisting(BUNDLED_CHAIN_BRANDS.map { it.brand.toEntity() })
+            val existing = brandDao.getByNormalizedNames(
+                BrandType.CHAIN.name,
+                BUNDLED_CHAIN_BRANDS.flatMap { definition -> definition.catalogNames() }.distinct(),
+            ).associateBy { it.normalizedName }
+            brandDao.seedIgnoringExisting(BUNDLED_CHAIN_BRANDS.filter { definition ->
+                definition.catalogNames().none(existing::containsKey)
+            }.map { it.brand.toEntity() })
             val store = imageStore ?: return@withLock
             val resourceUri = resourceUriFactory ?: return@withLock
             BUNDLED_CHAIN_BRANDS.forEach { definition ->
-                val existing = brandDao.get(definition.brand.id) ?: return@forEach
-                if (existing.logoAssetId != null) return@forEach
+                val target = brandDao.get(definition.brand.id)
+                    ?: brandDao.getByNormalizedNames(BrandType.CHAIN.name, definition.catalogNames().toList()).firstOrNull()
+                    ?: return@forEach
+                if (target.logoAssetId != null) return@forEach
                 val asset = store.importWhole(resourceUri(definition.logoRes), ImageKind.BRAND_LOGO)
-                if (brandDao.attachLogoIfMissing(definition.brand.id, asset.id) == 0) {
+                if (brandDao.attachLogoIfMissing(target.id, asset.id) == 0) {
                     store.deleteIfUnreferenced(asset.id)
                 }
             }
@@ -151,9 +159,15 @@ private val seedMutex = Mutex()
 
 private fun List<Brand>.sortedForCatalog(type: BrandType): List<Brand> {
     if (type != BrandType.CHAIN) return this
-    val seedOrder = BUNDLED_CHAIN_BRANDS.associate { it.brand.id to it.order }
-    return sortedWith(compareBy<Brand> { seedOrder[it.id] ?: Int.MAX_VALUE }.thenBy { normalizeCatalogName(it.name) })
+    return sortedWith(compareBy<Brand> { brand ->
+        BUNDLED_CHAIN_BRANDS.firstOrNull { definition ->
+            brand.id == definition.brand.id || normalizeCatalogName(brand.name) in definition.catalogNames()
+        }?.order ?: Int.MAX_VALUE
+    }.thenBy { normalizeCatalogName(it.name) })
 }
+
+private fun BundledBrandDefinition.catalogNames(): Set<String> =
+    (aliases + brand.name).mapTo(linkedSetOf(), ::normalizeCatalogName)
 
 private fun BrandEntity.toDomain() = Brand(
     id = id,

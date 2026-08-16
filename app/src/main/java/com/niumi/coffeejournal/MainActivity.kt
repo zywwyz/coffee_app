@@ -10,6 +10,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as CoffeeJournalApp
+        app.initializeCatalogOnStartup()
         setContent {
             CoffeeTheme {
                 AppNavigation(
