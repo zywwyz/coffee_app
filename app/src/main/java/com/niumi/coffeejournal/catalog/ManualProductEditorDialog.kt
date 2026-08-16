@@ -69,7 +69,10 @@ fun ManualProductEditorDialog(
                     assetImportRequester(ImageKind.PRODUCT, ImageImportMode.WHOLE_IMAGE, state.imageAssetId) { selection -> viewModel.acceptImportedAsset(selection.assetId) }
                 }, enabled = !state.saving) { Text(if (state.imageAssetId == null) "选择实拍图" else "更换实拍图") }
                 if (state.imageAssetId != null) TextButton(onClick = viewModel::removePhoto, enabled = !state.saving) { Text("移除实拍图") }
-                state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                state.errorMessage?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error)
+                    if (!state.saving) TextButton(onClick = viewModel::retrySelection) { Text("重试选中") }
+                }
             }
         },
         confirmButton = { Button(onClick = viewModel::save, enabled = !state.saving) { Text(if (state.saving) "保存中…" else "保存") } },

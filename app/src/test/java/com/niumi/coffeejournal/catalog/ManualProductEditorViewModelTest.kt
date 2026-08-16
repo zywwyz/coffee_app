@@ -54,6 +54,17 @@ class ManualProductEditorViewModelTest {
         val images = Images(); val vm = ManualProductEditorViewModel(FakeRepository(), images, CoroutineScope(Dispatchers.Unconfined)); vm.openNew(brand()); vm.acceptImportedAsset("new"); vm.setName("美式"); vm.setKind(ChainProductKind.BLACK); vm.save(); yield()
         assertTrue(images.deleted.isEmpty())
     }
+    @Test fun `selection failure keeps saved product dialog actionable`() = runBlocking {
+        val vm = ManualProductEditorViewModel(FakeRepository(), coroutineScope = CoroutineScope(Dispatchers.Unconfined))
+        vm.openNew(brand()); vm.setName("美式"); vm.setKind(ChainProductKind.BLACK); vm.save(); yield()
+
+        vm.selectionFailed()
+
+        assertTrue(vm.state.value.open)
+        assertFalse(vm.state.value.saving)
+        assertEquals("美式", vm.state.value.name)
+        assertEquals("产品已保存，但无法选中，请重试或取消", vm.state.value.errorMessage)
+    }
     @Test fun `cancelled save cleans staged image non cancellably`() = runBlocking {
         val images = Images(); val gate = CompletableDeferred<Unit>(); val scope = CoroutineScope(Job() + Dispatchers.Unconfined)
         val vm = ManualProductEditorViewModel(FakeRepository(gate = gate), images, scope); vm.openNew(brand()); vm.acceptImportedAsset("new"); vm.setName("美式"); vm.setKind(ChainProductKind.BLACK); vm.save(); scope.cancel(); yield()

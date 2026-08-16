@@ -45,12 +45,14 @@ class ManualProductEditorViewModel(
     val events: SharedFlow<ManualProductEditorEvent> = mutableEvents.asSharedFlow()
     private val operationMutex = Mutex()
     private var stagedAssetId: String? = null
+    private var pendingSavedEvent: ManualProductEditorEvent.Saved? = null
 
     fun openNew(brand: Brand) { open(brand, null) }
     fun openEdit(brand: Brand, item: CatalogItem) { open(brand, item) }
     private fun open(brand: Brand, item: CatalogItem?) {
         mutableState.value = ManualProductEditorState(true, brand, item, item?.name.orEmpty(), item?.chainProductKind, item?.imageAssetId)
         stagedAssetId = null
+        pendingSavedEvent = null
     }
     fun setName(value: String) { mutableState.value = mutableState.value.copy(name = value, errorMessage = null) }
     fun setKind(value: ChainProductKind?) { mutableState.value = mutableState.value.copy(kind = value, errorMessage = null) }
@@ -65,7 +67,7 @@ class ManualProductEditorViewModel(
         stagedAssetId?.let { deleteQuietly(it) }; stagedAssetId = null
         mutableState.value = mutableState.value.copy(imageAssetId = null)
     } } }
-    fun dismiss() { scope.launch { operationMutex.withLock { cleanupStaged(); mutableState.value = ManualProductEditorState() } } }
+    fun dismiss() { scope.launch { operationMutex.withLock { cleanupStaged(); pendingSavedEvent = null; mutableState.value = ManualProductEditorState() } } }
     fun save() {
         val snapshot = mutableState.value; val brand = snapshot.brand ?: return
         val name = snapshot.name.trim()
@@ -84,7 +86,10 @@ class ManualProductEditorViewModel(
                         current.editing?.imageAssetId?.takeIf { it != item.imageAssetId }?.let { deleteQuietly(it) }
                         stagedAssetId = null
                     }
-                    mutableEvents.emit(ManualProductEditorEvent.Saved(item.id, brand.id))
+                    ManualProductEditorEvent.Saved(item.id, brand.id).also {
+                        pendingSavedEvent = it
+                        mutableEvents.emit(it)
+                    }
                 } catch (error: CancellationException) {
                     withContext(NonCancellable) { cleanupStaged() }; throw error
                 } catch (_: DuplicateCatalogNameException) {
@@ -102,7 +107,24 @@ class ManualProductEditorViewModel(
     }
     /** Closes a saved editor after its caller has completed any follow-up action. */
     fun completeSaved() {
-        if (mutableState.value.saving) mutableState.value = ManualProductEditorState()
+        if (mutableState.value.saving) {
+            pendingSavedEvent = null
+            mutableState.value = ManualProductEditorState()
+        }
+    }
+    fun selectionFailed() {
+        val current = mutableState.value
+        if (current.saving) {
+            mutableState.value = current.copy(
+                saving = false,
+                errorMessage = "产品已保存，但无法选中，请重试或取消",
+            )
+        }
+    }
+    fun retrySelection() {
+        val event = pendingSavedEvent ?: return
+        mutableState.value = mutableState.value.copy(saving = true, errorMessage = null)
+        scope.launch { mutableEvents.emit(event) }
     }
     private suspend fun cleanupStaged() { stagedAssetId?.let { deleteQuietly(it) }; stagedAssetId = null }
     private suspend fun deleteQuietly(assetId: String) { withContext(NonCancellable) { runCatching { imageStore?.deleteIfUnreferenced(assetId) } } }

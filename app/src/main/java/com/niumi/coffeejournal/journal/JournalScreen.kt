@@ -86,7 +86,7 @@ fun JournalFeature(
         productEditor.events.collect { event ->
             if (event is ManualProductEditorEvent.Saved) {
                 journalViewModel.selectItem(ItemType.CHAIN_PRODUCT, event.itemId) { selected ->
-                    if (selected) productEditor.completeSaved()
+                    if (selected) productEditor.completeSaved() else productEditor.selectionFailed()
                 }
             }
         }
