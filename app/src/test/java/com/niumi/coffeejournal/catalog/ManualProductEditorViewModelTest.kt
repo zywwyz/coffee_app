@@ -11,6 +11,8 @@ import com.niumi.coffeejournal.core.image.*
 import android.net.Uri
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.async
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -39,9 +41,10 @@ class ManualProductEditorViewModelTest {
         assertNull(repo.items.value.single().imageAssetId)
     }
     @Test fun `replace remove and dismiss clean staged assets`() = runBlocking {
-        val images = Images(); val vm = ManualProductEditorViewModel(FakeRepository(), images, CoroutineScope(Dispatchers.Unconfined)); vm.openNew(brand())
+        val images = Images(); val repo = FakeRepository(); val vm = ManualProductEditorViewModel(repo, images, CoroutineScope(Dispatchers.Unconfined)); vm.openNew(brand())
         vm.acceptImportedAsset("one"); vm.acceptImportedAsset("two"); vm.removePhoto(); vm.dismiss(); yield()
         assertEquals(listOf("one", "two"), images.deleted)
+        assertTrue(repo.items.value.isEmpty())
     }
     @Test fun `failed save cleans staged image`() = runBlocking {
         val images = Images(); val repo = FakeRepository(fail = true); val vm = ManualProductEditorViewModel(repo, images, CoroutineScope(Dispatchers.Unconfined)); vm.openNew(brand()); vm.acceptImportedAsset("new"); vm.setName("美式"); vm.setKind(ChainProductKind.BLACK); vm.save(); yield()
@@ -49,6 +52,13 @@ class ManualProductEditorViewModelTest {
         assertNull(vm.state.value.imageAssetId)
         vm.acceptImportedAsset("retry"); vm.save(); yield()
         assertEquals("retry", repo.items.value.single().imageAssetId)
+    }
+    @Test fun `failed catalog save emits no saved event and retains no item`() = runBlocking {
+        val repo = FakeRepository(fail = true); val vm = ManualProductEditorViewModel(repo, coroutineScope = CoroutineScope(Dispatchers.Unconfined))
+        vm.openNew(brand()); vm.setName("美式"); vm.setKind(ChainProductKind.BLACK); vm.save(); yield()
+        assertTrue(repo.items.value.isEmpty())
+        assertEquals("保存失败，请重试", vm.state.value.errorMessage)
+        assertNull(withTimeoutOrNull(50) { vm.events.first() })
     }
     @Test fun `successful save retains staged image`() = runBlocking {
         val images = Images(); val vm = ManualProductEditorViewModel(FakeRepository(), images, CoroutineScope(Dispatchers.Unconfined)); vm.openNew(brand()); vm.acceptImportedAsset("new"); vm.setName("美式"); vm.setKind(ChainProductKind.BLACK); vm.save(); yield()
@@ -64,6 +74,10 @@ class ManualProductEditorViewModelTest {
         assertFalse(vm.state.value.saving)
         assertEquals("美式", vm.state.value.name)
         assertEquals("产品已保存，但无法选中，请重试或取消", vm.state.value.errorMessage)
+        val retried = async { withTimeoutOrNull(1_000) { vm.events.first() } }
+        yield()
+        vm.retrySelection()
+        assertTrue(retried.await() is ManualProductEditorEvent.Saved)
     }
     @Test fun `cancelled save cleans staged image non cancellably`() = runBlocking {
         val images = Images(); val gate = CompletableDeferred<Unit>(); val scope = CoroutineScope(Job() + Dispatchers.Unconfined)
