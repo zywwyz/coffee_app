@@ -49,11 +49,12 @@ interface BrandDao {
     @Transaction
     suspend fun adoptAsBundledId(legacy: BrandEntity, bundledId: String) {
         if (legacy.id == bundledId || get(bundledId) != null) return
-        insert(legacy.copy(id = bundledId))
-        moveCatalogItemsBrandId(legacy.id, bundledId)
+        renameId(legacy.id, bundledId)
         moveCatalogUpdatesBrandId(legacy.id, bundledId)
-        deleteById(legacy.id)
     }
+
+    @Query("UPDATE brands SET id = :toBrandId WHERE id = :fromBrandId")
+    suspend fun renameId(fromBrandId: String, toBrandId: String)
 
     @Query("UPDATE catalog_items SET brandId = :toBrandId WHERE brandId = :fromBrandId")
     suspend fun moveCatalogItemsBrandId(fromBrandId: String, toBrandId: String)
