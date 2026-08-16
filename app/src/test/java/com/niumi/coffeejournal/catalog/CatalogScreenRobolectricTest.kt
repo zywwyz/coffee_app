@@ -63,11 +63,22 @@ class CatalogScreenRobolectricTest {
                 )
             }
         }
-        compose.onNodeWithText("编辑").performClick()
+        compose.onNodeWithText("新增品牌").performClick()
         compose.onNodeWithText("选择 Logo").performClick()
         compose.runOnIdle { org.junit.Assert.assertTrue(assetRequested) }
         compose.runOnIdle { screenState.value = screenState.value.copy(saving = true) }
         compose.onNodeWithText("保存中…").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `new chain brand requires logo before save`() {
+        var saves = 0
+        compose.setContent { CoffeeTheme { CatalogScreen(state(), {}, {}, {}, { saves++ }, {}, { _, _ -> }, {}) } }
+        compose.onNodeWithText("新增品牌").performClick()
+        compose.onNodeWithText("品牌名称").performTextInput("自定义")
+        compose.onNodeWithText("保存").performClick()
+        compose.onNodeWithText("请先选择 Logo").assertIsDisplayed()
+        compose.runOnIdle { org.junit.Assert.assertEquals(0, saves) }
     }
 
     @Test

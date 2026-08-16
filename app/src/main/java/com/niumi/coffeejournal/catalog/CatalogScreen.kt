@@ -39,6 +39,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.niumi.coffeejournal.core.model.Brand
@@ -292,7 +294,9 @@ private fun ChainBrandRoot(brands: List<Brand>, imagePathResolver: ImagePathReso
     LazyVerticalGrid(GridCells.Fixed(3), modifier = Modifier.fillMaxSize().padding(12.dp).testTag(com.niumi.coffeejournal.TestTags.ChainBrandGrid), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         items(brands, key = { it.id }) { brand ->
             Column(Modifier.testTag(com.niumi.coffeejournal.TestTags.ChainBrandCardPrefix + brand.id).clickable { onOpen(brand.id) }) {
-                ResolvedLocalAssetImage(brand.logoAssetId, null, imagePathResolver, "品牌 ${brand.name}", ContentScale.Crop, Modifier.fillMaxWidth().aspectRatio(1f))
+                val bundled = BUNDLED_CHAIN_BRANDS.firstOrNull { it.brand.id == brand.id }
+                if (bundled != null) Image(painterResource(bundled.logoRes), "品牌 ${brand.name}", modifier = Modifier.fillMaxWidth().aspectRatio(1f), contentScale = ContentScale.Crop)
+                else ResolvedLocalAssetImage(brand.logoAssetId, null, imagePathResolver, "品牌 ${brand.name}", ContentScale.Crop, Modifier.fillMaxWidth().aspectRatio(1f))
                 Text(brand.name, maxLines = 1)
             }
         }
@@ -479,7 +483,7 @@ private fun ItemCard(
 }
 
 @Composable
-private fun BrandEditorDialog(
+fun BrandEditorDialog(
     initial: Brand?, type: BrandType, saving: Boolean,
     onDismiss: () -> Unit, onSave: (BrandEditor) -> Unit, onRequestAsset: CatalogAssetPicker,
     onRetainAssetLease: suspend (String, String?) -> Boolean,

@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
@@ -35,5 +36,12 @@ class BrandProductsScreenTest {
         compose.onNodeWithTag(TestTags.BrandProductCardPrefix + "item").assertIsDisplayed()
         compose.onNodeWithText("冷萃").assertIsDisplayed()
         compose.onNodeWithText("黑咖").assertIsDisplayed()
+    }
+
+    @Test fun `custom child header exposes edit but bundled header does not`() {
+        var edits = 0
+        compose.setContent { CoffeeTheme { BrandProductsScreen(Brand("custom", BrandType.CHAIN, "自定义", "logo"), emptyList(), { null }, {}, { edits++ }, {}, {}) } }
+        compose.onNodeWithText("编辑品牌").performClick()
+        compose.runOnIdle { org.junit.Assert.assertEquals(1, edits) }
     }
 }

@@ -20,11 +20,13 @@ import androidx.compose.ui.platform.testTag
 import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.catalog.CatalogRepository
 import com.niumi.coffeejournal.catalog.CatalogFeature
-import com.niumi.coffeejournal.catalog.CatalogAssetKind
 import com.niumi.coffeejournal.catalog.CatalogAssetPicker
 import com.niumi.coffeejournal.catalog.BrandProductsScreen
 import com.niumi.coffeejournal.catalog.ManualProductEditorDialog
 import com.niumi.coffeejournal.catalog.ManualProductEditorViewModel
+import com.niumi.coffeejournal.catalog.CatalogViewModel
+import com.niumi.coffeejournal.catalog.BrandEditorDialog
+import com.niumi.coffeejournal.catalog.CatalogAssetKind
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.niumi.coffeejournal.core.image.ImagePathResolver
 import com.niumi.coffeejournal.core.image.ImageKind
@@ -229,8 +231,22 @@ private fun ChainBrandProductsDestination(repository: CatalogRepository, imageSt
     val brand by produceState<com.niumi.coffeejournal.core.model.Brand?>(null, brandId) { value = repository.getBrand(brandId) }
     val items by repository.observeItems(brandId).collectAsState(initial = emptyList())
     val editor: ManualProductEditorViewModel = viewModel(factory = ManualProductEditorViewModel.factory(repository, imageStore))
+    val catalog: CatalogViewModel = viewModel(factory = CatalogViewModel.factory(repository, imageStore))
+    val catalogState by catalog.uiState.collectAsState()
+    var editingBrand by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.niumi.coffeejournal.core.model.Brand?>(null) }
     brand?.let {
-        BrandProductsScreen(it, items, imagePathResolver, onBack, onEditBrand = {}, onAddProduct = { editor.open(it) }, onEditProduct = { item -> editor.open(it, item) })
+        BrandProductsScreen(it, items, imagePathResolver, onBack, onEditBrand = { editingBrand = it }, onAddProduct = { editor.open(it) }, onEditProduct = { item -> editor.open(it, item) })
         ManualProductEditorDialog(editor, assetImportRequester, imagePathResolver)
+    }
+    editingBrand?.let { editable ->
+        BrandEditorDialog(
+            initial = editable, type = com.niumi.coffeejournal.core.model.BrandType.CHAIN, saving = catalogState.saving,
+            onDismiss = { editingBrand = null }, onSave = { catalog.saveBrand(it); editingBrand = null },
+            onRequestAsset = { previous, kind, callback ->
+                check(kind == CatalogAssetKind.BRAND_LOGO)
+                assetImportRequester(ImageKind.BRAND_LOGO, ImageImportMode.WHOLE_IMAGE, previous, callback)
+            },
+            onRetainAssetLease = catalog::retainAssetLease, onStageAsset = catalog::stageAsset, onDiscardAssetLease = catalog::discardAssetLease,
+        )
     }
 }
