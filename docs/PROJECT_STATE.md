@@ -6,11 +6,11 @@
 
 ### 产品目标
 
-个人使用、免费、离线优先的 Android 咖啡日记：记录连锁咖啡和个人咖啡豆，按月历展示每日饮用图片，提供月度/年度统计、手动公开目录更新、截图 OCR/裁剪，以及完整本地备份恢复。
+个人使用、免费、完全离线优先的 Android 咖啡日记：记录连锁咖啡和个人咖啡豆，按月历展示每日饮用图片，提供月度/年度统计、手动维护品牌与产品，以及完整本地备份恢复。
 
 ### 当前开发阶段
 
-当前个人 Debug 侧载范围已取得发布 GO。`72dcb28` 补齐饮用日期时间、持久草稿恢复、记录编辑/删除和 Room v2 迁移；`8e939f0` 进一步原子清理悬空编辑草稿并提供“放弃草稿并新建”。高风险复审与最终发布审计均 PASS，功能分支已快进合并到 `main` 并推送 `origin/main`。待真机验收。
+当前个人 Debug 侧载范围已取得发布 GO。真机试用后已确认下一里程碑：重做连锁豆库，改为三列品牌 Logo → 双列实拍产品的纯手动流程，并删除不可用的官网更新、截图 OCR 与裁剪。设计已分段确认，正式规格等待整体确认，尚未修改生产代码。
 
 ---
 
@@ -22,8 +22,7 @@
 - ViewModel + StateFlow
 - Room / SQLite
 - Coil 图片加载
-- ML Kit 本地文字识别；图片像素和识别结果本地处理，但 SDK 可能发送设备、应用、性能及 API 使用诊断指标
-- OkHttp，仅用于用户手动触发的公开官网目录更新
+- 当前基线仍包含 ML Kit OCR 和 OkHttp 官网更新；下一里程碑将删除两者及相应联网权限
 
 ## 服务端 / Authentication
 
@@ -59,15 +58,14 @@
 → Room 事务写入记录与不可变目录/图片快照
 → 日历和 Insights 的 Flow 自动刷新
 
-目录更新：
+目录维护（下一里程碑）：
 
-用户手动触发指定品牌
-→ 仅公开官网适配器
-→ 候选 diff
-→ 用户确认
-→ 更新当前目录；不得修改历史记录快照
+用户选择或新建品牌
+→ 手动填写产品名和黑咖／果咖／奶咖类型
+→ 可选导入实拍原图
+→ 写入当前目录；不得修改历史记录快照
 
-图片回退：产品图 → 历史品牌 Logo → 通用占位图。官网图失败时提示上传完整截图并本地 OCR/裁剪，允许跳过。
+图片回退：产品实拍图 → 品牌 Logo → 通用占位图。图片只从本机选择并保存原图，显示时居中裁切。
 
 备份恢复：
 
@@ -85,9 +83,13 @@
 
 不建设后端或云同步；Android 系统备份与设备迁移也被禁用。跨设备或卸载前必须手动导出备份。
 
-### 公开目录只允许手动更新
+### 连锁目录只允许手动维护（已确认的新方向）
 
-不调用微信小程序私有接口，不后台抓取。首批支持瑞幸、Manner、M Stand、Peet's、% Arabica；只有存在稳定公开产品页的品牌使用官网适配器，其余走截图/手工录入。任何候选必须用户确认后入库。
+删除官网抓取、微信小程序接口、截图 OCR 和裁剪。品牌与产品均由用户手动维护；产品只允许黑咖、果咖、奶咖三类，实拍图可选且缺图时回退到品牌 Logo。
+
+### 预置品牌与布局（已确认）
+
+按 2025 年底中国大陆在营门店数量预置 Top 10（包含窗口店口径），另保留 Peet's 和 %Arabica，共 12 个本地 Logo。豆库不显示门店数或排名；连锁品牌为三列 Logo 卡片，点击进入双列产品实拍图子页面。
 
 ### 历史快照不可被目录更新改写
 
@@ -107,13 +109,14 @@ ZIP 解压限额和压缩比按实际流式读取字节计算，不能信任中�
 
 ## 当前目标
 
-完成最终审计修复并重新取得发布 GO：
+实施并验收纯手动连锁豆库改版：
 
-- 可选择/补记饮用日期时间
-- App 重启后恢复未完成草稿
-- 修改与删除错误记录并立即刷新日历/统计
-- Room v1→v2 无损迁移
-- 备份 v1/v2 兼容
+- 三列品牌 Logo 首页与双列产品子页面
+- Top 10 + Peet's / %Arabica 共 12 个预置品牌
+- 手动新增／编辑品牌 Logo 和产品名称／实拍图／三分类
+- 记录页快速新增产品并自动选中
+- Room v3 与 v1/v2/v3 备份兼容
+- 删除官网更新、截图 OCR、裁剪、相关依赖及联网权限
 
 ## 已完成并验证
 
@@ -131,28 +134,22 @@ ZIP 解压限额和压缩比按实际流式读取字节计算，不能信任中�
 
 ## 正在进行
 
-功能 worktree：`/Users/niumi/Documents/Codex/projects/coffee_app/.worktrees/codex-coffee-journal`
-
-分支：`codex/coffee-journal`
-
-提交 `72dcb28` 与 `8e939f0` 已实现 Room v2、日期时间、草稿恢复、记录编辑/删除、草稿恢复入口和备份兼容，并生成 `app/schemas/.../2.json`。
-
-2026-08-11 fresh 验证：307 个 JVM/Robolectric 测试通过（0 failure/error/skip），Lint 0 error，Debug、androidTest 和 unsigned Release APK 构建成功；高风险复审最终 PASS，无 Critical/Important。
-
-Debug APK：58,468,925 bytes，SHA-256 `ae55b02666f60f37d1c004434eea2ca020e3a7ef81a6d6e82513463354f725c1`。
+2026-08-16 已完成连锁豆库改版的分段需求确认，正式规格见 `docs/superpowers/specs/2026-08-16-manual-chain-catalog-redesign-design.md`。当前仍处于规格确认阶段，未开始 Room v3 或 UI 实施。
 
 ## 下一步
 
-1. 有设备时补 connected test、安装和真机 OCR/SAF/恢复验收。
-2. 如不再需要，删除已合并的本地功能 worktree 和 `codex/coffee-journal` 分支；该删除需要用户单独授权。
+1. 用户整体确认新版规格。
+2. 生成可执行实施计划，按 TDD 交由 implementer 实施。
+3. Room v3、旧备份恢复和图片一致性完成 critical review。
+4. 生成新版 Debug APK并进行真机验收。
 
 ---
 
 # 已知问题 / 残余风险
 
-- 无连接 Android 设备；安装、系统图片/文档选择器、真机中文 OCR、裁剪手势和完整恢复尚未真机验证。
+- 当前设备侧已完成一次 Debug APK 试用，但新版系统图片选择、品牌／产品编辑和完整恢复仍待真机验证。
 - 个人侧载的是 debuggable Debug APK；Release APK 尚未配置个人签名。
-- Manner 之外部分品牌没有稳定公开产品目录，需截图或手工录入。
+- 12 个真实品牌 Logo 的官方资产来源、尺寸归一和商标说明需在实施时记录。
 - 项目多 Agent 配置使用当前运行时支持的 Terra（explorer / implementer / reviewer）与 Sol（critical reviewer）。
 
 ---
@@ -162,6 +159,7 @@ Debug APK：58,468,925 bytes，SHA-256 `ae55b02666f60f37d1c004434eea2ca020e3a7ef
 - `AGENTS.md` — 项目多 Agent 工作流和验收规范
 - `.codex/config.toml` / `.codex/agents/*.toml` — 项目 Agent 配置
 - `docs/superpowers/specs/2026-08-01-coffee-journal-android-design.md` — 产品与技术设计
+- `docs/superpowers/specs/2026-08-16-manual-chain-catalog-redesign-design.md` — 纯手动连锁豆库改版规格
 - `docs/superpowers/plans/2026-08-01-coffee-journal-android-implementation.md` — 分阶段实现计划
 - `app/src/main/java/com/niumi/coffeejournal/CoffeeJournalApp.kt` — 应用依赖入口
 - `app/src/main/java/com/niumi/coffeejournal/core/database/CoffeeDatabase.kt` — Room 版本与迁移
