@@ -2,12 +2,17 @@ package com.niumi.coffeejournal.navigation
 
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.performTextClearance
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.assertCountEquals
 import com.niumi.coffeejournal.TestTags
 import androidx.compose.ui.graphics.Color
 import com.niumi.coffeejournal.ui.theme.Caramel
@@ -21,6 +26,9 @@ import com.niumi.coffeejournal.core.model.DrinkDraft
 import com.niumi.coffeejournal.core.model.DrinkRecord
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.image.ImageKind
+import com.niumi.coffeejournal.core.image.ImageAsset
+import com.niumi.coffeejournal.core.image.ImageStore
+import com.niumi.coffeejournal.core.image.CropRect
 import com.niumi.coffeejournal.importer.ImageImportMode
 import com.niumi.coffeejournal.importer.ImportedAssetSelection
 import kotlinx.coroutines.runBlocking
@@ -41,7 +49,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35])
 class AppNavigationTest {
     @get:Rule
-    val compose = createComposeRule()
+    val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test
     fun theme_supplies_warm_navigation_bar_tokens() {
@@ -93,12 +101,88 @@ class AppNavigationTest {
     }
 
     @Test
-    fun chain brand opens child page and hides root navigation() {
+    fun chainBrandOpensChildPageAndHidesRootNavigation() {
         compose.setContent { CoffeeTheme { AppNavigation(FakeJournalRepository, ChainCatalogRepository) } }
         compose.onNodeWithText("豆库").performClick()
         compose.onNodeWithTag(TestTags.ChainBrandCardPrefix + "custom").performClick()
         compose.onNodeWithText("自定义连锁").assertIsDisplayed()
-        compose.onNodeWithTag(TestTags.BottomCatalogTab).assertDoesNotExist()
+        compose.onAllNodesWithTag(TestTags.BottomCatalogTab).assertCountEquals(0)
+
+        compose.activity.runOnUiThread {
+            compose.activity.onBackPressedDispatcher.onBackPressed()
+        }
+
+        compose.onNodeWithTag(TestTags.ChainBrandCardPrefix + "custom").assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.BottomCatalogTab).assertIsDisplayed()
+    }
+
+    @Test
+    fun failedChildBrandSaveRetainsDialogTextUntilSuccessfulRetry() {
+        val repository = MutableChainCatalogRepository(failSaves = true)
+        val imageStore = RecordingImageStore()
+        compose.setContent {
+            CoffeeTheme {
+                AppNavigation(
+                    journalRepository = FakeJournalRepository,
+                    catalogRepository = repository,
+                    imageStore = imageStore,
+                    assetImportRequester = { _, _, _, callback ->
+                        runBlocking { callback(ImportedAssetSelection("replacement-logo")) }
+                    },
+                )
+            }
+        }
+        compose.onNodeWithText("豆库").performClick()
+        compose.onNodeWithTag(TestTags.ChainBrandCardPrefix + "custom").performClick()
+        compose.onNodeWithText("编辑品牌").performClick()
+        compose.onNodeWithText("更换 Logo").performClick()
+        compose.onNodeWithText("品牌名称").performTextClearance()
+        compose.onNodeWithText("品牌名称").performTextInput("重试品牌")
+        compose.onNodeWithText("保存").performClick()
+
+        compose.onNodeWithText("无法保存").assertIsDisplayed()
+        compose.onNodeWithText("重试品牌").assertIsDisplayed()
+        assertEquals(false, imageStore.deletedAssetIds.contains("replacement-logo"))
+        compose.onNodeWithText("知道了").performClick()
+        repository.failSaves = false
+        compose.onNodeWithText("保存").performClick()
+
+        compose.onAllNodesWithText("品牌名称").assertCountEquals(0)
+        assertEquals("重试品牌", repository.savedBrand?.name)
+        assertEquals("replacement-logo", repository.savedBrand?.logoAssetId)
+        assertEquals(false, imageStore.deletedAssetIds.contains("replacement-logo"))
+    }
+
+    @Test
+    fun childBrandEditorRequestsWholeImageLogoThroughNavigationRequester() {
+        var requestedKind: ImageKind? = null
+        var requestedMode: ImageImportMode? = null
+        val repository = MutableChainCatalogRepository()
+        val imageStore = RecordingImageStore()
+        compose.setContent {
+            CoffeeTheme {
+                AppNavigation(
+                    journalRepository = FakeJournalRepository,
+                    catalogRepository = repository,
+                    imageStore = imageStore,
+                    assetImportRequester = { kind, mode, _, callback ->
+                        requestedKind = kind
+                        requestedMode = mode
+                        runBlocking { callback(ImportedAssetSelection("replacement-logo")) }
+                    },
+                )
+            }
+        }
+        compose.onNodeWithText("豆库").performClick()
+        compose.onNodeWithTag(TestTags.ChainBrandCardPrefix + "custom").performClick()
+        compose.onNodeWithText("编辑品牌").performClick()
+        compose.onNodeWithText("更换 Logo").performClick()
+
+        assertEquals(ImageKind.BRAND_LOGO, requestedKind)
+        assertEquals(ImageImportMode.WHOLE_IMAGE, requestedMode)
+        compose.onNodeWithText("保存").performClick()
+        assertEquals("replacement-logo", repository.savedBrand?.logoAssetId)
+        assertEquals(false, imageStore.deletedAssetIds.contains("replacement-logo"))
     }
 
     private object FakeJournalRepository : JournalRepository {
@@ -128,6 +212,35 @@ class AppNavigationTest {
         override suspend fun upsertBrand(brand: Brand) = Unit
         override suspend fun upsertItem(item: CatalogItem) = Unit
         override suspend fun lastPriceFen(itemId: String): Long? = null
+    }
+
+    private class MutableChainCatalogRepository(
+        var failSaves: Boolean = false,
+    ) : CatalogRepository {
+        private val brand = Brand("custom", BrandType.CHAIN, "自定义连锁", "logo", com.niumi.coffeejournal.core.model.MaintenanceMode.MANUAL_ONLY, null)
+        var savedBrand: Brand? = null
+
+        override fun observeBrands(type: BrandType): Flow<List<Brand>> = flowOf(if (type == BrandType.CHAIN) listOf(brand) else emptyList())
+        override fun observeItems(brandId: String): Flow<List<CatalogItem>> = flowOf(emptyList())
+        override suspend fun getBrand(brandId: String): Brand = brand
+        override suspend fun getItem(itemId: String): CatalogItem = error("unused")
+        override suspend fun upsertBrand(brand: Brand) {
+            if (failSaves) error("save failed")
+            savedBrand = brand
+        }
+        override suspend fun upsertItem(item: CatalogItem) = Unit
+        override suspend fun lastPriceFen(itemId: String): Long? = null
+    }
+
+    private class RecordingImageStore : ImageStore {
+        val deletedAssetIds = mutableListOf<String>()
+
+        override suspend fun importCropped(source: Uri, crop: CropRect, kind: ImageKind): ImageAsset = error("unused")
+        override suspend fun importWhole(source: Uri, kind: ImageKind): ImageAsset = error("unused")
+        override suspend fun deleteIfUnreferenced(assetId: String): Boolean {
+            deletedAssetIds += assetId
+            return true
+        }
     }
 
     private object FakeBackupManager : BackupManager {

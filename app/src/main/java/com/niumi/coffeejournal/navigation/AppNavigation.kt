@@ -90,8 +90,18 @@ fun AppNavigation(
     catalogUpdateSources: CatalogSourceProvider? = null,
     catalogUpdateGateway: CatalogUpdateGateway? = null,
     backupManager: BackupManager? = null,
+    assetImportRequester: AssetImportRequester? = null,
 ) {
-    if (imageStore != null && screenshotTextRecognizer != null) {
+    if (assetImportRequester != null) {
+        AppNavigationContent(
+            journalRepository, catalogRepository, imagePathResolver,
+            imageStore = imageStore,
+            assetImportRequester = assetImportRequester,
+            catalogUpdateSources = catalogUpdateSources,
+            catalogUpdateGateway = catalogUpdateGateway,
+            backupManager = backupManager,
+        )
+    } else if (imageStore != null && screenshotTextRecognizer != null) {
         ImageImportHost(imageStore, screenshotTextRecognizer) { requester ->
             AppNavigationContent(
                 journalRepository, catalogRepository, imagePathResolver,
