@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -53,6 +55,27 @@ class JournalScreenRobolectricTest {
 
         compose.onNodeWithText("记录一杯").performClick()
         compose.runOnIdle { assert(recordRequested) }
+    }
+
+    @Test
+    fun `calendar display switch labels are exact and selects one mode`() {
+        var selected: CalendarDisplayMode? = null
+        compose.setContent {
+            CoffeeTheme {
+                JournalScreen(
+                    state = JournalUiState.empty(2026, 8),
+                    onPreviousMonth = {}, onNextMonth = {}, onDayClick = {}, onRecordDrink = {},
+                    onCalendarDisplayModeChange = { selected = it },
+                )
+            }
+        }
+
+        compose.onNodeWithText("品牌").assertIsDisplayed()
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CalendarCoffeeDisplayMode)
+            .assertIsDisplayed().assertIsSelected()
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CalendarBrandDisplayMode).assertIsNotSelected()
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CalendarBrandDisplayMode).performClick()
+        compose.runOnIdle { assertEquals(CalendarDisplayMode.BRAND, selected) }
     }
 
     @Test

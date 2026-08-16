@@ -2,6 +2,8 @@ package com.niumi.coffeejournal
 
 object TestTags {
     const val Calendar = "journal-calendar"
+    const val CalendarBrandDisplayMode = "calendar-display-brand"
+    const val CalendarCoffeeDisplayMode = "calendar-display-coffee"
     const val RecordButton = "record-drink"
     const val MissingImagePrompt = "missing-image-prompt"
     const val ConfirmSave = "confirm-save"

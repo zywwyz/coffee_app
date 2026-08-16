@@ -57,6 +57,7 @@ data class JournalUiState(
     val brands: List<Brand> = emptyList(),
     val items: List<CatalogItem> = emptyList(),
     val saveCompletedToken: Int = 0,
+    val calendarDisplayMode: CalendarDisplayMode = CalendarDisplayMode.COFFEE,
 ) {
     val selectedDayRecords: List<DrinkRecord>
         get() = records.filter { it.localDate == selectedDate }.sortedByDescending { it.occurredAtEpochMillis }
@@ -132,7 +133,7 @@ fun projectMonth(
             localDate = localDate,
             dayNumber = date.get(Calendar.DAY_OF_MONTH),
             inDisplayedMonth = date.get(Calendar.YEAR) == year && date.get(Calendar.MONTH) == month - 1,
-            imagePath = latest?.let { calendarImage(productImage) },
+            imagePath = productImage,
             brandLogoPath = brandLogo,
             drinkCount = dayRecords.size,
         )
