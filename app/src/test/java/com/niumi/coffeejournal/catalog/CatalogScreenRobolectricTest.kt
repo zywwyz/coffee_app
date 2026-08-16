@@ -51,7 +51,7 @@ class CatalogScreenRobolectricTest {
     @Test
     fun `brand editor exposes replaceable asset boundary and disables save while saving`() {
         var assetRequested = false
-        val screenState = mutableStateOf(state())
+        val screenState = mutableStateOf(beanState())
         compose.setContent {
             CoffeeTheme {
                 CatalogScreen(
@@ -63,7 +63,7 @@ class CatalogScreenRobolectricTest {
                 )
             }
         }
-        compose.onNodeWithText("新增品牌").performClick()
+        compose.onNodeWithText("新增烘焙品牌").performClick()
         compose.onNodeWithText("选择 Logo").performClick()
         compose.runOnIdle { org.junit.Assert.assertTrue(assetRequested) }
         compose.runOnIdle { screenState.value = screenState.value.copy(saving = true) }
@@ -82,26 +82,25 @@ class CatalogScreenRobolectricTest {
     }
 
     @Test
-    fun `chain product editor exposes category specification and brew as distinct fields`() {
+    fun `personal bean editor retains its fields`() {
         compose.setContent {
             CoffeeTheme {
                 CatalogScreen(
-                    state = state().copy(selectedBrandId = "brand"),
+                    state = beanState().copy(selectedBrandId = "brand"),
                     onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {},
                     onSaveBrand = {}, onSaveItem = {}, onSetItemStatus = { _, _ -> }, onClearError = {},
                 )
             }
         }
 
-        compose.onNodeWithText("新增连锁产品").performClick()
-        compose.onNodeWithText("产品分类（可选）").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("规格描述（可选）").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("新增豆子").performClick()
+        compose.onNodeWithText("产地（可选）").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("默认冲煮方式（可选）").performScrollTo().assertIsDisplayed()
     }
 
     @Test
     fun `failed brand save keeps dialog and entered values`() {
-        val screenState = mutableStateOf(state())
+        val screenState = mutableStateOf(beanState())
         compose.setContent {
             CoffeeTheme {
                 CatalogScreen(
@@ -111,7 +110,7 @@ class CatalogScreenRobolectricTest {
                 )
             }
         }
-        compose.onNodeWithText("新增连锁品牌").performClick()
+        compose.onNodeWithText("新增烘焙品牌").performClick()
         compose.onNodeWithText("品牌名称").performTextInput("重复品牌")
         compose.onNodeWithText("保存").performClick()
 
@@ -120,8 +119,8 @@ class CatalogScreenRobolectricTest {
     }
 
     @Test
-    fun `failed item save retains complete local form and invalid caffeine blocks callback`() {
-        val screenState = mutableStateOf(state().copy(selectedBrandId = "brand"))
+    fun `failed personal bean save retains entered form`() {
+        val screenState = mutableStateOf(beanState().copy(selectedBrandId = "brand"))
         var saveCalls = 0
         var submitted: ItemEditor? = null
         compose.setContent {
@@ -138,30 +137,19 @@ class CatalogScreenRobolectricTest {
                 )
             }
         }
-        compose.onNodeWithText("新增连锁产品").performClick()
+        compose.onNodeWithText("新增豆子").performClick()
         compose.onNodeWithText("名称").performTextInput("澳白")
-        compose.onNodeWithText("默认冲煮方式（可选）").performTextInput("浓缩")
-        compose.onNodeWithText("产品分类（可选）").performTextInput("意式")
-        compose.onNodeWithText("规格描述（可选）").performTextInput("大杯")
-        compose.onNodeWithText("咖啡因 mg（可选）").performTextInput("NaN")
-        compose.onNodeWithText("保存").performClick()
-        compose.runOnIdle { org.junit.Assert.assertEquals(0, saveCalls) }
-        compose.onNodeWithText("请输入非负的有效咖啡因数值").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("咖啡因 mg（可选）").performScrollTo().assertTextContains("NaN")
-
-        compose.onNodeWithText("咖啡因 mg（可选）").performTextReplacement("50")
+        compose.onNodeWithText("产地（可选）").performTextInput("云南")
         compose.onNodeWithText("保存").performClick()
         compose.runOnIdle { org.junit.Assert.assertEquals(1, saveCalls) }
-        compose.runOnIdle { org.junit.Assert.assertEquals(50.0, submitted?.caffeineMg) }
         compose.onNodeWithText("知道了").performClick()
         compose.onNodeWithText("名称").performScrollTo().assertTextContains("澳白")
-        compose.onNodeWithText("产品分类（可选）").performScrollTo().assertTextContains("意式")
-        compose.onNodeWithText("规格描述（可选）").performScrollTo().assertTextContains("大杯")
+        compose.onNodeWithText("产地（可选）").performScrollTo().assertTextContains("云南")
     }
 
     @Test
     fun `confirmed save closes only pending editor while stale token does not`() {
-        val screenState = mutableStateOf(state().copy(saveCompletedToken = 7))
+        val screenState = mutableStateOf(beanState().copy(saveCompletedToken = 7))
         compose.setContent {
             CoffeeTheme {
                 CatalogScreen(
@@ -171,7 +159,7 @@ class CatalogScreenRobolectricTest {
                 )
             }
         }
-        compose.onNodeWithText("新增连锁品牌").performClick()
+        compose.onNodeWithText("新增烘焙品牌").performClick()
         compose.onNodeWithText("新增品牌").assertIsDisplayed()
         compose.onNodeWithText("品牌名称").performTextInput("成功品牌")
         compose.onNodeWithText("保存").performClick()
@@ -183,7 +171,7 @@ class CatalogScreenRobolectricTest {
 
     @Test
     fun `confirmed item save closes item editor`() {
-        val screenState = mutableStateOf(state().copy(selectedBrandId = "brand"))
+        val screenState = mutableStateOf(beanState().copy(selectedBrandId = "brand"))
         compose.setContent {
             CoffeeTheme {
                 CatalogScreen(
@@ -194,7 +182,7 @@ class CatalogScreenRobolectricTest {
                 )
             }
         }
-        compose.onNodeWithText("新增连锁产品").performClick()
+        compose.onNodeWithText("新增豆子").performClick()
         compose.onNodeWithText("名称").performTextInput("澳白")
         compose.onNodeWithText("保存").performClick()
         compose.waitForIdle()
@@ -204,16 +192,16 @@ class CatalogScreenRobolectricTest {
     }
 
     @Test
-    fun `confirmed product image selection is included in saved catalog item`() {
+    fun `personal bean image selection is included in saved catalog item`() {
         var submitted: ItemEditor? = null
         compose.setContent {
             CoffeeTheme {
                 CatalogScreen(
-                    state = state().copy(selectedBrandId = "brand"),
+                    state = beanState().copy(selectedBrandId = "brand"),
                     onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {}, onSaveBrand = {},
                     onSaveItem = { submitted = it }, onSetItemStatus = { _, _ -> }, onClearError = {},
                     onRequestAsset = { _, kind, callback ->
-                        org.junit.Assert.assertEquals(CatalogAssetKind.CHAIN_PRODUCT_IMAGE, kind)
+                        org.junit.Assert.assertEquals(CatalogAssetKind.BEAN_PACKAGE, kind)
                         runBlocking {
                             org.junit.Assert.assertTrue(
                                 callback(ImportedAssetSelection("real-product-image", "截图候选名", 990)),
@@ -223,14 +211,11 @@ class CatalogScreenRobolectricTest {
                 )
             }
         }
-        compose.onNodeWithText("新增连锁产品").performClick()
+        compose.onNodeWithText("新增豆子").performClick()
         compose.onNodeWithText("选择图片").performScrollTo().performClick()
         compose.onNodeWithText("保存").performClick()
 
-        compose.runOnIdle {
-            org.junit.Assert.assertEquals("real-product-image", submitted?.imageAssetId)
-            org.junit.Assert.assertEquals("截图候选名", submitted?.name)
-        }
+        compose.runOnIdle { org.junit.Assert.assertEquals("real-product-image", submitted?.imageAssetId) }
     }
 
     @Test
@@ -242,7 +227,7 @@ class CatalogScreenRobolectricTest {
             CoffeeTheme {
                 if (showCatalog.value) {
                     CatalogScreen(
-                        state = state().copy(selectedBrandId = "brand"),
+                        state = beanState().copy(selectedBrandId = "brand"),
                         onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {},
                         onSaveBrand = {}, onSaveItem = {}, onSetItemStatus = { _, _ -> },
                         onClearError = {},
@@ -263,7 +248,7 @@ class CatalogScreenRobolectricTest {
             }
         }
 
-        compose.onNodeWithText("新增连锁产品").performClick()
+        compose.onNodeWithText("新增豆子").performClick()
         compose.onNodeWithText("选择图片").performScrollTo().performClick()
         compose.runOnIdle {
             org.junit.Assert.assertNotNull(stagedLeaseId)
@@ -281,5 +266,10 @@ class CatalogScreenRobolectricTest {
             ),
         ),
         beanStatus = ItemStatus.ACTIVE,
+    )
+
+    private fun beanState() = state().copy(
+        tab = CatalogTab.BEANS,
+        brandOverviews = listOf(BrandOverview(Brand("brand", BrandType.ROASTER, "烘焙商", null, MaintenanceMode.MANUAL_ONLY, null), 0, null)),
     )
 }

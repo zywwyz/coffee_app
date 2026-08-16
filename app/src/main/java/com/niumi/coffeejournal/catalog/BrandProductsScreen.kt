@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -52,8 +53,8 @@ fun BrandProductsScreen(brand: Brand, items: List<CatalogItem>, imagePathResolve
         else LazyVerticalGrid(GridCells.Fixed(2), modifier = Modifier.weight(1f).testTag(TestTags.BrandProductGrid), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(shown, key = { it.id }) { item -> Column(Modifier.testTag(TestTags.BrandProductCardPrefix + item.id).clickable { onEditProduct(item) }) {
                 val bundled = BUNDLED_CHAIN_BRANDS.firstOrNull { it.brand.id == brand.id }
-                if (item.imageAssetId == null && bundled != null) Image(painterResource(bundled.logoRes), "${item.name} 图片", modifier = Modifier.fillMaxWidth().weight(1f, false), contentScale = ContentScale.Crop)
-                else ResolvedLocalAssetImage(item.imageAssetId, brand.logoAssetId, imagePathResolver, "${item.name} 图片", ContentScale.Crop, Modifier.fillMaxWidth().weight(1f, false))
+                if (item.imageAssetId == null && bundled != null) Image(painterResource(bundled.logoRes), "${item.name} 图片", modifier = Modifier.fillMaxWidth().aspectRatio(1f), contentScale = ContentScale.Crop)
+                else ResolvedLocalAssetImage(item.imageAssetId, brand.logoAssetId, imagePathResolver, "${item.name} 图片", ContentScale.Crop, Modifier.fillMaxWidth().aspectRatio(1f))
                 Text(item.name, maxLines = 1); Text(item.chainProductKind?.let(::publicKindLabel) ?: "待分类")
             } }
         }
