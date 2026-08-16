@@ -59,7 +59,7 @@ class BackupManagerTest {
         database.imageAssetDao().upsert(logo)
         val brand = BrandEntity("brand", "CHAIN", "瑞幸", "瑞幸", "logo", "MANUAL_ONLY", null)
         database.brandDao().upsert(brand)
-        val item = CatalogItemEntity("item", "brand", "CHAIN_PRODUCT", "拿铁", "拿铁", "logo", status = "ACTIVE")
+        val item = CatalogItemEntity("item", "brand", "CHAIN_PRODUCT", "拿铁", "拿铁", "logo", status = "ACTIVE", chainProductKind = "MILK")
         database.catalogItemDao().upsert(item)
         database.drinkDao().insert(DrinkRecordEntity("record", 2, "2026-08-01", "CHAIN_PRODUCT", "item", snapshotBrandName="瑞幸", snapshotItemName="拿铁", snapshotImageAssetId="logo", snapshotBrandLogoAssetId="logo"))
         database.catalogUpdateDao().insert(CatalogUpdateEntity("update", "brand", 3, "CONFIRMED", null, null))
@@ -133,6 +133,47 @@ class BackupManagerTest {
         assertRejectedWithoutWrites("manifest version", manifestVersion = 1, mutate = { })
     }
 
+    @Test fun `v3 domain-invalid catalog kinds are rejected before active writes`() = runBlocking {
+        listOf(
+            "other" to "INSERT INTO catalog_items (id,brandId,type,name,normalizedName,status,chainProductKind) VALUES ('item-other','brand-other','CHAIN_PRODUCT','产品','产品','ACTIVE','OTHER')",
+            "chain-null" to "INSERT INTO catalog_items (id,brandId,type,name,normalizedName,status,chainProductKind) VALUES ('item-null','brand-chain-null','CHAIN_PRODUCT','产品','产品','ACTIVE',NULL)",
+            "bean-kind" to "INSERT INTO catalog_items (id,brandId,type,name,normalizedName,status,chainProductKind) VALUES ('item-bean','brand-bean-kind','PERSONAL_BEAN','豆子','豆子','ACTIVE','MILK')",
+        ).forEach { (name, insert) ->
+            val guard = File(context.filesDir, "images/domain-guard-$name.bin").apply { parentFile!!.mkdirs(); writeBytes(byteArrayOf(1, 2, 3, name.length.toByte())) }
+            val guardBytes = guard.readBytes()
+            assertRejectedWithoutWrites(
+                name = name,
+                manifestCounts = BackupCounts(1, 1, 0, 0, 0, 0),
+                expectedMessage = "产品分类字段无效",
+            ) {
+                val brandId = when (name) { "other" -> "brand-other"; "chain-null" -> "brand-chain-null"; else -> "brand-bean-kind" }
+                execSQL("INSERT INTO brands (id,type,name,normalizedName,maintenanceMode) VALUES ('$brandId','CHAIN','$brandId','$brandId','MANUAL_ONLY')")
+                execSQL(insert)
+            }
+            assertArrayEquals(guardBytes, guard.readBytes())
+        }
+    }
+
+    @Test fun `v3 catalog column cannot be smuggled through a declared v2 backup`() = runBlocking {
+        listOf("OTHER", null, "BLACK").forEachIndexed { index, kind ->
+            val name = "v2-smuggle-$index"
+            val guard = File(context.filesDir, "images/$name.bin").apply { parentFile!!.mkdirs(); writeBytes(byteArrayOf(index.toByte(), 9, 8)) }
+            val bytes = guard.readBytes()
+            assertRejectedWithoutWrites(
+                name = name,
+                manifestVersion = 2,
+                manifestCounts = BackupCounts(1, 1, 0, 0, 0, 0),
+                expectedMessage = "数据库 catalog_items columns 不匹配",
+            ) {
+                execSQL("PRAGMA user_version=2")
+                execSQL("UPDATE room_master_table SET identity_hash='e34586f75354c95386a2ba92f7121b27' WHERE id=42")
+                execSQL("INSERT INTO brands (id,type,name,normalizedName,maintenanceMode) VALUES ('brand-$index','CHAIN','brand-$index','brand-$index','MANUAL_ONLY')")
+                execSQL("INSERT INTO catalog_items (id,brandId,type,name,normalizedName,status,chainProductKind) VALUES ('item-$index','brand-$index','CHAIN_PRODUCT','产品','产品','ACTIVE',?)", arrayOf(kind))
+            }
+            assertArrayEquals(bytes, guard.readBytes())
+        }
+    }
+
     @Test fun `valid schema v1 archive validates and restores into the current database`() = runBlocking {
         val imageDir = File(context.filesDir, "images").apply { mkdirs() }
         val logoFile = writeTestPng(File(imageDir, "v1-logo.png"), 0xFF673AB7.toInt())
@@ -145,7 +186,7 @@ class BackupManagerTest {
             source.imageAssetDao().upsert(ImageAssetEntity("v1-logo", logoFile.absolutePath, sha256(logoFile), "BRAND_LOGO", occurredAt - 2))
             source.imageAssetDao().upsert(ImageAssetEntity("v1-snapshot", snapshotFile.absolutePath, sha256(snapshotFile), "RECORD_SNAPSHOT", occurredAt - 1))
             source.brandDao().upsert(BrandEntity("v1-brand", "CHAIN", "旧版品牌", "旧版品牌", "v1-logo", "MANUAL_ONLY", "https://example.test/brand"))
-            source.catalogItemDao().upsert(CatalogItemEntity("v1-item", "v1-brand", "CHAIN_PRODUCT", "旧版拿铁", "旧版拿铁", "v1-snapshot", status = "ACTIVE"))
+            source.catalogItemDao().upsert(CatalogItemEntity("v1-item", "v1-brand", "CHAIN_PRODUCT", "旧版拿铁", "旧版拿铁", "v1-snapshot", status = "ACTIVE", chainProductKind = "MILK"))
             source.drinkDao().insert(DrinkRecordEntity(
                 id = "v1-record", occurredAtEpochMillis = occurredAt, localDate = "2023-11-14", itemType = "CHAIN_PRODUCT", sourceItemId = "v1-item",
                 note = "来自 v1", snapshotBrandName = "旧版品牌", snapshotItemName = "旧版拿铁",
@@ -188,6 +229,7 @@ class BackupManagerTest {
             assertEquals(1, count("draft_records"))
             assertEquals("旧版品牌", database.brandDao().get("v1-brand")!!.name)
             assertEquals("v1-snapshot", database.catalogItemDao().get("v1-item")!!.imageAssetId)
+            assertEquals("MILK", database.catalogItemDao().get("v1-item")!!.chainProductKind)
             database.drinkDao().get("v1-record")!!.also { record ->
                 assertEquals(occurredAt, record.createdAtEpochMillis)
                 assertEquals(occurredAt, record.updatedAtEpochMillis)
@@ -207,6 +249,32 @@ class BackupManagerTest {
                 assertTrue(File(asset.localPath).isFile)
                 assertEquals(asset.sha256, sha256(File(asset.localPath)))
             }
+        } finally {
+            if (source.isOpen) source.close()
+            context.deleteDatabase(sourceName)
+        }
+    }
+
+    @Test fun `valid v2 archive restores every legacy chain category into v3 kinds`() = runBlocking {
+        val sourceName = "v2-source-${System.nanoTime()}.db"
+        val source = Room.databaseBuilder(context, CoffeeDatabase::class.java, sourceName).allowMainThreadQueries().build()
+        try {
+            source.brandDao().upsert(BrandEntity("v2-brand", "CHAIN", "旧品牌", "旧品牌", null, "MANUAL_ONLY", null))
+            listOf("fruit" to "柠檬气泡美式", "milk" to "生椰拿铁", "black" to "冰美式", "pending" to "季节限定").forEach { (id, name) ->
+                source.catalogItemDao().upsert(CatalogItemEntity(id, "v2-brand", "CHAIN_PRODUCT", name, name, status = "ACTIVE", chainProductKind = "PENDING"))
+            }
+            source.close()
+            val sourceFile = context.getDatabasePath(sourceName)
+            SQLiteDatabase.openDatabase(sourceFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { it.rebuildAsSchemaV2() }
+            val archive = File(context.cacheDir, "schema-v2-${System.nanoTime()}.zip")
+            SafeBackupArchiveCodec().encode(archive, sourceFile, emptyList(), BackupCounts(1, 4, 0, 0, 0, 0), 2, 1)
+
+            manager.restore(manager.validate(Uri.fromFile(archive)))
+
+            assertEquals("FRUIT", database.catalogItemDao().get("fruit")!!.chainProductKind)
+            assertEquals("MILK", database.catalogItemDao().get("milk")!!.chainProductKind)
+            assertEquals("BLACK", database.catalogItemDao().get("black")!!.chainProductKind)
+            assertEquals("PENDING", database.catalogItemDao().get("pending")!!.chainProductKind)
         } finally {
             if (source.isOpen) source.close()
             context.deleteDatabase(sourceName)
@@ -403,8 +471,16 @@ class BackupManagerTest {
     }
 
     private fun count(table:String):Int=database.openHelper.writableDatabase.query("SELECT COUNT(*) FROM $table").use{it.moveToFirst();it.getInt(0)}
-    private suspend fun assertRejectedWithoutWrites(name: String, manifestVersion: Int = 2, mutate: SQLiteDatabase.() -> Unit) {
+    private suspend fun assertRejectedWithoutWrites(
+        name: String,
+        manifestVersion: Int = 3,
+        manifestCounts: BackupCounts? = null,
+        expectedMessage: String? = null,
+        mutate: SQLiteDatabase.() -> Unit,
+    ) {
         database.brandDao().upsert(BrandEntity("keep-$name", "CHAIN", "保留", "保留-$name", null, "MANUAL_ONLY", null))
+        val activeCounts = listOf("brands", "catalog_items", "drink_records", "image_assets", "catalog_updates", "draft_records").associateWith(::count)
+        val imageBytes = File(context.filesDir, "images").listFiles().orEmpty().associate { it.name to it.readBytes() }
         val source = Room.databaseBuilder(context, CoffeeDatabase::class.java, "schema-source-${System.nanoTime()}.db").allowMainThreadQueries().build()
         try {
             val archive = File(context.cacheDir, "schema-$name-${System.nanoTime()}.zip")
@@ -412,9 +488,13 @@ class BackupManagerTest {
             val decoded = SafeBackupArchiveCodec().decode(archive, File(context.cacheDir, "schema-unpack-${System.nanoTime()}"))
             SQLiteDatabase.openDatabase(decoded.databaseFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use(mutate)
             val rewritten = File(context.cacheDir, "schema-rewritten-${System.nanoTime()}.zip")
-            SafeBackupArchiveCodec().encode(rewritten, decoded.databaseFile, emptyList(), decoded.manifest.counts, manifestVersion, 1)
-            assertThrows(BackupValidationException::class.java) { runBlocking { manager.validate(Uri.fromFile(rewritten)) } }
+            SafeBackupArchiveCodec().encode(rewritten, decoded.databaseFile, emptyList(), manifestCounts ?: decoded.manifest.counts, manifestVersion, 1)
+            val error = assertThrows(BackupValidationException::class.java) { runBlocking { manager.validate(Uri.fromFile(rewritten)) } }
+            expectedMessage?.let { assertEquals(it, error.message) }
             assertNotNull(database.brandDao().get("keep-$name"))
+            assertEquals(activeCounts, listOf("brands", "catalog_items", "drink_records", "image_assets", "catalog_updates", "draft_records").associateWith(::count))
+            assertEquals(imageBytes.keys, File(context.filesDir, "images").listFiles().orEmpty().map { it.name }.toSet())
+            imageBytes.forEach { (file, bytes) -> assertArrayEquals(bytes, File(context.filesDir, "images/$file").readBytes()) }
         } finally { source.close() }
     }
     private fun SQLiteDatabase.rebuildUpdates(columns: String) {
@@ -436,9 +516,15 @@ class BackupManagerTest {
         execSQL("CREATE TABLE draft_records (id TEXT NOT NULL, revisionId TEXT NOT NULL, itemType TEXT, sourceItemId TEXT, brewMethod TEXT, ratingHalfStars INTEGER, actualPriceFen INTEGER, note TEXT NOT NULL, updatedAtEpochMillis INTEGER NOT NULL, PRIMARY KEY(id))")
         execSQL("INSERT INTO draft_records (id,revisionId,itemType,sourceItemId,brewMethod,ratingHalfStars,actualPriceFen,note,updatedAtEpochMillis) SELECT id,revisionId,itemType,sourceItemId,brewMethod,ratingHalfStars,actualPriceFen,note,updatedAtEpochMillis FROM draft_records_v2")
         execSQL("DROP TABLE draft_records_v2")
+        execSQL("ALTER TABLE catalog_items DROP COLUMN chainProductKind")
         execSQL("UPDATE room_master_table SET identity_hash='630300b58f2f33802ecc0d756158b804' WHERE id=42")
         execSQL("PRAGMA user_version=1")
         execSQL("PRAGMA foreign_keys=ON")
+    }
+    private fun SQLiteDatabase.rebuildAsSchemaV2() {
+        execSQL("ALTER TABLE catalog_items DROP COLUMN chainProductKind")
+        execSQL("UPDATE room_master_table SET identity_hash='e34586f75354c95386a2ba92f7121b27' WHERE id=42")
+        execSQL("PRAGMA user_version=2")
     }
     private fun writeTestPng(file: File, color: Int): File {
         Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888).also { bitmap ->

@@ -65,17 +65,18 @@ class CatalogUpdateApplierRoomTest {
         val review = applier.review(
             "brand", success(
                 candidate("拿铁", description = "新描述"),
-                candidate("新品", imageUrl = "https://img.official/new.webp"),
+                candidate("新品拿铁", imageUrl = "https://img.official/new.webp"),
             ),
         )
 
-        val addition = review.changes.single { it.displayName == "新品" }
+        val addition = review.changes.single { it.displayName == "新品拿铁" }
         applier.applySelected(review, setOf(addition.key))
 
         assertEquals("旧描述", database.catalogItemDao().get("old")?.officialDescription)
         val added = database.catalogItemDao().get("new-id")
         assertEquals("asset-new", added?.imageAssetId)
         assertEquals("https://img.official/new.webp", added?.imageSourceUrl)
+        assertEquals("MILK", added?.chainProductKind)
         assertEquals(777L, added?.sourceFetchedAt)
         assertEquals("CONFIRMED", database.catalogUpdateDao().latest("brand")?.status)
         assertEquals(777L, database.catalogUpdateDao().latest("brand")?.fetchedAtEpochMillis)
@@ -233,7 +234,7 @@ class CatalogUpdateApplierRoomTest {
     )
 
     private fun candidate(name: String, description: String? = null, imageUrl: String? = null) = CatalogCandidate(
-        name, "咖啡", null, description,
+        name, "拿铁", null, description,
         "https://www.luckincoffee.com/cn/menu/signature-lattes/${name.hashCode()}", imageUrl,
     )
 
@@ -251,7 +252,7 @@ class CatalogUpdateApplierRoomTest {
     ) = CatalogItemEntity(
         id = id, brandId = "brand", type = "CHAIN_PRODUCT", name = name,
         normalizedName = normalizeCatalogName(name), imageAssetId = imageAssetId,
-        status = "ACTIVE", officialDescription = description, origin = origin,
+        status = "ACTIVE", officialDescription = description, origin = origin, chainProductKind = "MILK",
     )
 
     private fun image(id: String, suffix: String) = ImageAssetEntity(

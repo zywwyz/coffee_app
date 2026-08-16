@@ -39,6 +39,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.CatalogItem
+import com.niumi.coffeejournal.core.model.ChainProductKind
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
@@ -517,6 +518,7 @@ private fun ItemEditorDialog(
     var category by remember(initial) { mutableStateOf(initial?.category.orEmpty()) }
     var specification by remember(initial) { mutableStateOf(initial?.specificationDescription.orEmpty()) }
     var status by remember(initial) { mutableStateOf(initial?.status ?: ItemStatus.ACTIVE) }
+    var chainProductKind by remember(initial) { mutableStateOf(initial?.chainProductKind) }
     var caffeineError by remember(initial) { mutableStateOf<String?>(null) }
     val type = if (brand.type == BrandType.CHAIN) ItemType.CHAIN_PRODUCT else ItemType.PERSONAL_BEAN
     val importSession = remember(leaseId) {
@@ -553,7 +555,7 @@ private fun ItemEditorDialog(
                     brand.id, type, name, image, origin, processing, roast, flavors, brew, status,
                     (caffeineResult as CaffeineInput.Valid).milligrams,
                     description, purchaseDate, roastDate, sourceUrl, initial?.id,
-                    category, specification, leaseId,
+                    category, specification, leaseId, chainProductKind,
                 ),
             )
         },
@@ -565,6 +567,12 @@ private fun ItemEditorDialog(
         Field(flavors, { flavors = it }, "风味描述（可选）", enabled = !saving)
         Field(brew, { brew = it }, "默认冲煮方式（可选）", enabled = !saving)
         if (type == ItemType.CHAIN_PRODUCT) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("咖啡类型")
+                listOf(ChainProductKind.BLACK, ChainProductKind.FRUIT, ChainProductKind.MILK).forEach { value ->
+                    FilterChip(chainProductKind == value, { chainProductKind = value }, label = { Text(chainProductKindLabel(value)) }, enabled = !saving)
+                }
+            }
             Field(category, { category = it }, "产品分类（可选）", enabled = !saving)
             Field(specification, { specification = it }, "规格描述（可选）", enabled = !saving)
             Field(caffeine, { caffeine = it; caffeineError = null }, "咖啡因 mg（可选）", enabled = !saving)
@@ -602,6 +610,13 @@ private fun ItemEditorDialog(
             Text(if (image == null) "选择图片" else "更换图片")
         }
     }
+}
+
+private fun chainProductKindLabel(kind: ChainProductKind): String = when (kind) {
+    ChainProductKind.BLACK -> "黑咖"
+    ChainProductKind.FRUIT -> "果咖"
+    ChainProductKind.MILK -> "奶咖"
+    ChainProductKind.PENDING -> "待分类"
 }
 
 @Composable

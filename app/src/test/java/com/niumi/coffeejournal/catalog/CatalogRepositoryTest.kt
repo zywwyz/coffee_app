@@ -12,6 +12,7 @@ import com.niumi.coffeejournal.core.database.DrinkRecordEntity
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.CatalogItem
+import com.niumi.coffeejournal.core.model.ChainProductKind
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
@@ -31,6 +32,17 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class CatalogRepositoryTest {
+    @Test fun `rejects invalid chain product kinds and personal bean kinds on save`() = runBlocking {
+        val chain = item("类型").copy(type = ItemType.CHAIN_PRODUCT)
+        repository.upsertBrand(brand())
+        assertIllegalArgument { repository.upsertItem(chain.copy(chainProductKind = null)) }
+        assertIllegalArgument { repository.upsertItem(chain.copy(chainProductKind = ChainProductKind.PENDING)) }
+        listOf(ChainProductKind.BLACK, ChainProductKind.FRUIT, ChainProductKind.MILK).forEach { kind ->
+            repository.upsertItem(chain.copy(id = kind.name, name = kind.name, chainProductKind = kind))
+        }
+        assertIllegalArgument { repository.upsertItem(item("个人豆").copy(type = ItemType.PERSONAL_BEAN, chainProductKind = ChainProductKind.MILK)) }
+    }
+
     private lateinit var database: CoffeeDatabase
     private lateinit var repository: RoomCatalogRepository
 
@@ -295,7 +307,16 @@ class CatalogRepositoryTest {
         flavorNotes = null,
         brewMethod = null,
         status = ItemStatus.ACTIVE,
+        chainProductKind = ChainProductKind.BLACK,
     )
+
+    private fun assertIllegalArgument(block: suspend () -> Unit) {
+        try {
+            runBlocking { block() }
+            fail("Expected IllegalArgumentException")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
 
     private fun record(id: String, occurredAt: Long, priceFen: Long?) = DrinkRecordEntity(
         id = id,

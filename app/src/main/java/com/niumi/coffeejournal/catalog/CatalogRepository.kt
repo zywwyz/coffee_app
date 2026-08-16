@@ -10,6 +10,7 @@ import com.niumi.coffeejournal.core.database.DrinkDao
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.CatalogItem
+import com.niumi.coffeejournal.core.model.ChainProductKind
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
@@ -92,6 +93,12 @@ class RoomCatalogRepository(
     }
 
     override suspend fun upsertItem(item: CatalogItem) {
+        require(item.type != ItemType.CHAIN_PRODUCT || item.chainProductKind in setOf(ChainProductKind.BLACK, ChainProductKind.FRUIT, ChainProductKind.MILK)) {
+            "Chain products require a public product kind"
+        }
+        require(item.type != ItemType.PERSONAL_BEAN || item.chainProductKind == null) {
+            "Personal beans cannot have a chain product kind"
+        }
         val normalized = normalizeCatalogName(item.name)
         if (catalogItemDao.existsNamedOther(item.brandId, normalized, item.id)) {
             throw DuplicateCatalogNameException(item.name)
@@ -182,7 +189,12 @@ private fun CatalogItemEntity.toDomain() = CatalogItem(
     category = category,
     specificationDescription = specificationDescription,
     imageSourceUrl = imageSourceUrl,
-)
+    chainProductKind = chainProductKind?.let { enumValue<ChainProductKind>("CatalogItemEntity.chainProductKind", it) },
+).also { item ->
+    require((item.type == ItemType.CHAIN_PRODUCT) == (item.chainProductKind != null)) {
+        "Catalog item type and chain product kind disagree"
+    }
+}
 
 private fun CatalogItem.toEntity() = CatalogItemEntity(
     id = id,
@@ -207,6 +219,7 @@ private fun CatalogItem.toEntity() = CatalogItemEntity(
     category = category,
     specificationDescription = specificationDescription,
     imageSourceUrl = imageSourceUrl,
+    chainProductKind = chainProductKind?.name,
 )
 
 fun normalizeCatalogName(raw: String): String {

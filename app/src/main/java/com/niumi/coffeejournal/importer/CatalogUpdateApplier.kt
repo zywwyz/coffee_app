@@ -8,6 +8,8 @@ import com.niumi.coffeejournal.core.database.CoffeeDatabase
 import com.niumi.coffeejournal.core.model.CatalogItem
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.ItemType
+import com.niumi.coffeejournal.core.model.ChainProductKind
+import com.niumi.coffeejournal.core.model.legacyChainProductKind
 import java.util.UUID
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.CancellationException
@@ -53,7 +55,9 @@ class CatalogUpdateApplier(
         require(selectedKeys.all { selected -> review.changes.any { it.key == selected } }) {
             "Selection contains a change outside this review"
         }
-        val selected = review.changes.filter { it.key in selectedKeys }
+        val selected = review.changes.filter { it.key in selectedKeys }.filterNot { change ->
+            change.type == ChangeType.ADDED && legacyChainProductKind(requireNotNull(change.candidate).name, change.candidate.category) == ChainProductKind.PENDING
+        }
         val importedByKey = mutableMapOf<String, ImportedCandidateImage>()
         val deliveredAssets = mutableSetOf<String>()
         val oldAssetsToRelease = mutableSetOf<String>()
@@ -177,6 +181,7 @@ private fun CatalogCandidate.toEntity(
         informationCompleteness = calculateCompleteness(old), category = category ?: old?.category,
         specificationDescription = specificationDescription ?: old?.specificationDescription,
         imageSourceUrl = retainedImageSource,
+        chainProductKind = old?.chainProductKind?.name ?: legacyChainProductKind(name, category).name,
     )
 }
 
@@ -198,6 +203,7 @@ private fun CatalogItemEntity.toDomain() = CatalogItem(
     flavorNotes, brewMethod, ItemStatus.valueOf(status), caffeineMg, officialDescription,
     purchaseDate, roastDate, sourceUrl, sourceFetchedAt, informationCompleteness,
     category, specificationDescription, imageSourceUrl,
+    chainProductKind?.let { ChainProductKind.valueOf(it) },
 )
 
 private fun CatalogItem.toEntity() = CatalogItemEntity(
@@ -205,4 +211,5 @@ private fun CatalogItem.toEntity() = CatalogItemEntity(
     roastLevel, flavorNotes, brewMethod, status.name, caffeineMg, officialDescription,
     purchaseDate, roastDate, sourceUrl, sourceFetchedAt, informationCompleteness,
     category, specificationDescription, imageSourceUrl,
+    chainProductKind = chainProductKind?.name,
 )

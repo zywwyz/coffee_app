@@ -7,6 +7,7 @@ import com.niumi.coffeejournal.core.image.ImageStore
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.CatalogItem
+import com.niumi.coffeejournal.core.model.ChainProductKind
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
@@ -60,6 +61,7 @@ data class ItemEditor(
     val category: String? = null,
     val specificationDescription: String? = null,
     val assetLeaseId: String? = null,
+    val chainProductKind: ChainProductKind? = null,
 )
 
 data class CatalogUiState(
@@ -175,6 +177,7 @@ class CatalogViewModel(
                 } else editor.specificationDescription.clean()
             } else null,
             imageSourceUrl = existing?.imageSourceUrl,
+            chainProductKind = if (editor.type == ItemType.CHAIN_PRODUCT) editor.chainProductKind else null,
         )
         beginAssetCommit(editor.assetLeaseId, editor.imageAssetId)
         try {
