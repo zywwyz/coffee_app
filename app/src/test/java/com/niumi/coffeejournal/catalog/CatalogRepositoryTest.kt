@@ -254,6 +254,39 @@ class CatalogRepositoryTest {
     }
 
     @Test
+    fun `legacy alias adopts stable id and survives a later user rename`() = runBlocking {
+        val images = RecordingBrandLogoStore(database)
+        val userLogo = images.persist("legacy-logo")
+        database.brandDao().upsert(
+            BrandEntity("legacy-cotti", "CHAIN", "库迪咖啡", "库迪咖啡", userLogo.id, "MANUAL_ONLY", null),
+        )
+        database.catalogItemDao().upsert(item("冷萃").copy(id = "legacy-item", brandId = "legacy-cotti"))
+        database.catalogUpdateDao().insert(
+            com.niumi.coffeejournal.core.database.CatalogUpdateEntity(
+                "legacy-update", "legacy-cotti", 1, "CONFIRMED", null, null,
+            ),
+        )
+        val seeded = logoRepository(images)
+
+        seeded.ensureSeedBrands()
+
+        val cotti = seeded.getBrand("seed-chain-cotti")
+        assertEquals("库迪咖啡", cotti.name)
+        assertEquals(userLogo.id, cotti.logoAssetId)
+        assertEquals("seed-chain-cotti", database.catalogItemDao().get("legacy-item")?.brandId)
+        assertEquals("seed-chain-cotti", database.catalogUpdateDao().latest("seed-chain-cotti")?.brandId)
+        seeded.upsertBrand(cotti.copy(name = "我的库迪"))
+        logoRepository(images).ensureSeedBrands()
+
+        assertEquals(12, seeded.observeBrands(BrandType.CHAIN).first().size)
+        assertEquals("我的库迪", seeded.getBrand("seed-chain-cotti").name)
+        assertEquals(userLogo.id, seeded.getBrand("seed-chain-cotti").logoAssetId)
+        assertEquals("seed-chain-cotti", database.catalogItemDao().get("legacy-item")?.brandId)
+        assertEquals("seed-chain-cotti", database.catalogUpdateDao().latest("seed-chain-cotti")?.brandId)
+        assertEquals(11, images.imported.size)
+    }
+
+    @Test
     fun `duplicate brand names use nfkc case and unicode whitespace rules`() = runBlocking {
         repository.upsertBrand(brand().copy(id = "one", name = "Ｍ Stand"))
 
