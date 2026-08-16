@@ -46,6 +46,24 @@ interface BrandDao {
     @Query("SELECT * FROM brands WHERE type = :type AND normalizedName IN (:names)")
     suspend fun getByNormalizedNames(type: String, names: List<String>): List<BrandEntity>
 
+    @Transaction
+    suspend fun adoptAsBundledId(legacy: BrandEntity, bundledId: String) {
+        if (legacy.id == bundledId || get(bundledId) != null) return
+        insert(legacy.copy(id = bundledId))
+        moveCatalogItemsBrandId(legacy.id, bundledId)
+        moveCatalogUpdatesBrandId(legacy.id, bundledId)
+        deleteById(legacy.id)
+    }
+
+    @Query("UPDATE catalog_items SET brandId = :toBrandId WHERE brandId = :fromBrandId")
+    suspend fun moveCatalogItemsBrandId(fromBrandId: String, toBrandId: String)
+
+    @Query("UPDATE catalog_updates SET brandId = :toBrandId WHERE brandId = :fromBrandId")
+    suspend fun moveCatalogUpdatesBrandId(fromBrandId: String, toBrandId: String)
+
+    @Query("DELETE FROM brands WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Query(
         "SELECT EXISTS(SELECT 1 FROM brands WHERE type = :type AND normalizedName = :name AND id != :id)",
     )

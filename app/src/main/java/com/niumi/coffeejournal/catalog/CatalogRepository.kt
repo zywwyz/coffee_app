@@ -134,6 +134,12 @@ class RoomCatalogRepository(
                 BrandType.CHAIN.name,
                 BUNDLED_CHAIN_BRANDS.flatMap { definition -> definition.catalogNames() }.distinct(),
             ).associateBy { it.normalizedName }
+            BUNDLED_CHAIN_BRANDS.forEach { definition ->
+                val legacy = definition.catalogNames().asSequence()
+                    .mapNotNull(existing::get)
+                    .firstOrNull { it.id != definition.brand.id }
+                if (legacy != null) brandDao.adoptAsBundledId(legacy, definition.brand.id)
+            }
             brandDao.seedIgnoringExisting(BUNDLED_CHAIN_BRANDS.filter { definition ->
                 definition.catalogNames().none(existing::containsKey)
             }.map { it.brand.toEntity() })

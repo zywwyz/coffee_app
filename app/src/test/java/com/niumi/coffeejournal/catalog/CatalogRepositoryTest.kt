@@ -458,6 +458,13 @@ class CatalogRepositoryTest {
         override suspend fun get(id: String) = delegate.get(id)
         override suspend fun getByNormalizedNames(type: String, names: List<String>) =
             delegate.getByNormalizedNames(type, names)
+        override suspend fun adoptAsBundledId(legacy: BrandEntity, bundledId: String) =
+            delegate.adoptAsBundledId(legacy, bundledId)
+        override suspend fun moveCatalogItemsBrandId(fromBrandId: String, toBrandId: String) =
+            delegate.moveCatalogItemsBrandId(fromBrandId, toBrandId)
+        override suspend fun moveCatalogUpdatesBrandId(fromBrandId: String, toBrandId: String) =
+            delegate.moveCatalogUpdatesBrandId(fromBrandId, toBrandId)
+        override suspend fun deleteById(id: String) = delegate.deleteById(id)
         override suspend fun existsNamedOther(type: String, name: String, id: String): Boolean {
             if (!injected) {
                 injected = true
