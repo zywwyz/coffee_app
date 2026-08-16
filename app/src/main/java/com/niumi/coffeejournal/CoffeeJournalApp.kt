@@ -24,6 +24,8 @@ import com.niumi.coffeejournal.journal.JournalRepository
 import com.niumi.coffeejournal.journal.RoomDrinkStore
 import com.niumi.coffeejournal.journal.Clock
 import com.niumi.coffeejournal.journal.SystemClock
+import com.niumi.coffeejournal.journal.CalendarDisplayPreference
+import com.niumi.coffeejournal.journal.SharedPreferencesCalendarDisplayPreference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,6 +38,9 @@ open class CoffeeJournalApp : Application() {
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     open val database: CoffeeDatabase by lazy { CoffeeDatabase.create(this) }
     open val journalClock: Clock = SystemClock
+    open val calendarDisplayPreference: CalendarDisplayPreference by lazy {
+        SharedPreferencesCalendarDisplayPreference(this)
+    }
 
     val catalogRepository: CatalogRepository by lazy {
         RoomCatalogRepository(

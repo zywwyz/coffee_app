@@ -44,6 +44,8 @@ import com.niumi.coffeejournal.importer.CatalogSourceProvider
 import com.niumi.coffeejournal.importer.CatalogUpdateGateway
 import com.niumi.coffeejournal.journal.JournalFeature
 import com.niumi.coffeejournal.journal.JournalRepository
+import com.niumi.coffeejournal.journal.CalendarDisplayPreference
+import com.niumi.coffeejournal.journal.DefaultCalendarDisplayPreference
 import com.niumi.coffeejournal.insights.InsightsFeature
 import com.niumi.coffeejournal.backup.BackupManager
 import com.niumi.coffeejournal.settings.SettingsScreen
@@ -84,6 +86,7 @@ private val RootDestinations = listOf(
 fun AppNavigation(
     journalRepository: JournalRepository? = null,
     catalogRepository: CatalogRepository? = null,
+    calendarDisplayPreference: CalendarDisplayPreference = DefaultCalendarDisplayPreference,
     imagePathResolver: ImagePathResolver = ImagePathResolver { null },
     imageStore: ImageStore? = null,
     screenshotTextRecognizer: ScreenshotTextRecognizer? = null,
@@ -95,6 +98,7 @@ fun AppNavigation(
     if (assetImportRequester != null) {
         AppNavigationContent(
             journalRepository, catalogRepository, imagePathResolver,
+            calendarDisplayPreference = calendarDisplayPreference,
             imageStore = imageStore,
             assetImportRequester = assetImportRequester,
             catalogUpdateSources = catalogUpdateSources,
@@ -105,6 +109,7 @@ fun AppNavigation(
         ImageImportHost(imageStore, screenshotTextRecognizer) { requester ->
             AppNavigationContent(
                 journalRepository, catalogRepository, imagePathResolver,
+                calendarDisplayPreference = calendarDisplayPreference,
                 imageStore = imageStore,
                 assetImportRequester = requester,
                 catalogUpdateSources = catalogUpdateSources,
@@ -115,6 +120,7 @@ fun AppNavigation(
     } else {
         AppNavigationContent(
             journalRepository, catalogRepository, imagePathResolver,
+            calendarDisplayPreference = calendarDisplayPreference,
             catalogUpdateSources = catalogUpdateSources,
             catalogUpdateGateway = catalogUpdateGateway,
             backupManager = backupManager,
@@ -127,6 +133,7 @@ private fun AppNavigationContent(
     journalRepository: JournalRepository?,
     catalogRepository: CatalogRepository?,
     imagePathResolver: ImagePathResolver,
+    calendarDisplayPreference: CalendarDisplayPreference,
     imageStore: ImageStore? = null,
     assetImportRequester: AssetImportRequester = { _, _, _, _ -> },
     catalogUpdateSources: CatalogSourceProvider? = null,
@@ -171,7 +178,10 @@ private fun AppNavigationContent(
             entryProvider = entryProvider {
                 entry<Journal> {
                     if (journalRepository != null && catalogRepository != null) {
-                        JournalFeature(journalRepository, catalogRepository, imagePathResolver, assetImportRequester) { backStack.add(Settings) }
+                        JournalFeature(
+                            journalRepository, catalogRepository, imagePathResolver, assetImportRequester,
+                            calendarDisplayPreference,
+                        ) { backStack.add(Settings) }
                     } else {
                         RootContent("咖啡日历", "记录今天的咖啡") { backStack.add(Settings) }
                     }
