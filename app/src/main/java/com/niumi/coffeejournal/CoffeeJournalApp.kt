@@ -1,6 +1,7 @@
 package com.niumi.coffeejournal
 
 import android.app.Application
+import android.net.Uri
 import com.niumi.coffeejournal.catalog.CatalogRepository
 import com.niumi.coffeejournal.catalog.RoomCatalogRepository
 import com.niumi.coffeejournal.core.database.CoffeeDatabase
@@ -41,6 +42,10 @@ open class CoffeeJournalApp : Application() {
             brandDao = database.brandDao(),
             catalogItemDao = database.catalogItemDao(),
             drinkDao = database.drinkDao(),
+            imageStore = imageStore,
+            resourceUriFactory = { resourceId ->
+                Uri.parse("android.resource://$packageName/$resourceId")
+            },
         )
     }
 

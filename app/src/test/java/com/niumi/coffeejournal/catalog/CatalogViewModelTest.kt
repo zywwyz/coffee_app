@@ -26,30 +26,14 @@ import org.junit.Test
 
 class CatalogViewModelTest {
     @Test
-    fun `seed metadata is exactly the five supported chain brands`() {
+    fun `seed metadata is exactly the bundled chain brands`() {
         assertEquals(
-            listOf("瑞幸", "Manner", "M Stand", "Peet's", "% Arabica"),
+            listOf("瑞幸", "库迪", "NOWWA", "幸运咖", "星巴克", "肯悦咖啡", "MANNER", "沪咖", "Tims", "M Stand", "Peet's", "%Arabica"),
             seedBrands().map { it.name },
         )
         assertTrue(seedBrands().all { it.logoAssetId == null && it.type == BrandType.CHAIN })
-        assertEquals(
-            mapOf(
-                "瑞幸" to MaintenanceMode.PUBLIC_SOURCE,
-                "M Stand" to MaintenanceMode.PUBLIC_SOURCE,
-                "Manner" to MaintenanceMode.MANUAL_ONLY,
-                "Peet's" to MaintenanceMode.MANUAL_ONLY,
-                "% Arabica" to MaintenanceMode.MANUAL_ONLY,
-            ),
-            seedBrands().associate { it.name to it.maintenanceMode },
-        )
-        assertEquals(
-            "https://www.luckincoffee.com/cn/menu/signature-lattes",
-            seedBrands().single { it.name == "瑞幸" }.publicSourceUrl,
-        )
-        assertEquals(
-            "https://mstand.cn/ProductInfoCategory?categoryId=575736",
-            seedBrands().single { it.name == "M Stand" }.publicSourceUrl,
-        )
+        assertTrue(seedBrands().all { it.maintenanceMode == MaintenanceMode.MANUAL_ONLY })
+        assertTrue(seedBrands().all { it.publicSourceUrl == null })
     }
 
     @Test

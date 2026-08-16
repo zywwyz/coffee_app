@@ -31,6 +31,9 @@ interface BrandDao {
         insertIgnoringExisting(brands)
     }
 
+    @Query("UPDATE brands SET logoAssetId=:assetId WHERE id=:brandId AND logoAssetId IS NULL")
+    suspend fun attachLogoIfMissing(brandId: String, assetId: String): Int
+
     @Query("SELECT * FROM brands ORDER BY name")
     fun observe(): Flow<List<BrandEntity>>
 

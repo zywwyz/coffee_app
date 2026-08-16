@@ -1,5 +1,6 @@
 package com.niumi.coffeejournal.catalog
 
+import android.net.Uri
 import com.niumi.coffeejournal.core.database.BrandDao
 import com.niumi.coffeejournal.core.database.BrandEntity
 import com.niumi.coffeejournal.core.database.BrandOverviewRow
@@ -14,11 +15,15 @@ import com.niumi.coffeejournal.core.model.ChainProductKind
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
+import com.niumi.coffeejournal.core.image.ImageKind
+import com.niumi.coffeejournal.core.image.ImageStore
 import java.text.Normalizer
 import java.util.Locale
 import android.database.sqlite.SQLiteConstraintException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 interface CatalogRepository {
     fun observeBrands(type: BrandType): Flow<List<Brand>>
@@ -55,10 +60,12 @@ class RoomCatalogRepository(
     private val brandDao: BrandDao,
     private val catalogItemDao: CatalogItemDao,
     private val drinkDao: DrinkDao,
+    private val imageStore: ImageStore? = null,
+    private val resourceUriFactory: ((Int) -> Uri)? = null,
 ) : CatalogRepository {
     override fun observeBrands(type: BrandType): Flow<List<Brand>> =
         brandDao.observeByType(type.name).map { entities ->
-            entities.map(BrandEntity::toDomain)
+            entities.map(BrandEntity::toDomain).sortedForCatalog(type)
         }
 
     override fun observeItems(brandId: String): Flow<List<CatalogItem>> =
@@ -67,7 +74,12 @@ class RoomCatalogRepository(
         }
 
     override fun observeBrandOverviews(type: BrandType): Flow<List<BrandOverview>> =
-        brandDao.observeOverviews(type.name).map { rows -> rows.map(BrandOverviewRow::toOverview) }
+        brandDao.observeOverviews(type.name).map { rows ->
+            rows.map(BrandOverviewRow::toOverview).sortedWith(
+                compareBy<BrandOverview> { BUNDLED_CHAIN_BRANDS.firstOrNull { seed -> seed.brand.id == it.brand.id }?.order ?: Int.MAX_VALUE }
+                    .thenBy { normalizeCatalogName(it.brand.name) },
+            )
+        }
 
     override suspend fun getBrand(brandId: String): Brand =
         brandDao.get(brandId)?.toDomain()
@@ -117,23 +129,31 @@ class RoomCatalogRepository(
         drinkDao.lastActualPriceFen(itemId)
 
     override suspend fun ensureSeedBrands() {
-        brandDao.seedIgnoringExisting(seedBrands().map(Brand::toEntity))
+        seedMutex.withLock {
+            brandDao.seedIgnoringExisting(BUNDLED_CHAIN_BRANDS.map { it.brand.toEntity() })
+            val store = imageStore ?: return@withLock
+            val resourceUri = resourceUriFactory ?: return@withLock
+            BUNDLED_CHAIN_BRANDS.forEach { definition ->
+                val existing = brandDao.get(definition.brand.id) ?: return@forEach
+                if (existing.logoAssetId != null) return@forEach
+                val asset = store.importWhole(resourceUri(definition.logoRes), ImageKind.BRAND_LOGO)
+                if (brandDao.attachLogoIfMissing(definition.brand.id, asset.id) == 0) {
+                    store.deleteIfUnreferenced(asset.id)
+                }
+            }
+        }
     }
 }
 
-fun seedBrands(): List<Brand> = listOf(
-    Brand(
-        "seed-chain-luckin", BrandType.CHAIN, "瑞幸", null, MaintenanceMode.PUBLIC_SOURCE,
-        "https://www.luckincoffee.com/cn/menu/signature-lattes",
-    ),
-    Brand("seed-chain-manner", BrandType.CHAIN, "Manner", null, MaintenanceMode.MANUAL_ONLY, null),
-    Brand(
-        "seed-chain-mstand", BrandType.CHAIN, "M Stand", null, MaintenanceMode.PUBLIC_SOURCE,
-        "https://mstand.cn/ProductInfoCategory?categoryId=575736",
-    ),
-    Brand("seed-chain-peets", BrandType.CHAIN, "Peet's", null, MaintenanceMode.MANUAL_ONLY, null),
-    Brand("seed-chain-arabica", BrandType.CHAIN, "% Arabica", null, MaintenanceMode.MANUAL_ONLY, null),
-)
+fun seedBrands(): List<Brand> = BUNDLED_CHAIN_BRANDS.map(BundledBrandDefinition::brand)
+
+private val seedMutex = Mutex()
+
+private fun List<Brand>.sortedForCatalog(type: BrandType): List<Brand> {
+    if (type != BrandType.CHAIN) return this
+    val seedOrder = BUNDLED_CHAIN_BRANDS.associate { it.brand.id to it.order }
+    return sortedWith(compareBy<Brand> { seedOrder[it.id] ?: Int.MAX_VALUE }.thenBy { normalizeCatalogName(it.name) })
+}
 
 private fun BrandEntity.toDomain() = Brand(
     id = id,
