@@ -14,4 +14,6 @@ object TestTags {
     const val RootScreenTitle = "root-screen-title"
     const val RootScreenSettings = "root-screen-settings"
     const val SettingsBack = "settings-back"
+    const val ManualProductName = "manual-product-name"
+    const val ManualProductPreview = "manual-product-preview"
 }
