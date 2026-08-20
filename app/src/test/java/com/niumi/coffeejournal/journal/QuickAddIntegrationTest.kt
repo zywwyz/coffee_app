@@ -62,8 +62,9 @@ class QuickAddIntegrationTest {
         val journal = JournalViewModel(repository, catalog, 1970, 1, CoroutineScope(Dispatchers.Unconfined))
         journal.selectItem(ItemType.CHAIN_PRODUCT, "seed")
         withTimeout(5_000) { journal.uiState.first { it.editor.selectedItemId == "seed" } }
-        journal.setConsumedAt(1234)
-        withTimeout(5_000) { journal.uiState.first { it.editor.consumedAtEpochMillis == 1234L } }
+        val consumedAt = System.currentTimeMillis()
+        journal.setConsumedAt(consumedAt)
+        withTimeout(5_000) { journal.uiState.first { it.editor.consumedAtEpochMillis == consumedAt } }
         journal.setRating(9)
         withTimeout(5_000) { journal.uiState.first { it.editor.ratingHalfStars == 9 } }
         journal.setPriceInput("9.90")
@@ -87,7 +88,7 @@ class QuickAddIntegrationTest {
         withTimeout(5_000) { journal.uiState.first { it.editor.selectedItemId == "fruit" } }
         val replaced = journal.uiState.value.editor
         assertEquals("fruit", replaced.selectedItemId)
-        assertEquals(1234, replaced.consumedAtEpochMillis)
+        assertEquals(consumedAt, replaced.consumedAtEpochMillis)
         assertEquals(9, replaced.ratingHalfStars)
         assertEquals("9.90", replaced.priceInput)
         assertEquals("手冲", replaced.brewMethod)

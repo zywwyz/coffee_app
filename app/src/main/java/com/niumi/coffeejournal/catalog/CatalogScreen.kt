@@ -160,8 +160,6 @@ fun CatalogScreen(
                     enabled = !state.saving,
                     onOpen = { onSelectBrand(overview.brand.id) },
                     onEdit = { brandEditor = overview.brand },
-                    showUpdate = false,
-                    onUpdate = {},
                 )
             }
 
@@ -252,7 +250,7 @@ private fun ChainBrandRoot(brands: List<Brand>, imagePathResolver: ImagePathReso
 @Composable
 private fun BrandCard(
     overview: BrandOverview, selected: Boolean, enabled: Boolean,
-    onOpen: () -> Unit, onEdit: () -> Unit, showUpdate: Boolean, onUpdate: () -> Unit,
+    onOpen: () -> Unit, onEdit: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onOpen)
@@ -261,12 +259,7 @@ private fun BrandCard(
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(overview.brand.name, style = MaterialTheme.typography.titleMedium)
-                Row {
-                    if (showUpdate) {
-                        TextButton(onClick = onUpdate, enabled = enabled) { Text("更新该品牌") }
-                    }
-                    TextButton(onClick = onEdit, enabled = enabled) { Text("编辑") }
-                }
+                TextButton(onClick = onEdit, enabled = enabled) { Text("编辑") }
             }
             Text("${overview.itemCount} 个产品")
             Text(overview.lastUpdatedAtEpochMillis?.let { "最后更新 ${formatCatalogTime(it)}" } ?: "尚未更新")
@@ -274,134 +267,6 @@ private fun BrandCard(
         }
     }
 }
-
-/* Removed website-update UI. Kept as a non-executable historical block until the next source formatting pass.
-@Composable
-private fun CatalogUpdateDialog_REMOVED(
-    state: CatalogUpdateUiState,
-    brand: Brand?,
-    onToggle: (String) -> Unit,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-    onRetry: (Brand) -> Unit,
-    onScreenshot: (Brand) -> Unit,
-    onManual: (Brand) -> Unit,
-) {
-    when (state.phase) {
-        UpdatePhase.IDLE -> Unit
-        UpdatePhase.LOADING, UpdatePhase.APPLYING -> AlertDialog(
-            onDismissRequest = {},
-            title = { Text(if (state.phase == UpdatePhase.LOADING) "正在读取官网" else "正在应用更新") },
-            text = { Text("${state.brandName.orEmpty()}，请稍候…") },
-            confirmButton = {},
-            dismissButton = {
-                if (state.phase == UpdatePhase.LOADING) {
-                    TextButton(onClick = onDismiss) { Text("取消更新") }
-                }
-            },
-        )
-        UpdatePhase.FAILURE -> AlertDialog(
-            onDismissRequest = onDismiss,
-            title = { Text("无法从官网更新") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(failureLabel(state.failureKind))
-                    state.message?.let { Text(it) }
-                    Text("本地知识库没有改变。")
-                }
-            },
-            confirmButton = {
-                Column {
-                    TextButton(onClick = { brand?.let(onRetry) }, enabled = brand != null) {
-                        Text("重试官网更新")
-                    }
-                    CatalogFallbackActions(brand, onScreenshot, onManual)
-                }
-            },
-            dismissButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
-        )
-        UpdatePhase.REVIEW -> {
-            val review = state.review ?: return
-            AlertDialog(
-                onDismissRequest = onDismiss,
-                title = { Text("审阅官网更新") },
-                text = {
-                    Column(
-                        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Text("来源：${review.sourceUrl}")
-                        if (review.changes.isEmpty()) Text("官网内容与本地知识库一致。")
-                        review.changes.forEach { change ->
-                            Card(Modifier.fillMaxWidth()) {
-                                Column(Modifier.padding(8.dp)) {
-                                    Row {
-                                        Checkbox(
-                                            checked = change.key in state.selectedKeys,
-                                            onCheckedChange = { onToggle(change.key) },
-                                        )
-                                        Column {
-                                            Text("${changeTypeLabel(change.type)} · ${change.displayName}")
-                                            change.fields.forEach { field ->
-                                                Text("${fieldLabel(field.field)}：${field.oldValue ?: "—"} → ${field.newValue ?: "—"}")
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(onClick = onConfirm) { Text("确认所选项") }
-                },
-                dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
-            )
-        }
-    }
-}
-
-@Composable
-internal fun CatalogFallbackActions(
-    brand: Brand?,
-    onScreenshot: (Brand) -> Unit,
-    onManual: (Brand) -> Unit,
-) {
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        TextButton(onClick = { brand?.let(onScreenshot) }, enabled = brand != null) { Text("上传截图") }
-        TextButton(onClick = { brand?.let(onManual) }, enabled = brand != null) { Text("手工录入") }
-    }
-}
-
-private fun failureLabel(kind: FailureKind?): String = when (kind) {
-    FailureKind.OFFLINE -> "当前离线，请联网后重试。"
-    FailureKind.HTTP -> "官网暂时无法访问。"
-    FailureKind.PARSE_CHANGED -> "官网页面结构发生变化。"
-    FailureKind.NO_PUBLIC_CATALOG -> "该品牌暂无稳定公开产品目录。"
-    null -> "更新失败。"
-}
-
-private fun changeTypeLabel(type: ChangeType): String = when (type) {
-    ChangeType.ADDED -> "新增"
-    ChangeType.MODIFIED -> "修改"
-    ChangeType.POSSIBLY_DISCONTINUED -> "疑似下架"
-}
-
-private fun fieldLabel(field: String): String = when (field) {
-    "name" -> "名称"
-    "category" -> "分类"
-    "specificationDescription" -> "规格"
-    "officialDescription" -> "官方描述"
-    "origin" -> "产地"
-    "processing" -> "处理法"
-    "roastLevel" -> "烘焙度"
-    "flavorNotes" -> "风味"
-    "caffeineMg" -> "咖啡因"
-    "imageUrl" -> "官方图片"
-    "status" -> "状态"
-    else -> field
-}
-*/
 
 @Composable
 private fun ItemCard(

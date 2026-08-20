@@ -28,9 +28,7 @@ import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.core.image.ImageAsset
 import com.niumi.coffeejournal.core.image.ImageStore
-import com.niumi.coffeejournal.core.image.CropRect
-import com.niumi.coffeejournal.importer.ImageImportMode
-import com.niumi.coffeejournal.importer.ImportedAssetSelection
+import com.niumi.coffeejournal.core.image.ImportedAssetSelection
 import kotlinx.coroutines.runBlocking
 import com.niumi.coffeejournal.journal.JournalRepository
 import com.niumi.coffeejournal.backup.BackupManager
@@ -82,25 +80,6 @@ class AppNavigationTest {
     }
 
     @Test
-    fun catalog_screenshot_picker_wires_product_screenshot_mode_directly() {
-        var requestKind: ImageKind? = null
-        var requestMode: ImageImportMode? = null
-        var calls = 0
-        val picker = catalogScreenshotAssetPicker { kind, mode, _, callback ->
-            calls++
-            requestKind = kind
-            requestMode = mode
-            runBlocking { callback(ImportedAssetSelection("asset")) }
-        }
-
-        picker(null, com.niumi.coffeejournal.catalog.CatalogAssetKind.CHAIN_PRODUCT_IMAGE) { true }
-
-        assertEquals(1, calls)
-        assertEquals(ImageKind.PRODUCT, requestKind)
-        assertEquals(ImageImportMode.SCREENSHOT, requestMode)
-    }
-
-    @Test
     fun chainBrandOpensChildPageAndHidesRootNavigation() {
         compose.setContent { CoffeeTheme { AppNavigation(FakeJournalRepository, ChainCatalogRepository) } }
         compose.onNodeWithText("豆库").performClick()
@@ -126,7 +105,7 @@ class AppNavigationTest {
                     journalRepository = FakeJournalRepository,
                     catalogRepository = repository,
                     imageStore = imageStore,
-                    assetImportRequester = { _, _, _, callback ->
+                    assetImportRequester = { _, _, callback ->
                         runBlocking { callback(ImportedAssetSelection("replacement-logo")) }
                     },
                 )
@@ -156,7 +135,6 @@ class AppNavigationTest {
     @Test
     fun childBrandEditorRequestsWholeImageLogoThroughNavigationRequester() {
         var requestedKind: ImageKind? = null
-        var requestedMode: ImageImportMode? = null
         val repository = MutableChainCatalogRepository()
         val imageStore = RecordingImageStore()
         compose.setContent {
@@ -165,9 +143,8 @@ class AppNavigationTest {
                     journalRepository = FakeJournalRepository,
                     catalogRepository = repository,
                     imageStore = imageStore,
-                    assetImportRequester = { kind, mode, _, callback ->
+                    assetImportRequester = { kind, _, callback ->
                         requestedKind = kind
-                        requestedMode = mode
                         runBlocking { callback(ImportedAssetSelection("replacement-logo")) }
                     },
                 )
@@ -179,7 +156,6 @@ class AppNavigationTest {
         compose.onNodeWithText("更换 Logo").performClick()
 
         assertEquals(ImageKind.BRAND_LOGO, requestedKind)
-        assertEquals(ImageImportMode.WHOLE_IMAGE, requestedMode)
         compose.onNodeWithText("保存").performClick()
         assertEquals("replacement-logo", repository.savedBrand?.logoAssetId)
         assertEquals(false, imageStore.deletedAssetIds.contains("replacement-logo"))
@@ -235,7 +211,6 @@ class AppNavigationTest {
     private class RecordingImageStore : ImageStore {
         val deletedAssetIds = mutableListOf<String>()
 
-        override suspend fun importCropped(source: Uri, crop: CropRect, kind: ImageKind): ImageAsset = error("unused")
         override suspend fun importWhole(source: Uri, kind: ImageKind): ImageAsset = error("unused")
         override suspend fun deleteIfUnreferenced(assetId: String): Boolean {
             deletedAssetIds += assetId

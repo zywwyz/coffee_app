@@ -8,8 +8,6 @@ import androidx.room.Room
 import androidx.exifinterface.media.ExifInterface
 import com.niumi.coffeejournal.core.database.BrandEntity
 import com.niumi.coffeejournal.core.database.CoffeeDatabase
-import com.niumi.coffeejournal.importer.ImportedAssetSelection
-import com.niumi.coffeejournal.importer.associateImportedAsset
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
@@ -60,33 +58,6 @@ class ImageStoreTest {
     fun tearDown() {
         database.close()
         File(context.filesDir, "images").deleteRecursively()
-    }
-
-    @Test
-    fun `rejects crop outside oriented image bounds without writing file or row`() = runBlocking {
-        val source = bitmapFile("bounds", 80, 40)
-
-        try {
-            store.importCropped(Uri.fromFile(source), CropRect(0, 0, 81, 40), ImageKind.PRODUCT)
-            fail("expected invalid crop")
-        } catch (_: InvalidCropException) {
-        }
-
-        assertTrue(File(context.filesDir, "images").listFiles().isNullOrEmpty())
-    }
-
-    @Test
-    fun `confirmed crop stores only crop dimensions and deduplicates by sha256`() = runBlocking {
-        val source = bitmapFile("crop", 80, 40)
-
-        val first = store.importCropped(Uri.fromFile(source), CropRect(10, 5, 50, 25), ImageKind.PRODUCT)
-        val second = store.importCropped(Uri.fromFile(source), CropRect(10, 5, 50, 25), ImageKind.PRODUCT)
-
-        assertEquals(first.id, second.id)
-        assertEquals(1, File(context.filesDir, "images").listFiles()?.size)
-        val decoded = BitmapFactory.decodeFile(first.localPath)
-        assertEquals(40, decoded.width)
-        assertEquals(20, decoded.height)
     }
 
     @Test
@@ -193,21 +164,6 @@ class ImageStoreTest {
 
         assertTrue(File(context.filesDir, "images").listFiles().isNullOrEmpty())
         assertFalse(File(context.filesDir, "images").walkTopDown().any { it.name.endsWith(".tmp") })
-    }
-
-    @Test
-    fun `crop coordinates use exif oriented dimensions`() = runBlocking {
-        val source = bitmapFile("rotated", 80, 40, Bitmap.CompressFormat.JPEG)
-        ExifInterface(source).apply {
-            setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_ROTATE_90.toString())
-            saveAttributes()
-        }
-
-        val asset = store.importCropped(Uri.fromFile(source), CropRect(0, 0, 40, 80), ImageKind.PRODUCT)
-
-        val decoded = BitmapFactory.decodeFile(asset.localPath)
-        assertEquals(40, decoded.width)
-        assertEquals(80, decoded.height)
     }
 
     @Test

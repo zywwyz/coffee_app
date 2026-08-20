@@ -479,9 +479,6 @@ class CatalogRepositoryTest {
         val imported = mutableListOf<String>()
         val deleted = mutableListOf<String>()
 
-        override suspend fun importCropped(source: Uri, crop: com.niumi.coffeejournal.core.image.CropRect, kind: ImageKind): ImageAsset =
-            error("unexpected")
-
         override suspend fun importWhole(source: Uri, kind: ImageKind): ImageAsset {
             val id = "import-${imported.size + 1}"
             imported += id

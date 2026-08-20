@@ -17,7 +17,7 @@ import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.MaintenanceMode
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
-import com.niumi.coffeejournal.importer.ImportedAssetSelection
+import com.niumi.coffeejournal.core.image.ImportedAssetSelection
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
@@ -204,7 +204,7 @@ class CatalogScreenRobolectricTest {
                         org.junit.Assert.assertEquals(CatalogAssetKind.BEAN_PACKAGE, kind)
                         runBlocking {
                             org.junit.Assert.assertTrue(
-                                callback(ImportedAssetSelection("real-product-image", "截图候选名", 990)),
+                                callback(ImportedAssetSelection("real-product-image")),
                             )
                         }
                     },
@@ -239,7 +239,7 @@ class CatalogScreenRobolectricTest {
                         onRequestAsset = { _, _, callback ->
                             runBlocking {
                                 org.junit.Assert.assertTrue(
-                                    callback(ImportedAssetSelection("staged-image", null, null)),
+                                    callback(ImportedAssetSelection("staged-image")),
                                 )
                             }
                         },

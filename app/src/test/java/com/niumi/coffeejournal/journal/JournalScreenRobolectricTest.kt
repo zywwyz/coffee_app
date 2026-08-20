@@ -79,7 +79,7 @@ class JournalScreenRobolectricTest {
     }
 
     @Test
-    fun `missing image dialog exposes screenshot select and skip actions`() {
+    fun `missing image dialog exposes real image and brand logo actions`() {
         compose.setContent {
             CoffeeTheme {
                 RecordDrinkScreen(
@@ -88,13 +88,13 @@ class JournalScreenRobolectricTest {
                     items = emptyList(),
                     onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {},
                     onRatingChange = {}, onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {},
-                    onSave = {}, onBack = {}, onScreenshot = {}, onSelectImage = {}, onSkipImage = {},
+                    onSave = {}, onBack = {}, onSelectImage = {}, onSkipImage = {},
                 )
             }
         }
 
-        compose.onNodeWithText("上传完整截图").assertIsDisplayed()
-        compose.onNodeWithText("选择图片").assertIsDisplayed()
+        compose.onNodeWithText("选择实拍图片").assertIsDisplayed()
+        compose.onNodeWithText("当前产品没有图片。选择实拍图片，或使用品牌 Logo。").assertIsDisplayed()
         compose.onNodeWithText("暂时跳过").assertIsDisplayed()
     }
 
@@ -108,7 +108,7 @@ class JournalScreenRobolectricTest {
                     brands = emptyList(), items = emptyList(),
                     onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {},
                     onRatingChange = {}, onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {},
-                    onSave = {}, onBack = {}, onScreenshot = {}, onSelectImage = {}, onSkipImage = {},
+                    onSave = {}, onBack = {}, onSelectImage = {}, onSkipImage = {},
                     onAddProduct = { requested = true },
                 )
             }
@@ -184,7 +184,7 @@ class JournalScreenRobolectricTest {
                     items = listOf(item),
                     onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {},
                     onRatingChange = {}, onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {},
-                    onSave = {}, onBack = {}, onScreenshot = {}, onSelectImage = {}, onSkipImage = {},
+                    onSave = {}, onBack = {}, onSelectImage = {}, onSkipImage = {},
                 )
             }
         }
@@ -204,7 +204,7 @@ class JournalScreenRobolectricTest {
                     brands = emptyList(), items = emptyList(),
                     onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {},
                     onRatingChange = {}, onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {},
-                    onSave = {}, onBack = {}, onScreenshot = {}, onSelectImage = {}, onSkipImage = {},
+                    onSave = {}, onBack = {}, onSelectImage = {}, onSkipImage = {},
                 )
             }
         }
@@ -222,7 +222,7 @@ class JournalScreenRobolectricTest {
                     brands = emptyList(), items = emptyList(),
                     onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {},
                     onRatingChange = {}, onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {},
-                    onSave = {}, onBack = {}, onScreenshot = {}, onSelectImage = {}, onSkipImage = {},
+                    onSave = {}, onBack = {}, onSelectImage = {}, onSkipImage = {},
                 )
             }
         }
@@ -241,7 +241,7 @@ class JournalScreenRobolectricTest {
                     onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {},
                     onRatingChange = {}, onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {},
                     onSave = {}, onDiscardDraft = { discarded = true }, onBack = {},
-                    onScreenshot = {}, onSelectImage = {}, onSkipImage = {},
+                    onSelectImage = {}, onSkipImage = {},
                 )
             }
         }
@@ -270,7 +270,7 @@ class JournalScreenRobolectricTest {
                     brands = emptyList(), items = emptyList(),
                     onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {},
                     onRatingChange = {}, onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {},
-                    onSave = {}, onBack = {}, onScreenshot = {}, onSelectImage = {}, onSkipImage = {},
+                    onSave = {}, onBack = {}, onSelectImage = {}, onSkipImage = {},
                 )
             }
         }

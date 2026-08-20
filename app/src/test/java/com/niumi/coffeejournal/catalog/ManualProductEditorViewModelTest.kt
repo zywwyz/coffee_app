@@ -127,5 +127,5 @@ class ManualProductEditorViewModelTest {
         override suspend fun getBrand(brandId:String)=error("unused"); override suspend fun getItem(itemId:String)=items.value.single()
         override suspend fun upsertBrand(brand:Brand)=Unit; override suspend fun upsertItem(item:CatalogItem){gate?.await(); if(duplicate) throw DuplicateCatalogNameException(item.name); if(fail) { fail=false; error("fail") }; items.value=items.value.filterNot{it.id==item.id}+item}; override suspend fun lastPriceFen(itemId:String)=null
     }
-    private class Images : ImageStore { val deleted=mutableListOf<String>(); override suspend fun deleteIfUnreferenced(assetId:String):Boolean { deleted += assetId; return true }; override suspend fun importCropped(source:Uri,crop:CropRect,kind:ImageKind)=error("unused"); override suspend fun importWhole(source:Uri,kind:ImageKind)=error("unused") }
+    private class Images : ImageStore { val deleted=mutableListOf<String>(); override suspend fun deleteIfUnreferenced(assetId:String):Boolean { deleted += assetId; return true }; override suspend fun importWhole(source:Uri,kind:ImageKind)=error("unused") }
 }
