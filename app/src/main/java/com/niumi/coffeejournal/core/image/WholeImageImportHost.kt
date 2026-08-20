@@ -38,9 +38,9 @@ suspend fun associateImportedAsset(
 } catch (error: CancellationException) {
     withContext(NonCancellable) { runCatching { imageStore.deleteIfUnreferenced(selection.assetId) } }
     throw error
-} catch (_: Exception) {
+} catch (error: Exception) {
     runCatching { imageStore.deleteIfUnreferenced(selection.assetId) }
-    false
+    throw error
 }
 
 @Composable

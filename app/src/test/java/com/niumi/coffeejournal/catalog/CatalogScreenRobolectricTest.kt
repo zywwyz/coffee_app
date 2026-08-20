@@ -262,7 +262,7 @@ class CatalogScreenRobolectricTest {
         brandOverviews = listOf(
             BrandOverview(
                 Brand("brand", BrandType.CHAIN, "瑞幸", null, MaintenanceMode.MANUAL_ONLY, null),
-                itemCount = 1, lastUpdatedAtEpochMillis = null,
+                itemCount = 1,
             ),
         ),
         beanStatus = ItemStatus.ACTIVE,
@@ -270,6 +270,6 @@ class CatalogScreenRobolectricTest {
 
     private fun beanState() = state().copy(
         tab = CatalogTab.BEANS,
-        brandOverviews = listOf(BrandOverview(Brand("brand", BrandType.ROASTER, "烘焙商", null, MaintenanceMode.MANUAL_ONLY, null), 0, null)),
+        brandOverviews = listOf(BrandOverview(Brand("brand", BrandType.ROASTER, "烘焙商", null, MaintenanceMode.MANUAL_ONLY, null), 0)),
     )
 }

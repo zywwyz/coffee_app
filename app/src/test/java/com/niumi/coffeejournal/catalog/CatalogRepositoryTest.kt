@@ -263,11 +263,6 @@ class CatalogRepositoryTest {
             BrandEntity("legacy-cotti", "CHAIN", "库迪咖啡", "库迪咖啡", userLogo.id, "MANUAL_ONLY", null),
         )
         repository.upsertItem(item("冷萃").copy(id = "legacy-item", brandId = "legacy-cotti"))
-        database.catalogUpdateDao().insert(
-            com.niumi.coffeejournal.core.database.CatalogUpdateEntity(
-                "legacy-update", "legacy-cotti", 1, "CONFIRMED", null, null,
-            ),
-        )
         val seeded = logoRepository(images)
 
         seeded.ensureSeedBrands()
@@ -276,7 +271,6 @@ class CatalogRepositoryTest {
         assertEquals("库迪咖啡", cotti.name)
         assertEquals(userLogo.id, cotti.logoAssetId)
         assertEquals("seed-chain-cotti", database.catalogItemDao().get("legacy-item")?.brandId)
-        assertEquals("seed-chain-cotti", database.catalogUpdateDao().latest("seed-chain-cotti")?.brandId)
         seeded.upsertBrand(cotti.copy(name = "我的库迪"))
         logoRepository(images).ensureSeedBrands()
 
@@ -284,12 +278,11 @@ class CatalogRepositoryTest {
         assertEquals("我的库迪", seeded.getBrand("seed-chain-cotti").name)
         assertEquals(userLogo.id, seeded.getBrand("seed-chain-cotti").logoAssetId)
         assertEquals("seed-chain-cotti", database.catalogItemDao().get("legacy-item")?.brandId)
-        assertEquals("seed-chain-cotti", database.catalogUpdateDao().latest("seed-chain-cotti")?.brandId)
         assertEquals(11, images.imported.size)
     }
 
     @Test
-    fun `failed alias adoption rolls back brand items and updates together`() = runBlocking {
+    fun `legacy catalog updates remain untouched during alias adoption`() = runBlocking {
         database.brandDao().upsert(
             BrandEntity("legacy-cotti", "CHAIN", "库迪咖啡", "库迪咖啡", null, "MANUAL_ONLY", null),
         )
@@ -299,20 +292,11 @@ class CatalogRepositoryTest {
                 "legacy-update", "legacy-cotti", 1, "CONFIRMED", null, null,
             ),
         )
-        database.openHelper.writableDatabase.execSQL(
-            """CREATE TRIGGER reject_brand_adoption BEFORE UPDATE OF brandId ON catalog_updates
-               WHEN OLD.brandId = 'legacy-cotti' BEGIN SELECT RAISE(ABORT, 'test rollback'); END""",
-        )
+        repository.ensureSeedBrands()
 
-        try {
-            repository.ensureSeedBrands()
-            fail("Expected the controlled migration failure")
-        } catch (_: android.database.sqlite.SQLiteConstraintException) {
-        }
-
-        assertNotNull(database.brandDao().get("legacy-cotti"))
-        assertNull(database.brandDao().get("seed-chain-cotti"))
-        assertEquals("legacy-cotti", database.catalogItemDao().get("legacy-item")?.brandId)
+        assertNull(database.brandDao().get("legacy-cotti"))
+        assertNotNull(database.brandDao().get("seed-chain-cotti"))
+        assertEquals("seed-chain-cotti", database.catalogItemDao().get("legacy-item")?.brandId)
         assertEquals("legacy-cotti", database.catalogUpdateDao().latest("legacy-cotti")?.brandId)
     }
 
@@ -363,19 +347,11 @@ class CatalogRepositoryTest {
     }
 
     @Test
-    fun `brand overview reports item count and latest confirmed update`() = runBlocking {
+    fun `brand overview reports item count without reading updates`() = runBlocking {
         repository.upsertBrand(brand())
         repository.upsertItem(item(name = "拿铁"))
-        database.catalogUpdateDao().insert(
-            com.niumi.coffeejournal.core.database.CatalogUpdateEntity(
-                id = "update", brandId = BRAND_ID, fetchedAtEpochMillis = 1234,
-                status = "CONFIRMED", sourceUrl = null, errorMessage = null,
-            ),
-        )
-
         val overview = repository.observeBrandOverviews(BrandType.CHAIN).first().single()
         assertEquals(1, overview.itemCount)
-        assertEquals(1234L, overview.lastUpdatedAtEpochMillis)
     }
 
     @Test
@@ -524,8 +500,6 @@ class CatalogRepositoryTest {
             delegate.renameId(fromBrandId, toBrandId)
         override suspend fun moveCatalogItemsBrandId(fromBrandId: String, toBrandId: String) =
             delegate.moveCatalogItemsBrandId(fromBrandId, toBrandId)
-        override suspend fun moveCatalogUpdatesBrandId(fromBrandId: String, toBrandId: String) =
-            delegate.moveCatalogUpdatesBrandId(fromBrandId, toBrandId)
         override suspend fun deleteById(id: String) = delegate.deleteById(id)
         override suspend fun existsNamedOther(type: String, name: String, id: String): Boolean {
             if (!injected) {

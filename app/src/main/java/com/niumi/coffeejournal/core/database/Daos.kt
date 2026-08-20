@@ -50,7 +50,6 @@ interface BrandDao {
     suspend fun adoptAsBundledId(legacy: BrandEntity, bundledId: String) {
         if (legacy.id == bundledId || get(bundledId) != null) return
         renameId(legacy.id, bundledId)
-        moveCatalogUpdatesBrandId(legacy.id, bundledId)
     }
 
     @Query("UPDATE brands SET id = :toBrandId WHERE id = :fromBrandId")
@@ -58,9 +57,6 @@ interface BrandDao {
 
     @Query("UPDATE catalog_items SET brandId = :toBrandId WHERE brandId = :fromBrandId")
     suspend fun moveCatalogItemsBrandId(fromBrandId: String, toBrandId: String)
-
-    @Query("UPDATE catalog_updates SET brandId = :toBrandId WHERE brandId = :fromBrandId")
-    suspend fun moveCatalogUpdatesBrandId(fromBrandId: String, toBrandId: String)
 
     @Query("DELETE FROM brands WHERE id = :id")
     suspend fun deleteById(id: String)
@@ -73,9 +69,7 @@ interface BrandDao {
     @Query(
         """
         SELECT b.*,
-          (SELECT COUNT(*) FROM catalog_items i WHERE i.brandId = b.id) AS itemCount,
-          (SELECT MAX(u.fetchedAtEpochMillis) FROM catalog_updates u
-             WHERE u.brandId = b.id AND u.status = 'CONFIRMED') AS lastUpdatedAtEpochMillis
+          (SELECT COUNT(*) FROM catalog_items i WHERE i.brandId = b.id) AS itemCount
         FROM brands b WHERE b.type = :type ORDER BY b.name
         """,
     )
@@ -91,7 +85,6 @@ data class BrandOverviewRow(
     val maintenanceMode: String,
     val publicSourceUrl: String?,
     val itemCount: Int,
-    val lastUpdatedAtEpochMillis: Long?,
 )
 
 @Dao

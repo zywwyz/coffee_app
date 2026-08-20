@@ -262,7 +262,6 @@ private fun BrandCard(
                 TextButton(onClick = onEdit, enabled = enabled) { Text("编辑") }
             }
             Text("${overview.itemCount} 个产品")
-            Text(overview.lastUpdatedAtEpochMillis?.let { "最后更新 ${formatCatalogTime(it)}" } ?: "尚未更新")
             if (selected) Text("已展开", color = MaterialTheme.colorScheme.primary)
         }
     }

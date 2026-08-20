@@ -29,7 +29,7 @@ interface CatalogRepository {
     fun observeBrands(type: BrandType): Flow<List<Brand>>
     fun observeItems(brandId: String): Flow<List<CatalogItem>>
     fun observeBrandOverviews(type: BrandType): Flow<List<BrandOverview>> =
-        observeBrands(type).map { brands -> brands.map { BrandOverview(it, 0, null) } }
+        observeBrands(type).map { brands -> brands.map { BrandOverview(it, 0) } }
     suspend fun getBrand(brandId: String): Brand
     suspend fun getItem(itemId: String): CatalogItem
     suspend fun upsertBrand(brand: Brand)
@@ -41,7 +41,6 @@ interface CatalogRepository {
 data class BrandOverview(
     val brand: Brand,
     val itemCount: Int,
-    val lastUpdatedAtEpochMillis: Long?,
 )
 
 class CatalogItemNotFoundException(itemId: String) :
@@ -204,7 +203,6 @@ private fun BrandOverviewRow.toOverview() = BrandOverview(
         publicSourceUrl = publicSourceUrl,
     ),
     itemCount = itemCount,
-    lastUpdatedAtEpochMillis = lastUpdatedAtEpochMillis,
 )
 
 private fun CatalogItemEntity.toDomain() = CatalogItem(

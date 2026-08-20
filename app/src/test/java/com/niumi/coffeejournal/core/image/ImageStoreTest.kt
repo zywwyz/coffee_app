@@ -24,6 +24,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
+import kotlinx.coroutines.CancellationException
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertArrayEquals
@@ -58,6 +59,40 @@ class ImageStoreTest {
     fun tearDown() {
         database.close()
         File(context.filesDir, "images").deleteRecursively()
+    }
+
+    @Test
+    fun `association keeps imported asset only after successful association`() = runBlocking {
+        val imageStore = AssociationImageStore()
+        val selection = ImportedAssetSelection("new")
+
+        assertFalse(associateImportedAsset(imageStore, selection, "old") { false })
+        assertEquals(listOf("new"), imageStore.deleted)
+
+        imageStore.deleted.clear()
+        assertTrue(associateImportedAsset(imageStore, selection, "old") { true })
+        assertEquals(listOf("old"), imageStore.deleted)
+    }
+
+    @Test
+    fun `association cleans imported asset and propagates failures`() = runBlocking {
+        val imageStore = AssociationImageStore()
+        try {
+            associateImportedAsset(imageStore, ImportedAssetSelection("new")) { error("write failed") }
+            fail("expected write failure")
+        } catch (error: IllegalStateException) {
+            assertEquals("write failed", error.message)
+        }
+        assertEquals(listOf("new"), imageStore.deleted)
+
+        imageStore.deleted.clear()
+        try {
+            associateImportedAsset(imageStore, ImportedAssetSelection("cancel")) { throw CancellationException("cancelled") }
+            fail("expected cancellation")
+        } catch (error: CancellationException) {
+            assertEquals("cancelled", error.message)
+        }
+        assertEquals(listOf("cancel"), imageStore.deleted)
     }
 
     @Test
@@ -462,5 +497,16 @@ class ImageStoreTest {
                 delegate.dispatch(context, block)
             }
         }
+    }
+}
+
+private class AssociationImageStore : ImageStore {
+    val deleted = mutableListOf<String>()
+
+    override suspend fun importWhole(source: Uri, kind: ImageKind): ImageAsset = error("unused")
+
+    override suspend fun deleteIfUnreferenced(assetId: String): Boolean {
+        deleted += assetId
+        return true
     }
 }
