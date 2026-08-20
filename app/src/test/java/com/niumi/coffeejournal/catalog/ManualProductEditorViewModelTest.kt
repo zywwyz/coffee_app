@@ -13,6 +13,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -78,6 +80,40 @@ class ManualProductEditorViewModelTest {
         yield()
         vm.retrySelection()
         assertTrue(retried.await() is ManualProductEditorEvent.Saved)
+    }
+    @Test fun `saved action is delivered to a collector that starts after save`() = runBlocking {
+        val vm = ManualProductEditorViewModel(FakeRepository(), coroutineScope = CoroutineScope(Dispatchers.Unconfined), idGenerator = { "new" })
+        vm.openNew(brand()); vm.setName("美式"); vm.setKind(ChainProductKind.BLACK); vm.save(); yield()
+
+        assertEquals(ManualProductEditorEvent.Saved("new", "brand"), withTimeoutOrNull(1_000) { vm.events.first() })
+    }
+    @Test fun `unacknowledged saved action survives collector recreation`() = runBlocking {
+        val vm = ManualProductEditorViewModel(FakeRepository(), coroutineScope = CoroutineScope(Dispatchers.Unconfined), idGenerator = { "new" })
+        vm.openNew(brand()); vm.setName("美式"); vm.setKind(ChainProductKind.BLACK); vm.save(); yield()
+
+        val received = mutableListOf<ManualProductEditorEvent>()
+        val firstCollector = launch { vm.events.collect { received += it } }
+        yield()
+        assertEquals(1, received.size)
+        firstCollector.cancelAndJoin()
+        assertTrue(withTimeoutOrNull(1_000) { vm.events.first() } is ManualProductEditorEvent.Saved)
+    }
+    @Test fun `acknowledging saved action prevents delivery to recreated collector`() = runBlocking {
+        val vm = ManualProductEditorViewModel(FakeRepository(), coroutineScope = CoroutineScope(Dispatchers.Unconfined))
+        vm.openNew(brand()); vm.setName("美式"); vm.setKind(ChainProductKind.BLACK); vm.save(); yield(); vm.completeSaved()
+
+        assertNull(withTimeoutOrNull(50) { vm.events.first() })
+    }
+    @Test fun `selection retry emits one action after a failure`() = runBlocking {
+        val vm = ManualProductEditorViewModel(FakeRepository(), coroutineScope = CoroutineScope(Dispatchers.Unconfined))
+        val received = mutableListOf<ManualProductEditorEvent>()
+        val collector = launch { vm.events.collect { received += it } }
+        vm.openNew(brand()); vm.setName("美式"); vm.setKind(ChainProductKind.BLACK); vm.save(); yield(); vm.selectionFailed(); vm.retrySelection(); yield()
+
+        assertEquals(2, received.size)
+        yield()
+        assertEquals(2, received.size)
+        collector.cancelAndJoin()
     }
     @Test fun `cancelled save cleans staged image non cancellably`() = runBlocking {
         val images = Images(); val gate = CompletableDeferred<Unit>(); val scope = CoroutineScope(Job() + Dispatchers.Unconfined)

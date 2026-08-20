@@ -12,6 +12,7 @@ import com.niumi.coffeejournal.core.model.ItemType
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +33,7 @@ data class ManualProductEditorState(
 
 sealed interface ManualProductEditorEvent { data class Saved(val itemId: String, val brandId: String) : ManualProductEditorEvent }
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ManualProductEditorViewModel(
     private val repository: CatalogRepository,
     private val imageStore: ImageStore? = null,
@@ -41,7 +43,7 @@ class ManualProductEditorViewModel(
     private val scope = coroutineScope ?: viewModelScope
     private val mutableState = MutableStateFlow(ManualProductEditorState())
     val state: StateFlow<ManualProductEditorState> = mutableState.asStateFlow()
-    private val mutableEvents = MutableSharedFlow<ManualProductEditorEvent>(extraBufferCapacity = 1)
+    private val mutableEvents = MutableSharedFlow<ManualProductEditorEvent>(replay = 1)
     val events: SharedFlow<ManualProductEditorEvent> = mutableEvents.asSharedFlow()
     private val operationMutex = Mutex()
     private var stagedAssetId: String? = null
@@ -67,7 +69,7 @@ class ManualProductEditorViewModel(
         stagedAssetId?.let { deleteQuietly(it) }; stagedAssetId = null
         mutableState.value = mutableState.value.copy(imageAssetId = null)
     } } }
-    fun dismiss() { scope.launch { operationMutex.withLock { cleanupStaged(); pendingSavedEvent = null; mutableState.value = ManualProductEditorState() } } }
+    fun dismiss() { scope.launch { operationMutex.withLock { cleanupStaged(); clearSavedAction(); mutableState.value = ManualProductEditorState() } } }
     fun save() {
         val snapshot = mutableState.value; val brand = snapshot.brand ?: return
         val name = snapshot.name.trim()
@@ -108,7 +110,7 @@ class ManualProductEditorViewModel(
     /** Closes a saved editor after its caller has completed any follow-up action. */
     fun completeSaved() {
         if (mutableState.value.saving) {
-            pendingSavedEvent = null
+            clearSavedAction()
             mutableState.value = ManualProductEditorState()
         }
     }
@@ -125,6 +127,10 @@ class ManualProductEditorViewModel(
         val event = pendingSavedEvent ?: return
         mutableState.value = mutableState.value.copy(saving = true, errorMessage = null)
         scope.launch { mutableEvents.emit(event) }
+    }
+    private fun clearSavedAction() {
+        pendingSavedEvent = null
+        mutableEvents.resetReplayCache()
     }
     private suspend fun cleanupStaged() { stagedAssetId?.let { deleteQuietly(it) }; stagedAssetId = null }
     private suspend fun deleteQuietly(assetId: String) { withContext(NonCancellable) { runCatching { imageStore?.deleteIfUnreferenced(assetId) } } }
