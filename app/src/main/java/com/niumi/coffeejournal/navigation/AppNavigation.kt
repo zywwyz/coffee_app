@@ -36,12 +36,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.niumi.coffeejournal.core.image.ImagePathResolver
 import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.core.image.ImageStore
-import com.niumi.coffeejournal.importer.AssetImportRequester
-import com.niumi.coffeejournal.importer.ImageImportHost
-import com.niumi.coffeejournal.importer.ImageImportMode
-import com.niumi.coffeejournal.importer.ScreenshotTextRecognizer
-import com.niumi.coffeejournal.importer.CatalogSourceProvider
-import com.niumi.coffeejournal.importer.CatalogUpdateGateway
+import com.niumi.coffeejournal.core.image.AssetImportRequester
+import com.niumi.coffeejournal.core.image.WholeImageImportHost
 import com.niumi.coffeejournal.journal.JournalFeature
 import com.niumi.coffeejournal.journal.JournalRepository
 import com.niumi.coffeejournal.journal.CalendarDisplayPreference
@@ -89,9 +85,6 @@ fun AppNavigation(
     calendarDisplayPreference: CalendarDisplayPreference = DefaultCalendarDisplayPreference,
     imagePathResolver: ImagePathResolver = ImagePathResolver { null },
     imageStore: ImageStore? = null,
-    screenshotTextRecognizer: ScreenshotTextRecognizer? = null,
-    catalogUpdateSources: CatalogSourceProvider? = null,
-    catalogUpdateGateway: CatalogUpdateGateway? = null,
     backupManager: BackupManager? = null,
     assetImportRequester: AssetImportRequester? = null,
 ) {
@@ -101,19 +94,15 @@ fun AppNavigation(
             calendarDisplayPreference = calendarDisplayPreference,
             imageStore = imageStore,
             assetImportRequester = assetImportRequester,
-            catalogUpdateSources = catalogUpdateSources,
-            catalogUpdateGateway = catalogUpdateGateway,
             backupManager = backupManager,
         )
-    } else if (imageStore != null && screenshotTextRecognizer != null) {
-        ImageImportHost(imageStore, screenshotTextRecognizer) { requester ->
+    } else if (imageStore != null) {
+        WholeImageImportHost(imageStore) { requester ->
             AppNavigationContent(
                 journalRepository, catalogRepository, imagePathResolver,
                 calendarDisplayPreference = calendarDisplayPreference,
                 imageStore = imageStore,
                 assetImportRequester = requester,
-                catalogUpdateSources = catalogUpdateSources,
-                catalogUpdateGateway = catalogUpdateGateway,
                 backupManager = backupManager,
             )
         }
@@ -121,8 +110,6 @@ fun AppNavigation(
         AppNavigationContent(
             journalRepository, catalogRepository, imagePathResolver,
             calendarDisplayPreference = calendarDisplayPreference,
-            catalogUpdateSources = catalogUpdateSources,
-            catalogUpdateGateway = catalogUpdateGateway,
             backupManager = backupManager,
         )
     }
@@ -135,9 +122,7 @@ private fun AppNavigationContent(
     imagePathResolver: ImagePathResolver,
     calendarDisplayPreference: CalendarDisplayPreference,
     imageStore: ImageStore? = null,
-    assetImportRequester: AssetImportRequester = { _, _, _, _ -> },
-    catalogUpdateSources: CatalogSourceProvider? = null,
-    catalogUpdateGateway: CatalogUpdateGateway? = null,
+    assetImportRequester: AssetImportRequester = { _, _, _ -> },
     backupManager: BackupManager? = null,
 ) {
     val backStack = rememberNavBackStack(Journal)
@@ -192,18 +177,14 @@ private fun AppNavigationContent(
                             repository = catalogRepository,
                             imageStore = imageStore,
                             imagePathResolver = imagePathResolver,
-                            updateSources = catalogUpdateSources,
-                            updateGateway = catalogUpdateGateway,
                             onRequestAsset = { _, kind, callback ->
                                 val imageKind = when (kind) {
                                     com.niumi.coffeejournal.catalog.CatalogAssetKind.BRAND_LOGO -> ImageKind.BRAND_LOGO
                                     com.niumi.coffeejournal.catalog.CatalogAssetKind.CHAIN_PRODUCT_IMAGE -> ImageKind.PRODUCT
                                     com.niumi.coffeejournal.catalog.CatalogAssetKind.BEAN_PACKAGE -> ImageKind.BEAN_PACKAGE
                                 }
-                                val mode = if (imageKind == ImageKind.PRODUCT) ImageImportMode.ASK else ImageImportMode.WHOLE_IMAGE
-                                assetImportRequester(imageKind, mode, null) { selection -> callback(selection) }
+                                assetImportRequester(imageKind, null) { selection -> callback(selection) }
                             },
-                            onRequestScreenshotAsset = catalogScreenshotAssetPicker(assetImportRequester),
                             onOpenSettings = { backStack.add(Settings) },
                             onOpenChainBrand = { backStack.add(ChainBrandProducts(it)) },
                         )
@@ -229,12 +210,6 @@ private fun AppNavigationContent(
         )
     }
 }
-
-internal fun catalogScreenshotAssetPicker(requester: AssetImportRequester): CatalogAssetPicker =
-    { previousAssetId, kind, callback ->
-        require(kind == CatalogAssetKind.CHAIN_PRODUCT_IMAGE)
-        requester(ImageKind.PRODUCT, ImageImportMode.SCREENSHOT, previousAssetId, callback)
-    }
 
 @Composable
 private fun RootContent(title: String, subtitle: String, onAction: () -> Unit) {
@@ -277,7 +252,7 @@ private fun ChainBrandProductsDestination(repository: CatalogRepository, imageSt
             onDismiss = { editingBrand = null }, onSave = catalog::saveBrand,
             onRequestAsset = { previous, kind, callback ->
                 check(kind == CatalogAssetKind.BRAND_LOGO)
-                assetImportRequester(ImageKind.BRAND_LOGO, ImageImportMode.WHOLE_IMAGE, previous, callback)
+                assetImportRequester(ImageKind.BRAND_LOGO, previous, callback)
             },
             onRetainAssetLease = catalog::retainAssetLease, onStageAsset = catalog::stageAsset, onDiscardAssetLease = catalog::discardAssetLease,
         )

@@ -49,8 +49,7 @@ import com.niumi.coffeejournal.core.image.LocalAssetImage
 import com.niumi.coffeejournal.core.model.DrinkRecord
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.image.ImageKind
-import com.niumi.coffeejournal.importer.AssetImportRequester
-import com.niumi.coffeejournal.importer.ImageImportMode
+import com.niumi.coffeejournal.core.image.AssetImportRequester
 import com.niumi.coffeejournal.TestTags
 import java.util.Calendar
 
@@ -59,7 +58,7 @@ fun JournalFeature(
     journalRepository: JournalRepository,
     catalogRepository: CatalogRepository,
     imagePathResolver: ImagePathResolver,
-    assetImportRequester: AssetImportRequester = { _, _, _, _ -> },
+    assetImportRequester: AssetImportRequester = { _, _, _ -> },
     imageStore: ImageStore? = null,
     calendarDisplayPreference: CalendarDisplayPreference = DefaultCalendarDisplayPreference,
     onOpenSettings: () -> Unit = {},
@@ -110,15 +109,9 @@ fun JournalFeature(
             onSave = journalViewModel::save,
             onDiscardDraft = journalViewModel::discardDraft,
             onBack = { editorOpen = false },
-            onScreenshot = {
-                val previousAssetId = state.items.firstOrNull { it.id == state.editor.selectedItemId }?.imageAssetId
-                assetImportRequester(ImageKind.PRODUCT, ImageImportMode.SCREENSHOT, previousAssetId) { selection ->
-                    journalViewModel.attachImportedImage(selection.assetId, selection.actualPriceFen)
-                }
-            },
             onSelectImage = {
                 val previousAssetId = state.items.firstOrNull { it.id == state.editor.selectedItemId }?.imageAssetId
-                assetImportRequester(ImageKind.PRODUCT, ImageImportMode.WHOLE_IMAGE, previousAssetId) { selection ->
+                assetImportRequester(ImageKind.PRODUCT, previousAssetId) { selection ->
                     journalViewModel.attachImportedImage(selection.assetId, null)
                 }
             },

@@ -56,7 +56,6 @@ fun RecordDrinkScreen(
     onSave: () -> Unit,
     onDiscardDraft: () -> Unit = {},
     onBack: () -> Unit,
-    onScreenshot: () -> Unit,
     onSelectImage: () -> Unit,
     onSkipImage: () -> Unit,
     onAddProduct: () -> Unit = {},
@@ -207,7 +206,7 @@ fun RecordDrinkScreen(
     }
 
     if (state.needsImagePrompt) {
-        MissingImageDialog(!editorBusy, onScreenshot, onSelectImage, onSkipImage)
+        MissingImageDialog(!editorBusy, onSelectImage, onSkipImage)
     }
     if (confirmDiscard) {
         AlertDialog(
@@ -251,7 +250,6 @@ private fun <T> SelectionRow(
 @Composable
 private fun MissingImageDialog(
     enabled: Boolean,
-    onScreenshot: () -> Unit,
     onSelectImage: () -> Unit,
     onSkip: () -> Unit,
 ) {
@@ -259,11 +257,10 @@ private fun MissingImageDialog(
         modifier = Modifier.testTag(TestTags.MissingImagePrompt),
         onDismissRequest = onSkip,
         title = { Text("为产品补充图片") },
-        text = { Text("当前产品没有图片。可以上传原始屏幕截图，稍后由本机裁剪；也可以选择已裁好的图片，或先使用品牌 Logo。") },
+        text = { Text("当前产品没有图片。选择实拍图片，或使用品牌 Logo。") },
         confirmButton = {
             Column {
-                Button(onClick = onScreenshot, enabled = enabled) { Text("上传完整截图") }
-                OutlinedButton(onClick = onSelectImage, enabled = enabled) { Text("选择图片") }
+                Button(onClick = onSelectImage, enabled = enabled) { Text("选择实拍图片") }
             }
         },
         dismissButton = { TextButton(onClick = onSkip, enabled = enabled) { Text("暂时跳过") } },

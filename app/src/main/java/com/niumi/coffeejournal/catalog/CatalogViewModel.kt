@@ -27,7 +27,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import com.niumi.coffeejournal.importer.validatePublicSourceConfiguration
 
 enum class CatalogTab { CHAINS, BEANS }
 
@@ -35,8 +34,8 @@ data class BrandEditor(
     val type: BrandType,
     val name: String,
     val logoAssetId: String?,
-    val maintenanceMode: MaintenanceMode,
-    val publicSourceUrl: String?,
+    val maintenanceMode: MaintenanceMode = MaintenanceMode.MANUAL_ONLY,
+    val publicSourceUrl: String? = null,
     val id: String? = null,
     val assetLeaseId: String? = null,
 )
@@ -140,7 +139,7 @@ class CatalogViewModel(
                 Brand(
                     id = editor.id ?: idGenerator(), type = editor.type, name = name,
                     logoAssetId = editor.logoAssetId, maintenanceMode = editor.maintenanceMode,
-                    publicSourceUrl = validatePublicSourceConfiguration(editor.maintenanceMode, editor.publicSourceUrl),
+                    publicSourceUrl = null,
                 ),
             )
         } catch (error: Throwable) {

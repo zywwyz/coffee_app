@@ -23,7 +23,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 interface ImageStore {
-    suspend fun importCropped(source: Uri, crop: CropRect, kind: ImageKind = ImageKind.PRODUCT): ImageAsset
     suspend fun importWhole(source: Uri, kind: ImageKind): ImageAsset
     suspend fun deleteIfUnreferenced(assetId: String): Boolean
 }
@@ -58,21 +57,6 @@ data class ImageAsset(
     val kind: ImageKind,
 )
 
-data class CropRect(val left: Int, val top: Int, val right: Int, val bottom: Int) {
-    val width: Int get() = right - left
-    val height: Int get() = bottom - top
-
-    fun requireInside(width: Int, height: Int): CropRect {
-        if (this.width <= 0 || this.height <= 0 || left < 0 || top < 0 || right > width || bottom > height) {
-            throw InvalidCropException(this, width, height)
-        }
-        return this
-    }
-}
-
-class InvalidCropException(crop: CropRect, width: Int, height: Int) :
-    IllegalArgumentException("Crop $crop is outside ${width}x$height")
-
 class ImageDecodeException : IllegalArgumentException("The selected image cannot be decoded")
 
 internal class LocalImageStore(
@@ -90,18 +74,6 @@ internal class LocalImageStore(
 ) : ImageStore {
     private val resolver: ContentResolver = context.applicationContext.contentResolver
     private val imageDirectory = File(context.applicationContext.filesDir, "images")
-
-    override suspend fun importCropped(source: Uri, crop: CropRect, kind: ImageKind): ImageAsset =
-        importConfirmed(source, kind) { decoded ->
-            crop.requireInside(decoded.orientedWidth, decoded.orientedHeight)
-            val left = (crop.left * decoded.bitmap.width.toDouble() / decoded.orientedWidth).toInt()
-            val top = (crop.top * decoded.bitmap.height.toDouble() / decoded.orientedHeight).toInt()
-            val right = (crop.right * decoded.bitmap.width.toDouble() / decoded.orientedWidth).toInt()
-                .coerceAtLeast(left + 1).coerceAtMost(decoded.bitmap.width)
-            val bottom = (crop.bottom * decoded.bitmap.height.toDouble() / decoded.orientedHeight).toInt()
-                .coerceAtLeast(top + 1).coerceAtMost(decoded.bitmap.height)
-            Bitmap.createBitmap(decoded.bitmap, left, top, right - left, bottom - top)
-        }
 
     override suspend fun importWhole(source: Uri, kind: ImageKind): ImageAsset {
         var temporary: File? = null

@@ -19,9 +19,6 @@ class MainActivity : ComponentActivity() {
                     calendarDisplayPreference = app.calendarDisplayPreference,
                     imagePathResolver = app.imagePathResolver,
                     imageStore = app.imageStore,
-                    screenshotTextRecognizer = app.screenshotTextRecognizer,
-                    catalogUpdateSources = app.catalogUpdateSources,
-                    catalogUpdateGateway = app.catalogUpdateGateway,
                     backupManager = app.backupManager,
                 )
             }

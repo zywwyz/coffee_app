@@ -34,8 +34,7 @@ import com.niumi.coffeejournal.core.image.ThumbnailLoader
 import com.niumi.coffeejournal.core.image.CalendarThumbnailLoader
 import androidx.compose.runtime.remember
 import com.niumi.coffeejournal.core.model.ChainProductKind
-import com.niumi.coffeejournal.importer.AssetImportRequester
-import com.niumi.coffeejournal.importer.ImageImportMode
+import com.niumi.coffeejournal.core.image.AssetImportRequester
 
 @Composable
 fun ManualProductEditorDialog(
@@ -66,7 +65,7 @@ fun ManualProductEditorDialog(
                     else Text(if (previewAssetId == null) "暂无图片" else "图片无法加载")
                 }
                 OutlinedButton(onClick = {
-                    assetImportRequester(ImageKind.PRODUCT, ImageImportMode.WHOLE_IMAGE, state.imageAssetId) { selection -> viewModel.acceptImportedAsset(selection.assetId) }
+                    assetImportRequester(ImageKind.PRODUCT, state.imageAssetId) { selection -> viewModel.acceptImportedAsset(selection.assetId) }
                 }, enabled = !state.saving) { Text(if (state.imageAssetId == null) "选择实拍图" else "更换实拍图") }
                 if (state.imageAssetId != null) TextButton(onClick = viewModel::removePhoto, enabled = !state.saving) { Text("移除实拍图") }
                 state.errorMessage?.let {
