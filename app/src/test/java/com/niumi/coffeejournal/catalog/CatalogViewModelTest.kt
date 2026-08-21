@@ -216,6 +216,55 @@ class CatalogViewModelTest {
     }
 
     @Test
+    fun `brand editor session survives recomposition with a stable lease and staged asset`() = runBlocking {
+        val viewModel = viewModel(FakeCatalogRepository(), RecordingImageStore())
+
+        viewModel.openBrandEditor(null, BrandType.CHAIN)
+        val opened = viewModel.uiState.value.editorSession as CatalogEditorSession.Brand
+        viewModel.openBrandEditor(null, BrandType.CHAIN)
+        assertEquals(opened.leaseId, (viewModel.uiState.value.editorSession as CatalogEditorSession.Brand).leaseId)
+
+        assertTrue(viewModel.stageAsset(opened.leaseId, null, "logo"))
+        assertEquals("logo", (viewModel.uiState.value.editorSession as CatalogEditorSession.Brand).assetId)
+    }
+
+    @Test
+    fun `explicit editor close cleans session lease while configuration disposal does not`() = runBlocking {
+        val images = RecordingImageStore()
+        val viewModel = viewModel(FakeCatalogRepository(), images)
+        viewModel.openItemEditor(item(ItemStatus.ACTIVE), Brand("roaster", BrandType.ROASTER, "烘焙商"))
+        val leaseId = (viewModel.uiState.value.editorSession as CatalogEditorSession.Item).leaseId
+        assertTrue(viewModel.stageAsset(leaseId, null, "image"))
+
+        assertEquals("image", (viewModel.uiState.value.editorSession as CatalogEditorSession.Item).assetId)
+        assertTrue(images.deleteAttempts.isEmpty())
+        viewModel.closeEditor()
+        yield()
+
+        assertEquals(null, viewModel.uiState.value.editorSession)
+        assertEquals(listOf("image"), images.deleteAttempts)
+    }
+
+    @Test
+    fun `successful save clears editor session while failed save retains it`() = runBlocking {
+        val repository = FakeCatalogRepository().apply { failItemSave = true }
+        val viewModel = viewModel(repository, RecordingImageStore())
+        val brand = Brand("roaster", BrandType.ROASTER, "烘焙商")
+        viewModel.openItemEditor(null, brand)
+        val session = viewModel.uiState.value.editorSession as CatalogEditorSession.Item
+        assertTrue(viewModel.stageAsset(session.leaseId, null, "image"))
+
+        viewModel.saveItem(editor(imageAssetId = "image", assetLeaseId = session.leaseId))
+        yield()
+        assertEquals(session.leaseId, viewModel.uiState.value.editorSession?.leaseId)
+
+        repository.failItemSave = false
+        viewModel.saveItem(editor(imageAssetId = "image", assetLeaseId = session.leaseId))
+        yield()
+        assertEquals(null, viewModel.uiState.value.editorSession)
+    }
+
+    @Test
     fun `selection arriving after retained editor lease is discarded is rejected`() = runBlocking {
         val repository = FakeCatalogRepository()
         val images = RecordingImageStore()

@@ -49,6 +49,22 @@ class CatalogScreenRobolectricTest {
     }
 
     @Test
+    fun `editor session asset is rendered after a new composition`() {
+        val session = CatalogEditorSession.Brand(null, BrandType.ROASTER, "stable-lease", "persisted-logo")
+        compose.setContent {
+            CoffeeTheme {
+                CatalogScreen(
+                    state = beanState().copy(editorSession = session), onSelectTab = {}, onSelectBrand = {},
+                    onSelectBeanStatus = {}, onSaveBrand = {}, onSaveItem = {},
+                    onSetItemStatus = { _, _ -> }, onClearError = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("更换 Logo").assertIsDisplayed()
+    }
+
+    @Test
     fun `brand editor exposes replaceable asset boundary and disables save while saving`() {
         var assetRequested = false
         val screenState = mutableStateOf(beanState())
@@ -219,15 +235,17 @@ class CatalogScreenRobolectricTest {
     }
 
     @Test
-    fun `disposing an editor releases its staged image lease`() {
+    fun `disposing an editor does not release its staged image lease`() {
         val showCatalog = mutableStateOf(true)
         var stagedLeaseId: String? = null
-        var discardedLeaseId: String? = null
         compose.setContent {
             CoffeeTheme {
                 if (showCatalog.value) {
                     CatalogScreen(
-                        state = beanState().copy(selectedBrandId = "brand"),
+                        state = beanState().copy(
+                            selectedBrandId = "brand",
+                            editorSession = CatalogEditorSession.Item(null, Brand("brand", BrandType.ROASTER, "烘焙商"), "stable-lease", null),
+                        ),
                         onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {},
                         onSaveBrand = {}, onSaveItem = {}, onSetItemStatus = { _, _ -> },
                         onClearError = {},
@@ -235,7 +253,6 @@ class CatalogScreenRobolectricTest {
                             stagedLeaseId = leaseId
                             true
                         },
-                        onDiscardAssetLease = { discardedLeaseId = it },
                         onRequestAsset = { _, _, callback ->
                             runBlocking {
                                 org.junit.Assert.assertTrue(
@@ -248,14 +265,13 @@ class CatalogScreenRobolectricTest {
             }
         }
 
-        compose.onNodeWithText("新增豆子").performScrollTo().performClick()
         compose.onNodeWithText("选择图片").performScrollTo().performClick()
         compose.runOnIdle {
             org.junit.Assert.assertNotNull(stagedLeaseId)
             showCatalog.value = false
         }
         compose.waitForIdle()
-        compose.runOnIdle { org.junit.Assert.assertEquals(stagedLeaseId, discardedLeaseId) }
+        compose.runOnIdle { org.junit.Assert.assertNotNull(stagedLeaseId) }
     }
 
     private fun state() = CatalogUiState(

@@ -27,8 +27,6 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,7 +53,6 @@ import com.niumi.coffeejournal.core.image.ResolvedLocalAssetImage
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.UUID
 
 enum class CatalogAssetKind { BRAND_LOGO, CHAIN_PRODUCT_IMAGE, BEAN_PACKAGE }
 
@@ -86,9 +83,10 @@ fun CatalogFeature(
         onSetItemStatus = catalogViewModel::setItemStatus,
         onClearError = catalogViewModel::clearError,
         onRequestAsset = onRequestAsset,
-        onRetainAssetLease = catalogViewModel::retainAssetLease,
         onStageAsset = catalogViewModel::stageAsset,
-        onDiscardAssetLease = catalogViewModel::discardAssetLease,
+        onOpenBrandEditor = catalogViewModel::openBrandEditor,
+        onOpenItemEditor = catalogViewModel::openItemEditor,
+        onCloseEditor = catalogViewModel::closeEditor,
         onOpenSettings = onOpenSettings,
         onOpenChainBrand = onOpenChainBrand,
         imagePathResolver = imagePathResolver,
@@ -106,32 +104,15 @@ fun CatalogScreen(
     onSetItemStatus: (CatalogItem, ItemStatus) -> Unit,
     onClearError: () -> Unit,
     onRequestAsset: CatalogAssetPicker = { _, _, _ -> },
-    onRetainAssetLease: suspend (String, String?) -> Boolean = { _, _ -> true },
     onStageAsset: suspend (String, String?, String) -> Boolean = { _, _, _ -> true },
-    onDiscardAssetLease: (String) -> Unit = {},
+    onOpenBrandEditor: (Brand?, BrandType) -> Unit = { _, _ -> },
+    onOpenItemEditor: (CatalogItem?, Brand) -> Unit = { _, _ -> },
+    onCloseEditor: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onOpenChainBrand: (String) -> Unit = {},
     imagePathResolver: ImagePathResolver = ImagePathResolver { null },
 ) {
-    var brandEditor by remember { mutableStateOf<Brand?>(null) }
-    var showNewBrand by remember { mutableStateOf(false) }
-    var itemEditor by remember { mutableStateOf<CatalogItem?>(null) }
-    var showNewItem by remember { mutableStateOf(false) }
-    var pendingSave by remember { mutableStateOf<PendingCatalogSave?>(null) }
-    var lastHandledSaveToken by remember { mutableStateOf(state.saveCompletedToken) }
     val selectedBrand = state.brandOverviews.firstOrNull { it.brand.id == state.selectedBrandId }?.brand
-
-    LaunchedEffect(state.saveCompletedToken) {
-        if (state.saveCompletedToken > lastHandledSaveToken) {
-            when (pendingSave) {
-                PendingCatalogSave.BRAND -> { showNewBrand = false; brandEditor = null }
-                PendingCatalogSave.ITEM -> { showNewItem = false; itemEditor = null }
-                null -> Unit
-            }
-            pendingSave = null
-            lastHandledSaveToken = state.saveCompletedToken
-        }
-    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -145,13 +126,13 @@ fun CatalogScreen(
         if (state.tab == CatalogTab.CHAINS) {
             ChainBrandRoot(
                 brands = state.brandOverviews.map { it.brand }, imagePathResolver = imagePathResolver,
-                onOpen = onOpenChainBrand, onAdd = { showNewBrand = true },
+                onOpen = onOpenChainBrand, onAdd = { onOpenBrandEditor(null, BrandType.CHAIN) },
             )
         } else Column(
             modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Button(onClick = { showNewBrand = true }, enabled = !state.saving, modifier = Modifier.fillMaxWidth()) { Text("新增烘焙品牌") }
+            Button(onClick = { onOpenBrandEditor(null, BrandType.ROASTER) }, enabled = !state.saving, modifier = Modifier.fillMaxWidth()) { Text("新增烘焙品牌") }
 
             state.brandOverviews.forEach { overview ->
                 BrandCard(
@@ -159,7 +140,7 @@ fun CatalogScreen(
                     selected = overview.brand.id == state.selectedBrandId,
                     enabled = !state.saving,
                     onOpen = { onSelectBrand(overview.brand.id) },
-                    onEdit = { brandEditor = overview.brand },
+                    onEdit = { onOpenBrandEditor(overview.brand, overview.brand.type) },
                 )
             }
 
@@ -177,14 +158,14 @@ fun CatalogScreen(
 
             if (selectedBrand != null) {
                 Button(
-                    onClick = { showNewItem = true }, enabled = !state.saving,
+                    onClick = { onOpenItemEditor(null, selectedBrand) }, enabled = !state.saving,
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text(if (state.tab == CatalogTab.CHAINS) "新增连锁产品" else "新增豆子") }
             }
             state.visibleItems.forEach { item ->
                 ItemCard(
                     item = item,
-                    onEdit = { itemEditor = item },
+                    onEdit = { selectedBrand?.let { onOpenItemEditor(item, it) } },
                     onStatus = { onSetItemStatus(item, it) },
                     enabled = !state.saving,
                 )
@@ -192,35 +173,24 @@ fun CatalogScreen(
         }
     }
 
-    if (showNewBrand || brandEditor != null) {
+    (state.editorSession as? CatalogEditorSession.Brand)?.let { session ->
         BrandEditorDialog(
-            initial = brandEditor,
-            type = if (state.tab == CatalogTab.CHAINS) BrandType.CHAIN else BrandType.ROASTER,
+            session = session,
             saving = state.saving,
-            onDismiss = { showNewBrand = false; brandEditor = null; pendingSave = null },
-            onSave = { pendingSave = PendingCatalogSave.BRAND; onSaveBrand(it) },
+            onDismiss = onCloseEditor,
+            onSave = onSaveBrand,
             onRequestAsset = onRequestAsset,
-            onRetainAssetLease = onRetainAssetLease,
             onStageAsset = onStageAsset,
-            onDiscardAssetLease = onDiscardAssetLease,
         )
     }
-    val editorBrand = selectedBrand
-    if ((showNewItem || itemEditor != null) && editorBrand != null) {
+    (state.editorSession as? CatalogEditorSession.Item)?.let { session ->
         ItemEditorDialog(
-            initial = itemEditor,
-            brand = editorBrand,
+            session = session,
             saving = state.saving,
-            onDismiss = {
-                showNewItem = false
-                itemEditor = null
-                pendingSave = null
-            },
-            onSave = { pendingSave = PendingCatalogSave.ITEM; onSaveItem(it) },
+            onDismiss = onCloseEditor,
+            onSave = onSaveItem,
             onRequestAsset = onRequestAsset,
-            onRetainAssetLease = onRetainAssetLease,
             onStageAsset = onStageAsset,
-            onDiscardAssetLease = onDiscardAssetLease,
         )
     }
     state.errorMessage?.let { message ->
@@ -295,32 +265,28 @@ private fun ItemCard(
 
 @Composable
 fun BrandEditorDialog(
-    initial: Brand?, type: BrandType, saving: Boolean,
+    session: CatalogEditorSession.Brand, saving: Boolean,
     onDismiss: () -> Unit, onSave: (BrandEditor) -> Unit, onRequestAsset: CatalogAssetPicker,
-    onRetainAssetLease: suspend (String, String?) -> Boolean,
     onStageAsset: suspend (String, String?, String) -> Boolean,
-    onDiscardAssetLease: (String) -> Unit,
 ) {
-    val leaseId = remember(initial) { UUID.randomUUID().toString() }
+    val initial = session.initial
+    val type = session.type
+    val leaseId = session.leaseId
     var name by remember(initial) { mutableStateOf(initial?.name.orEmpty()) }
-    var logoAssetId by remember(initial) { mutableStateOf(initial?.logoAssetId) }
     var logoError by remember(initial) { mutableStateOf(false) }
-    DisposableEffect(leaseId) { onDispose { onDiscardAssetLease(leaseId) } }
-    LaunchedEffect(leaseId) { onRetainAssetLease(leaseId, initial?.logoAssetId) }
     EditorDialog(
         title = if (initial == null) "新增品牌" else "编辑品牌", saving = saving,
-        onDismiss = { onDiscardAssetLease(leaseId); onDismiss() },
+        onDismiss = onDismiss,
         onSave = {
-            if (type == BrandType.CHAIN && logoAssetId == null) logoError = true
-            else onSave(BrandEditor(type, name, logoAssetId, id = initial?.id, assetLeaseId = leaseId))
+            if (type == BrandType.CHAIN && session.assetId == null) logoError = true
+            else onSave(BrandEditor(type, name, session.assetId, id = initial?.id, assetLeaseId = leaseId))
         },
     ) {
         Field(name, { name = it }, "品牌名称", enabled = !saving)
         OutlinedButton(
             onClick = {
-                onRequestAsset(logoAssetId, CatalogAssetKind.BRAND_LOGO) { selection ->
+                onRequestAsset(session.assetId, CatalogAssetKind.BRAND_LOGO) { selection ->
                     if (onStageAsset(leaseId, initial?.logoAssetId, selection.assetId)) {
-                        logoAssetId = selection.assetId
                         logoError = false
                         true
                     } else false
@@ -328,7 +294,7 @@ fun BrandEditorDialog(
             },
             enabled = !saving,
         ) {
-            Text(if (logoAssetId == null) "选择 Logo" else "更换 Logo")
+            Text(if (session.assetId == null) "选择 Logo" else "更换 Logo")
         }
         if (logoError) Text("请先选择 Logo", color = MaterialTheme.colorScheme.error)
     }
@@ -336,15 +302,14 @@ fun BrandEditorDialog(
 
 @Composable
 private fun ItemEditorDialog(
-    initial: CatalogItem?, brand: Brand, saving: Boolean,
+    session: CatalogEditorSession.Item, saving: Boolean,
     onDismiss: () -> Unit, onSave: (ItemEditor) -> Unit, onRequestAsset: CatalogAssetPicker,
-    onRetainAssetLease: suspend (String, String?) -> Boolean,
     onStageAsset: suspend (String, String?, String) -> Boolean,
-    onDiscardAssetLease: (String) -> Unit,
 ) {
-    val leaseId = remember(initial) { UUID.randomUUID().toString() }
+    val initial = session.initial
+    val brand = session.brand
+    val leaseId = session.leaseId
     var name by remember(initial) { mutableStateOf(initial?.name.orEmpty()) }
-    var image by remember(initial) { mutableStateOf(initial?.imageAssetId) }
     var origin by remember(initial) { mutableStateOf(initial?.origin.orEmpty()) }
     var processing by remember(initial) { mutableStateOf(initial?.processing.orEmpty()) }
     var roast by remember(initial) { mutableStateOf(initial?.roastLevel.orEmpty()) }
@@ -361,11 +326,9 @@ private fun ItemEditorDialog(
     var chainProductKind by remember(initial) { mutableStateOf(initial?.chainProductKind) }
     var caffeineError by remember(initial) { mutableStateOf<String?>(null) }
     val type = if (brand.type == BrandType.CHAIN) ItemType.CHAIN_PRODUCT else ItemType.PERSONAL_BEAN
-    DisposableEffect(leaseId) { onDispose { onDiscardAssetLease(leaseId) } }
-    LaunchedEffect(leaseId) { onRetainAssetLease(leaseId, initial?.imageAssetId) }
     EditorDialog(
         title = if (initial == null) "新增${if (type == ItemType.PERSONAL_BEAN) "豆子" else "产品"}" else "编辑条目",
-        saving = saving, onDismiss = { onDiscardAssetLease(leaseId); onDismiss() },
+        saving = saving, onDismiss = onDismiss,
         onSave = {
             val caffeineResult = validateCaffeineInput(caffeine)
             if (caffeineResult is CaffeineInput.Invalid) {
@@ -375,7 +338,7 @@ private fun ItemEditorDialog(
             caffeineError = null
             onSave(
                 ItemEditor(
-                    brand.id, type, name, image, origin, processing, roast, flavors, brew, status,
+                    brand.id, type, name, session.assetId, origin, processing, roast, flavors, brew, status,
                     (caffeineResult as CaffeineInput.Valid).milligrams,
                     description, purchaseDate, roastDate, sourceUrl, initial?.id,
                     category, specification, leaseId, chainProductKind,
@@ -426,16 +389,15 @@ private fun ItemEditorDialog(
                 } else {
                     CatalogAssetKind.BEAN_PACKAGE
                 }
-                onRequestAsset(image, assetKind) { selection ->
+                onRequestAsset(session.assetId, assetKind) { selection ->
                     if (onStageAsset(leaseId, initial?.imageAssetId, selection.assetId)) {
-                        image = selection.assetId
                         true
                     } else false
                 }
             },
             enabled = !saving,
         ) {
-            Text(if (image == null) "选择图片" else "更换图片")
+            Text(if (session.assetId == null) "选择图片" else "更换图片")
         }
     }
 }
@@ -474,7 +436,6 @@ private fun Field(value: String, onChange: (String) -> Unit, label: String, enab
     )
 }
 
-private enum class PendingCatalogSave { BRAND, ITEM }
 
 private data class PendingScreenshotImport(val brandId: String, val token: String)
 

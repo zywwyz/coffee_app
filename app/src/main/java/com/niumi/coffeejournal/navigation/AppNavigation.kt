@@ -236,25 +236,19 @@ private fun ChainBrandProductsDestination(repository: CatalogRepository, imageSt
     LaunchedEffect(editor) {
         editor.events.collect { editor.completeSaved() }
     }
-    var editingBrand by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.niumi.coffeejournal.core.model.Brand?>(null) }
-    var handledSaveToken by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(catalogState.saveCompletedToken) }
-    LaunchedEffect(catalogState.saveCompletedToken) {
-        if (catalogState.saveCompletedToken > handledSaveToken) editingBrand = null
-        handledSaveToken = catalogState.saveCompletedToken
-    }
     brand?.let {
-        BrandProductsScreen(it, items, imagePathResolver, onBack, onEditBrand = { editingBrand = it }, onAddProduct = { editor.openNew(it) }, onEditProduct = { item -> editor.openEdit(it, item) })
+        BrandProductsScreen(it, items, imagePathResolver, onBack, onEditBrand = { catalog.openBrandEditor(it, com.niumi.coffeejournal.core.model.BrandType.CHAIN) }, onAddProduct = { editor.openNew(it) }, onEditProduct = { item -> editor.openEdit(it, item) })
         ManualProductEditorDialog(editor, assetImportRequester, imagePathResolver)
     }
-    editingBrand?.let { editable ->
+    (catalogState.editorSession as? com.niumi.coffeejournal.catalog.CatalogEditorSession.Brand)?.let { session ->
         BrandEditorDialog(
-            initial = editable, type = com.niumi.coffeejournal.core.model.BrandType.CHAIN, saving = catalogState.saving,
-            onDismiss = { editingBrand = null }, onSave = catalog::saveBrand,
+            session = session, saving = catalogState.saving,
+            onDismiss = catalog::closeEditor, onSave = catalog::saveBrand,
             onRequestAsset = { previous, kind, callback ->
                 check(kind == CatalogAssetKind.BRAND_LOGO)
                 assetImportRequester(ImageKind.BRAND_LOGO, previous, callback)
             },
-            onRetainAssetLease = catalog::retainAssetLease, onStageAsset = catalog::stageAsset, onDiscardAssetLease = catalog::discardAssetLease,
+            onStageAsset = catalog::stageAsset,
         )
     }
     catalogState.errorMessage?.let { message ->
