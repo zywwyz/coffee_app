@@ -10,7 +10,12 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class WholeImageImportCoordinatorTest {
     @Test
     fun `pending request survives new consumer and result is consumed once`() = runBlocking {
@@ -26,7 +31,7 @@ class WholeImageImportCoordinatorTest {
         assertEquals(1, store.imported.size)
         assertEquals(1, associated)
         assertFalse(coordinator.hasPendingRequest)
-        assertNull(coordinator.error)
+        assertNull(coordinator.error.value)
     }
 
     @Test
@@ -37,7 +42,7 @@ class WholeImageImportCoordinatorTest {
         assertTrue(coordinator.consumePickerResult(null))
 
         assertFalse(coordinator.hasPendingRequest)
-        assertNull(coordinator.error)
+        assertNull(coordinator.error.value)
     }
 
     @Test
@@ -50,7 +55,7 @@ class WholeImageImportCoordinatorTest {
 
         assertEquals(listOf("new"), store.deleted)
         assertTrue(coordinator.hasPendingRequest)
-        assertTrue(coordinator.error != null)
+        assertTrue(coordinator.error.value != null)
         assertTrue(coordinator.retry())
         assertTrue(coordinator.isAwaitingPicker)
     }
@@ -64,7 +69,7 @@ class WholeImageImportCoordinatorTest {
         coordinator.consumePickerResult(Uri.parse("content://image"))
 
         assertTrue(coordinator.hasPendingRequest)
-        assertTrue(coordinator.error != null)
+        assertTrue(coordinator.error.value != null)
         assertTrue(store.deleted.isEmpty())
     }
 
@@ -77,10 +82,10 @@ class WholeImageImportCoordinatorTest {
         coordinator.consumePickerResult(Uri.parse("content://image"))
 
         assertEquals(listOf("new"), store.deleted)
-        assertTrue(coordinator.error != null)
+        assertTrue(coordinator.error.value != null)
         coordinator.dismissError()
         assertFalse(coordinator.hasPendingRequest)
-        assertNull(coordinator.error)
+        assertNull(coordinator.error.value)
     }
 
     @Test
