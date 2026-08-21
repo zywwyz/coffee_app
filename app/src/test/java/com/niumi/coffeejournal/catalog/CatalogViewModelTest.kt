@@ -232,7 +232,7 @@ class CatalogViewModelTest {
     fun `explicit editor close cleans session lease while configuration disposal does not`() = runBlocking {
         val images = RecordingImageStore()
         val viewModel = viewModel(FakeCatalogRepository(), images)
-        viewModel.openItemEditor(item(ItemStatus.ACTIVE), Brand("roaster", BrandType.ROASTER, "烘焙商"))
+        viewModel.openItemEditor(item(ItemStatus.ACTIVE), Brand("roaster", BrandType.ROASTER, "烘焙商", null, MaintenanceMode.MANUAL_ONLY, null))
         val leaseId = (viewModel.uiState.value.editorSession as CatalogEditorSession.Item).leaseId
         assertTrue(viewModel.stageAsset(leaseId, null, "image"))
 
@@ -249,7 +249,7 @@ class CatalogViewModelTest {
     fun `successful save clears editor session while failed save retains it`() = runBlocking {
         val repository = FakeCatalogRepository().apply { failItemSave = true }
         val viewModel = viewModel(repository, RecordingImageStore())
-        val brand = Brand("roaster", BrandType.ROASTER, "烘焙商")
+        val brand = Brand("roaster", BrandType.ROASTER, "烘焙商", null, MaintenanceMode.MANUAL_ONLY, null)
         viewModel.openItemEditor(null, brand)
         val session = viewModel.uiState.value.editorSession as CatalogEditorSession.Item
         assertTrue(viewModel.stageAsset(session.leaseId, null, "image"))

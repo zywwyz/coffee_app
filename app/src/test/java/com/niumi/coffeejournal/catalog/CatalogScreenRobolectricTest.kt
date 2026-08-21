@@ -244,7 +244,7 @@ class CatalogScreenRobolectricTest {
                     CatalogScreen(
                         state = beanState().copy(
                             selectedBrandId = "brand",
-                            editorSession = CatalogEditorSession.Item(null, Brand("brand", BrandType.ROASTER, "烘焙商"), "stable-lease", null),
+                            editorSession = CatalogEditorSession.Item(null, Brand("brand", BrandType.ROASTER, "烘焙商", null, MaintenanceMode.MANUAL_ONLY, null), "stable-lease", null),
                         ),
                         onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {},
                         onSaveBrand = {}, onSaveItem = {}, onSetItemStatus = { _, _ -> },
