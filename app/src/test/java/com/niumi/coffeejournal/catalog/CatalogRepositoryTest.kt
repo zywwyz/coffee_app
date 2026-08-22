@@ -182,6 +182,31 @@ class CatalogRepositoryTest {
     }
 
     @Test
+    fun `deleting a chain product under a non-chain brand is protected`() = runBlocking {
+        val roaster = brand().copy(id = "roaster", type = BrandType.ROASTER)
+        val misplaced = item("不应删除").copy(id = "misplaced", brandId = roaster.id)
+        repository.upsertBrand(roaster)
+        repository.upsertItem(misplaced)
+
+        assertEquals(CatalogDeleteResult.Protected, repository.deleteCustomItem(misplaced.id))
+        assertNotNull(database.catalogItemDao().get(misplaced.id))
+    }
+
+    @Test
+    fun `deleting a product keeps its image when a drink snapshot still references it`() = runBlocking {
+        val images = RecordingBrandLogoStore(database)
+        val imageRepository = RoomCatalogRepository(database.brandDao(), database.catalogItemDao(), database.drinkDao(), images)
+        val image = images.persist("product-image")
+        imageRepository.upsertBrand(brand())
+        imageRepository.upsertItem(item("冷萃").copy(imageAssetId = image.id))
+        database.drinkDao().insert(record("snapshot", occurredAt = 2, priceFen = 990).copy(snapshotImageAssetId = image.id))
+
+        assertEquals(CatalogDeleteResult.Deleted, imageRepository.deleteCustomItem(ITEM_ID))
+        assertNotNull(database.imageAssetDao().get(image.id))
+        assertEquals(listOf(image.id), images.deleted)
+    }
+
+    @Test
     fun `unknown persisted enum reports field and value`() = runBlocking {
         database.brandDao().upsert(
             BrandEntity(

@@ -150,7 +150,11 @@ class RoomCatalogRepository(
     override suspend fun deleteCustomItem(itemId: String): CatalogDeleteResult {
         val item = catalogItemDao.get(itemId) ?: return CatalogDeleteResult.NotFound
         val brand = brandDao.get(item.brandId) ?: return CatalogDeleteResult.NotFound
-        if (item.type != ItemType.CHAIN_PRODUCT.name || brand.id in BUNDLED_CHAIN_BRANDS.map { it.brand.id }) return CatalogDeleteResult.Protected
+        if (
+            brand.type != BrandType.CHAIN.name ||
+            item.type != ItemType.CHAIN_PRODUCT.name ||
+            brand.id in BUNDLED_CHAIN_BRANDS.map { it.brand.id }
+        ) return CatalogDeleteResult.Protected
         catalogItemDao.deleteById(itemId)
         item.imageAssetId?.let { assetId -> runCatching { imageStore?.deleteIfUnreferenced(assetId) } }
         return CatalogDeleteResult.Deleted
