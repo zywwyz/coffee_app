@@ -47,4 +47,18 @@ class BrandProductsScreenTest {
         compose.onNodeWithText("编辑品牌").performClick()
         compose.runOnIdle { org.junit.Assert.assertEquals(1, edits) }
     }
+
+    @Test fun `custom child header exposes a cancellable brand delete action`() {
+        compose.setContent { CoffeeTheme {
+            BrandProductsScreen(
+                Brand("custom", BrandType.CHAIN, "自定义", "logo", MaintenanceMode.MANUAL_ONLY, null),
+                emptyList(), { null }, {}, {}, {}, {},
+            )
+        } }
+
+        compose.onNodeWithText("删除品牌").assertIsDisplayed().performClick()
+        compose.onNodeWithText("取消").assertIsDisplayed()
+        compose.onNodeWithText("确认删除").assertIsDisplayed()
+    }
+
 }

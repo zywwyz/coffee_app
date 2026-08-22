@@ -18,6 +18,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -50,6 +53,10 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
 import kotlinx.serialization.Serializable
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.map
+import com.niumi.coffeejournal.catalog.CatalogDeleteResult
+import com.niumi.coffeejournal.core.model.BrandType
 
 @Serializable
 data object Journal : NavKey
@@ -228,16 +235,40 @@ private fun RootContent(title: String, subtitle: String, onAction: () -> Unit) {
 
 @Composable
 private fun ChainBrandProductsDestination(repository: CatalogRepository, imageStore: ImageStore?, assetImportRequester: AssetImportRequester, brandId: String, imagePathResolver: ImagePathResolver, onBack: () -> Unit) {
-    val brand by produceState<com.niumi.coffeejournal.core.model.Brand?>(null, brandId) { value = repository.getBrand(brandId) }
+    val brands by repository.observeBrands(BrandType.CHAIN).collectAsState(initial = emptyList())
+    val brand = brands.firstOrNull { it.id == brandId }
     val items by repository.observeItems(brandId).collectAsState(initial = emptyList())
+    val scope = rememberCoroutineScope()
+    var deletionError by remember { mutableStateOf<String?>(null) }
+    var hasObservedBrand by remember(brandId) { mutableStateOf(false) }
     val editor: ManualProductEditorViewModel = viewModel(factory = ManualProductEditorViewModel.factory(repository, imageStore))
     val catalog: CatalogViewModel = viewModel(factory = CatalogViewModel.factory(repository, imageStore))
     val catalogState by catalog.uiState.collectAsState()
     LaunchedEffect(editor) {
         editor.events.collect { editor.completeSaved() }
     }
+    LaunchedEffect(brand) {
+        if (brand != null) hasObservedBrand = true
+        else if (hasObservedBrand) onBack()
+    }
     brand?.let {
-        BrandProductsScreen(it, items, imagePathResolver, onBack, onEditBrand = { catalog.openBrandEditor(it, com.niumi.coffeejournal.core.model.BrandType.CHAIN) }, onAddProduct = { editor.openNew(it) }, onEditProduct = { item -> editor.openEdit(it, item) })
+        BrandProductsScreen(
+            it, items, imagePathResolver, onBack,
+            onEditBrand = { catalog.openBrandEditor(it, BrandType.CHAIN) },
+            onAddProduct = { editor.openNew(it) }, onEditProduct = { item -> editor.openEdit(it, item) },
+            onDeleteBrand = {
+                scope.launch {
+                    when (repository.deleteCustomBrand(it.id)) {
+                        CatalogDeleteResult.Deleted -> onBack()
+                        CatalogDeleteResult.HasProducts -> deletionError = "请先删除该品牌下的产品"
+                        else -> deletionError = "无法删除该品牌"
+                    }
+                }
+            },
+            onDeleteProduct = { item -> scope.launch {
+                if (repository.deleteCustomItem(item.id) != CatalogDeleteResult.Deleted) deletionError = "无法删除该产品"
+            } },
+        )
         ManualProductEditorDialog(editor, assetImportRequester, imagePathResolver)
     }
     (catalogState.editorSession as? com.niumi.coffeejournal.catalog.CatalogEditorSession.Brand)?.let { session ->
@@ -251,6 +282,12 @@ private fun ChainBrandProductsDestination(repository: CatalogRepository, imageSt
             onStageAsset = catalog::stageAsset,
             onUpdateDraft = catalog::updateBrandDraft,
         )
+    }
+    deletionError?.let { message ->
+        val dismissError = {
+            deletionError = null
+        }
+        AlertDialog(onDismissRequest = dismissError, title = { Text("无法完成操作") }, text = { Text(message) }, confirmButton = { TextButton(onClick = dismissError) { Text("知道了") } })
     }
     catalogState.errorMessage?.let { message ->
         AlertDialog(onDismissRequest = catalog::clearError, title = { Text("无法保存") }, text = { Text(message) }, confirmButton = { TextButton(onClick = catalog::clearError) { Text("知道了") } })

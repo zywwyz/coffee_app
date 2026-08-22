@@ -108,6 +108,9 @@ interface CatalogItemDao {
     @Query("SELECT * FROM catalog_items WHERE id = :id")
     suspend fun get(id: String): CatalogItemEntity?
 
+    @Query("DELETE FROM catalog_items WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Query(
         "SELECT EXISTS(SELECT 1 FROM catalog_items WHERE brandId = :brandId AND normalizedName = :name AND id != :id)",
     )

@@ -22,6 +22,7 @@ import java.util.Locale
 import android.database.sqlite.SQLiteConstraintException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -34,8 +35,17 @@ interface CatalogRepository {
     suspend fun getItem(itemId: String): CatalogItem
     suspend fun upsertBrand(brand: Brand)
     suspend fun upsertItem(item: CatalogItem)
+    suspend fun deleteCustomBrand(brandId: String): CatalogDeleteResult = CatalogDeleteResult.NotFound
+    suspend fun deleteCustomItem(itemId: String): CatalogDeleteResult = CatalogDeleteResult.NotFound
     suspend fun lastPriceFen(itemId: String): Long?
     suspend fun ensureSeedBrands() = Unit
+}
+
+sealed interface CatalogDeleteResult {
+    data object Deleted : CatalogDeleteResult
+    data object Protected : CatalogDeleteResult
+    data object HasProducts : CatalogDeleteResult
+    data object NotFound : CatalogDeleteResult
 }
 
 data class BrandOverview(
@@ -122,6 +132,28 @@ class RoomCatalogRepository(
             }
             throw error
         }
+    }
+
+    override suspend fun deleteCustomBrand(brandId: String): CatalogDeleteResult {
+        val brand = brandDao.get(brandId) ?: return CatalogDeleteResult.NotFound
+        if (brand.type != BrandType.CHAIN.name || brandId in BUNDLED_CHAIN_BRANDS.map { it.brand.id }) return CatalogDeleteResult.Protected
+        if (catalogItemDao.observeByBrand(brandId).first().isNotEmpty()) return CatalogDeleteResult.HasProducts
+        return try {
+            brandDao.deleteById(brandId)
+            runCatching { imageStore?.deleteIfUnreferenced(brand.logoAssetId ?: return@runCatching) }
+            CatalogDeleteResult.Deleted
+        } catch (_: SQLiteConstraintException) {
+            CatalogDeleteResult.HasProducts
+        }
+    }
+
+    override suspend fun deleteCustomItem(itemId: String): CatalogDeleteResult {
+        val item = catalogItemDao.get(itemId) ?: return CatalogDeleteResult.NotFound
+        val brand = brandDao.get(item.brandId) ?: return CatalogDeleteResult.NotFound
+        if (item.type != ItemType.CHAIN_PRODUCT.name || brand.id in BUNDLED_CHAIN_BRANDS.map { it.brand.id }) return CatalogDeleteResult.Protected
+        catalogItemDao.deleteById(itemId)
+        item.imageAssetId?.let { assetId -> runCatching { imageStore?.deleteIfUnreferenced(assetId) } }
+        return CatalogDeleteResult.Deleted
     }
 
     override suspend fun lastPriceFen(itemId: String): Long? =

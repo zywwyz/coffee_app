@@ -151,6 +151,37 @@ class CatalogRepositoryTest {
     }
 
     @Test
+    fun `deleting a custom product preserves its historical drink record`() = runBlocking {
+        repository.upsertBrand(brand())
+        repository.upsertItem(item("美式"))
+        database.drinkDao().insert(record("historic", occurredAt = 2, priceFen = 990))
+
+        assertEquals(CatalogDeleteResult.Deleted, repository.deleteCustomItem(ITEM_ID))
+        assertNull(database.catalogItemDao().get(ITEM_ID))
+        assertEquals(1, database.drinkDao().observeRange("1970-01-01", "2100-01-01").first().size)
+    }
+
+    @Test
+    fun `deleting a custom brand is blocked until its products are removed`() = runBlocking {
+        repository.upsertBrand(brand())
+        repository.upsertItem(item("美式"))
+
+        assertEquals(CatalogDeleteResult.HasProducts, repository.deleteCustomBrand(BRAND_ID))
+        assertNotNull(database.brandDao().get(BRAND_ID))
+        repository.deleteCustomItem(ITEM_ID)
+        assertEquals(CatalogDeleteResult.Deleted, repository.deleteCustomBrand(BRAND_ID))
+        assertNull(database.brandDao().get(BRAND_ID))
+    }
+
+    @Test
+    fun `bundled chain brands cannot be deleted`() = runBlocking {
+        repository.ensureSeedBrands()
+
+        assertEquals(CatalogDeleteResult.Protected, repository.deleteCustomBrand("seed-chain-luckin"))
+        assertNotNull(database.brandDao().get("seed-chain-luckin"))
+    }
+
+    @Test
     fun `unknown persisted enum reports field and value`() = runBlocking {
         database.brandDao().upsert(
             BrandEntity(
