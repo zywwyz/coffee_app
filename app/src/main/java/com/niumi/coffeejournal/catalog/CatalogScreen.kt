@@ -86,6 +86,7 @@ fun CatalogFeature(
         onStageAsset = catalogViewModel::stageAsset,
         onUpdateBrandDraft = catalogViewModel::updateBrandDraft,
         onUpdateItemDraft = catalogViewModel::updateItemDraft,
+        onUpdateItemCaffeineInput = catalogViewModel::updateItemCaffeineInput,
         onOpenBrandEditor = catalogViewModel::openBrandEditor,
         onOpenItemEditor = catalogViewModel::openItemEditor,
         onCloseEditor = catalogViewModel::closeEditor,
@@ -109,6 +110,7 @@ fun CatalogScreen(
     onStageAsset: suspend (String, String?, String) -> Boolean = { _, _, _ -> true },
     onUpdateBrandDraft: ((BrandEditor) -> BrandEditor) -> Unit = {},
     onUpdateItemDraft: ((ItemEditor) -> ItemEditor) -> Unit = {},
+    onUpdateItemCaffeineInput: (String) -> Unit = {},
     onOpenBrandEditor: (Brand?, BrandType) -> Unit = { _, _ -> },
     onOpenItemEditor: (CatalogItem?, Brand) -> Unit = { _, _ -> },
     onCloseEditor: () -> Unit = {},
@@ -197,6 +199,7 @@ fun CatalogScreen(
             onRequestAsset = onRequestAsset,
             onStageAsset = onStageAsset,
             onUpdateDraft = onUpdateItemDraft,
+            onUpdateCaffeineInput = onUpdateItemCaffeineInput,
         )
     }
     state.errorMessage?.let { message ->
@@ -312,6 +315,7 @@ private fun ItemEditorDialog(
     onDismiss: () -> Unit, onSave: (ItemEditor) -> Unit, onRequestAsset: CatalogAssetPicker,
     onStageAsset: suspend (String, String?, String) -> Boolean,
     onUpdateDraft: ((ItemEditor) -> ItemEditor) -> Unit,
+    onUpdateCaffeineInput: (String) -> Unit,
 ) {
     val initial = session.initial
     val brand = session.brand
@@ -323,7 +327,7 @@ private fun ItemEditorDialog(
         title = if (initial == null) "新增${if (type == ItemType.PERSONAL_BEAN) "豆子" else "产品"}" else "编辑条目",
         saving = saving, onDismiss = onDismiss,
         onSave = {
-            val caffeineResult = validateCaffeineInput(draft.caffeineMg?.toString().orEmpty())
+            val caffeineResult = validateCaffeineInput(session.caffeineInput)
             if (caffeineResult is CaffeineInput.Invalid) {
                 caffeineError = "请输入非负的有效咖啡因数值"
                 return@EditorDialog
@@ -347,7 +351,7 @@ private fun ItemEditorDialog(
             }
             Field(draft.category.orEmpty(), { v -> onUpdateDraft { it.copy(category = v) } }, "产品分类（可选）", enabled = !saving)
             Field(draft.specificationDescription.orEmpty(), { v -> onUpdateDraft { it.copy(specificationDescription = v) } }, "规格描述（可选）", enabled = !saving)
-            Field(draft.caffeineMg?.toString().orEmpty(), { v -> onUpdateDraft { it.copy(caffeineMg = v.toDoubleOrNull()) }; caffeineError = null }, "咖啡因 mg（可选）", enabled = !saving)
+            Field(session.caffeineInput, { v -> onUpdateCaffeineInput(v); caffeineError = null }, "咖啡因 mg（可选）", enabled = !saving)
             caffeineError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Field(draft.officialDescription.orEmpty(), { v -> onUpdateDraft { it.copy(officialDescription = v) } }, "官方描述（可选）", enabled = !saving)
             Field(draft.sourceUrl.orEmpty(), { v -> onUpdateDraft { it.copy(sourceUrl = v) } }, "来源链接（可选）", enabled = !saving)

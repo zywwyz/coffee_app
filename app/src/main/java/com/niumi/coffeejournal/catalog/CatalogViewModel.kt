@@ -105,6 +105,7 @@ sealed interface CatalogEditorSession {
             initial?.sourceUrl, initial?.id, initial?.category, initial?.specificationDescription, leaseId,
             initial?.chainProductKind,
         ),
+        val caffeineInput: String = initial?.caffeineMg?.toString().orEmpty(),
     ) : CatalogEditorSession {
         val currentAssetId get() = draft.imageAssetId
     }
@@ -259,6 +260,11 @@ class CatalogViewModel(
     fun updateItemDraft(update: (ItemEditor) -> ItemEditor) {
         val session = mutableState.value.editorSession as? CatalogEditorSession.Item ?: return
         mutableState.value = mutableState.value.copy(editorSession = session.copy(draft = update(session.draft)))
+    }
+
+    fun updateItemCaffeineInput(input: String) {
+        val session = mutableState.value.editorSession as? CatalogEditorSession.Item ?: return
+        mutableState.value = mutableState.value.copy(editorSession = session.copy(caffeineInput = input))
     }
 
     suspend fun stageAsset(

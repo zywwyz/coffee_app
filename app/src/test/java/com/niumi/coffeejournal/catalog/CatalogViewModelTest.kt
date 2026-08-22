@@ -248,6 +248,16 @@ class CatalogViewModelTest {
     }
 
     @Test
+    fun `item editor retains raw caffeine input across session reads`() {
+        val viewModel = viewModel(FakeCatalogRepository())
+        viewModel.openItemEditor(null, Brand("chain", BrandType.CHAIN, "连锁", null, MaintenanceMode.MANUAL_ONLY, null))
+        viewModel.updateItemCaffeineInput("1")
+        viewModel.updateItemCaffeineInput("10")
+
+        assertEquals("10", (viewModel.uiState.value.editorSession as CatalogEditorSession.Item).caffeineInput)
+    }
+
+    @Test
     fun `explicit editor close cleans session lease while configuration disposal does not`() = runBlocking {
         val images = RecordingImageStore()
         val viewModel = viewModel(FakeCatalogRepository(), images)
