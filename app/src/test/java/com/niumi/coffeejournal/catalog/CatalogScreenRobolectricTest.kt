@@ -76,6 +76,7 @@ class CatalogScreenRobolectricTest {
                     onSetItemStatus = { _, _ -> },
                     onClearError = { screenState.value = screenState.value.copy(errorMessage = null) },
                     onRequestAsset = { _, kind, _ -> assetRequested = kind == CatalogAssetKind.BRAND_LOGO },
+                    onOpenBrandEditor = { initial, type -> openBrandSession(screenState, initial, type) },
                 )
             }
         }
@@ -89,7 +90,8 @@ class CatalogScreenRobolectricTest {
     @Test
     fun `new chain brand requires logo before save`() {
         var saves = 0
-        compose.setContent { CoffeeTheme { CatalogScreen(state(), {}, {}, {}, { saves++ }, {}, { _, _ -> }, {}) } }
+        val screenState = mutableStateOf(state())
+        compose.setContent { CoffeeTheme { CatalogScreen(screenState.value, {}, {}, {}, { saves++ }, {}, { _, _ -> }, {}, onOpenBrandEditor = { initial, type -> openBrandSession(screenState, initial, type) }) } }
         compose.onNodeWithText("新增品牌").performClick()
         compose.onNodeWithText("品牌名称").performTextInput("自定义")
         compose.onNodeWithText("保存").performClick()
@@ -99,12 +101,14 @@ class CatalogScreenRobolectricTest {
 
     @Test
     fun `personal bean editor retains its fields`() {
+        val screenState = mutableStateOf(beanState().copy(selectedBrandId = "brand"))
         compose.setContent {
             CoffeeTheme {
                 CatalogScreen(
-                    state = beanState().copy(selectedBrandId = "brand"),
+                    state = screenState.value,
                     onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {},
                     onSaveBrand = {}, onSaveItem = {}, onSetItemStatus = { _, _ -> }, onClearError = {},
+                    onOpenItemEditor = { initial, brand -> openItemSession(screenState, initial, brand) },
                 )
             }
         }
@@ -123,6 +127,7 @@ class CatalogScreenRobolectricTest {
                     state = screenState.value, onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {},
                     onSaveBrand = { screenState.value = screenState.value.copy(errorMessage = "同名") },
                     onSaveItem = {}, onSetItemStatus = { _, _ -> }, onClearError = {},
+                    onOpenBrandEditor = { initial, type -> openBrandSession(screenState, initial, type) },
                 )
             }
         }
@@ -150,6 +155,7 @@ class CatalogScreenRobolectricTest {
                     },
                     onSetItemStatus = { _, _ -> },
                     onClearError = { screenState.value = screenState.value.copy(errorMessage = null) },
+                    onOpenItemEditor = { initial, brand -> openItemSession(screenState, initial, brand) },
                 )
             }
         }
@@ -170,8 +176,9 @@ class CatalogScreenRobolectricTest {
             CoffeeTheme {
                 CatalogScreen(
                     state = screenState.value, onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {},
-                    onSaveBrand = { screenState.value = screenState.value.copy(saveCompletedToken = 8) },
+                    onSaveBrand = { screenState.value = screenState.value.copy(saveCompletedToken = 8, editorSession = null) },
                     onSaveItem = {}, onSetItemStatus = { _, _ -> }, onClearError = {},
+                    onOpenBrandEditor = { initial, type -> openBrandSession(screenState, initial, type) },
                 )
             }
         }
@@ -193,8 +200,9 @@ class CatalogScreenRobolectricTest {
                 CatalogScreen(
                     state = screenState.value, onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {},
                     onSaveBrand = {},
-                    onSaveItem = { screenState.value = screenState.value.copy(saveCompletedToken = 1) },
+                    onSaveItem = { screenState.value = screenState.value.copy(saveCompletedToken = 1, editorSession = null) },
                     onSetItemStatus = { _, _ -> }, onClearError = {},
+                    onOpenItemEditor = { initial, brand -> openItemSession(screenState, initial, brand) },
                 )
             }
         }
@@ -210,10 +218,11 @@ class CatalogScreenRobolectricTest {
     @Test
     fun `personal bean image selection is included in saved catalog item`() {
         var submitted: ItemEditor? = null
+        val screenState = mutableStateOf(beanState().copy(selectedBrandId = "brand"))
         compose.setContent {
             CoffeeTheme {
                 CatalogScreen(
-                    state = beanState().copy(selectedBrandId = "brand"),
+                    state = screenState.value,
                     onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {}, onSaveBrand = {},
                     onSaveItem = { submitted = it }, onSetItemStatus = { _, _ -> }, onClearError = {},
                     onRequestAsset = { _, kind, callback ->
@@ -224,6 +233,8 @@ class CatalogScreenRobolectricTest {
                             )
                         }
                     },
+                    onOpenItemEditor = { initial, brand -> openItemSession(screenState, initial, brand) },
+                    onStageAsset = { leaseId, _, assetId -> stageSessionAsset(screenState, leaseId, assetId) },
                 )
             }
         }
@@ -288,4 +299,38 @@ class CatalogScreenRobolectricTest {
         tab = CatalogTab.BEANS,
         brandOverviews = listOf(BrandOverview(Brand("brand", BrandType.ROASTER, "烘焙商", null, MaintenanceMode.MANUAL_ONLY, null), 0)),
     )
+
+    private fun openBrandSession(
+        state: androidx.compose.runtime.MutableState<CatalogUiState>,
+        initial: Brand?,
+        type: BrandType,
+    ) {
+        state.value = state.value.copy(
+            editorSession = CatalogEditorSession.Brand(initial, type, "brand-lease", initial?.logoAssetId),
+        )
+    }
+
+    private fun openItemSession(
+        state: androidx.compose.runtime.MutableState<CatalogUiState>,
+        initial: com.niumi.coffeejournal.core.model.CatalogItem?,
+        brand: Brand,
+    ) {
+        state.value = state.value.copy(
+            editorSession = CatalogEditorSession.Item(initial, brand, "item-lease", initial?.imageAssetId),
+        )
+    }
+
+    private fun stageSessionAsset(
+        state: androidx.compose.runtime.MutableState<CatalogUiState>,
+        leaseId: String,
+        assetId: String,
+    ): Boolean {
+        val session = state.value.editorSession ?: return false
+        if (session.leaseId != leaseId) return false
+        state.value = state.value.copy(editorSession = when (session) {
+            is CatalogEditorSession.Brand -> session.copy(assetId = assetId)
+            is CatalogEditorSession.Item -> session.copy(assetId = assetId)
+        })
+        return true
+    }
 }
