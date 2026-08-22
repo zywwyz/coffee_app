@@ -50,9 +50,6 @@ import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.image.ImportedAssetSelection
 import com.niumi.coffeejournal.core.image.ImagePathResolver
 import com.niumi.coffeejournal.core.image.ResolvedLocalAssetImage
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 enum class CatalogAssetKind { BRAND_LOGO, CHAIN_PRODUCT_IMAGE, BEAN_PACKAGE }
 
@@ -427,14 +424,9 @@ private fun Field(value: String, onChange: (String) -> Unit, label: String, enab
 }
 
 
-private data class PendingScreenshotImport(val brandId: String, val token: String)
-
 private fun statusLabel(status: ItemStatus): String = when (status) {
     ItemStatus.ACTIVE -> "在售"
     ItemStatus.NEEDS_IMAGE -> "待补充图片"
     ItemStatus.DISCONTINUED -> "已下架"
     ItemStatus.ARCHIVED -> "归档"
 }
-
-private fun formatCatalogTime(epochMillis: Long): String =
-    SimpleDateFormat("yyyy-MM-dd", Locale.CHINA).format(Date(epochMillis))

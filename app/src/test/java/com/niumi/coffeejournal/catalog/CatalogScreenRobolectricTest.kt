@@ -79,10 +79,15 @@ class CatalogScreenRobolectricTest {
             }
         }
 
-        compose.onNodeWithText("咖啡因 mg（可选）").performTextInput("abc")
+        compose.onNodeWithText("咖啡因 mg（可选）").performTextInput("1")
+        compose.onNodeWithText("咖啡因 mg（可选）").assertTextContains("1")
+        compose.onNodeWithText("咖啡因 mg（可选）").performTextReplacement("10")
+        compose.onNodeWithText("咖啡因 mg（可选）").assertTextContains("10")
+        compose.onNodeWithText("咖啡因 mg（可选）").performTextReplacement("abc")
         compose.onNodeWithText("保存").performClick()
-        compose.onNodeWithText("请输入非负的有效咖啡因数值").assertIsDisplayed()
+        compose.onNodeWithText("请输入非负的有效咖啡因数值").performScrollTo().assertIsDisplayed()
         compose.runOnIdle { org.junit.Assert.assertEquals(null, saved) }
+        compose.onNodeWithText("咖啡因 mg（可选）").assertTextContains("abc")
         compose.onNodeWithText("咖啡因 mg（可选）").performTextReplacement("10")
         compose.onNodeWithText("保存").performClick()
         compose.runOnIdle { org.junit.Assert.assertEquals(10.0, saved?.caffeineMg) }
