@@ -22,6 +22,7 @@ import java.io.FileOutputStream
 import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -64,8 +65,9 @@ class QuickAddIntegrationTest {
         val localDate = Instant.ofEpochMilli(consumedAt).atZone(ZoneId.systemDefault()).toLocalDate()
         val repository = DefaultJournalRepository(catalog, RoomDrinkStore(database), object : Clock { override fun read() = ClockReading(consumedAt, localDate.toString()) })
         val journal = JournalViewModel(repository, catalog, localDate.year, localDate.monthValue, CoroutineScope(Dispatchers.Unconfined))
-        journal.selectItem(ItemType.CHAIN_PRODUCT, "seed")
-        withTimeout(5_000) { journal.uiState.first { it.editor.selectedItemId == "seed" } }
+        val selectionCompleted = CompletableDeferred<Boolean>()
+        journal.selectItem(ItemType.CHAIN_PRODUCT, "seed") { selectionCompleted.complete(it) }
+        assertEquals(true, withTimeout(5_000) { selectionCompleted.await() })
         journal.setConsumedAt(consumedAt)
         withTimeout(5_000) { journal.uiState.first { it.editor.consumedAtEpochMillis == consumedAt } }
         journal.setRating(9)
