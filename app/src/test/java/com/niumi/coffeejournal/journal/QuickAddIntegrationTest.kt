@@ -68,6 +68,8 @@ class QuickAddIntegrationTest {
         val selectionCompleted = CompletableDeferred<Boolean>()
         journal.selectItem(ItemType.CHAIN_PRODUCT, "seed") { selectionCompleted.complete(it) }
         assertEquals(true, withTimeout(5_000) { selectionCompleted.await() })
+        yield()
+        withTimeout(5_000) { journal.uiState.first { it.editor.selectedItemId == "seed" && !it.editor.selecting } }
         journal.setConsumedAt(consumedAt)
         withTimeout(5_000) { journal.uiState.first { it.editor.consumedAtEpochMillis == consumedAt } }
         journal.setRating(9)
