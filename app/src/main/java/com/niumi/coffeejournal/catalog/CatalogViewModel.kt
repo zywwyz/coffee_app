@@ -87,14 +87,27 @@ sealed interface CatalogEditorSession {
         val type: BrandType,
         override val leaseId: String,
         override val assetId: String?,
-    ) : CatalogEditorSession
+        val draft: BrandEditor = BrandEditor(type, initial?.name.orEmpty(), assetId, id = initial?.id, assetLeaseId = leaseId),
+    ) : CatalogEditorSession {
+        val currentAssetId get() = draft.logoAssetId
+    }
 
     data class Item(
         val initial: CatalogItem?,
         val brand: com.niumi.coffeejournal.core.model.Brand,
         override val leaseId: String,
         override val assetId: String?,
-    ) : CatalogEditorSession
+        val draft: ItemEditor = ItemEditor(
+            brand.id, if (brand.type == BrandType.CHAIN) ItemType.CHAIN_PRODUCT else ItemType.PERSONAL_BEAN,
+            initial?.name.orEmpty(), assetId, initial?.origin, initial?.processing, initial?.roastLevel,
+            initial?.flavorNotes, initial?.brewMethod, initial?.status ?: ItemStatus.ACTIVE,
+            initial?.caffeineMg, initial?.officialDescription, initial?.purchaseDate, initial?.roastDate,
+            initial?.sourceUrl, initial?.id, initial?.category, initial?.specificationDescription, leaseId,
+            initial?.chainProductKind,
+        ),
+    ) : CatalogEditorSession {
+        val currentAssetId get() = draft.imageAssetId
+    }
 }
 
 class CatalogViewModel(
@@ -238,6 +251,16 @@ class CatalogViewModel(
         discardAssetLease(session.leaseId)
     }
 
+    fun updateBrandDraft(update: (BrandEditor) -> BrandEditor) {
+        val session = mutableState.value.editorSession as? CatalogEditorSession.Brand ?: return
+        mutableState.value = mutableState.value.copy(editorSession = session.copy(draft = update(session.draft)))
+    }
+
+    fun updateItemDraft(update: (ItemEditor) -> ItemEditor) {
+        val session = mutableState.value.editorSession as? CatalogEditorSession.Item ?: return
+        mutableState.value = mutableState.value.copy(editorSession = session.copy(draft = update(session.draft)))
+    }
+
     suspend fun stageAsset(
         leaseId: String,
         persistedAssetId: String?,
@@ -258,8 +281,8 @@ class CatalogViewModel(
         mutableState.value.editorSession?.let { session ->
             if (session.leaseId == leaseId) {
                 mutableState.value = mutableState.value.copy(editorSession = when (session) {
-                    is CatalogEditorSession.Brand -> session.copy(assetId = stagedAssetId)
-                    is CatalogEditorSession.Item -> session.copy(assetId = stagedAssetId)
+                    is CatalogEditorSession.Brand -> session.copy(assetId = stagedAssetId, draft = session.draft.copy(logoAssetId = stagedAssetId))
+                    is CatalogEditorSession.Item -> session.copy(assetId = stagedAssetId, draft = session.draft.copy(imageAssetId = stagedAssetId))
                 })
             }
         }

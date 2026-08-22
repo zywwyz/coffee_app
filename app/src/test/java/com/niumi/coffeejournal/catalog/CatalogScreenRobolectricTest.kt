@@ -77,6 +77,7 @@ class CatalogScreenRobolectricTest {
                     onClearError = { screenState.value = screenState.value.copy(errorMessage = null) },
                     onRequestAsset = { _, kind, _ -> assetRequested = kind == CatalogAssetKind.BRAND_LOGO },
                     onOpenBrandEditor = { initial, type -> openBrandSession(screenState, initial, type) },
+                    onUpdateBrandDraft = { update -> updateBrandDraft(screenState, update) },
                 )
             }
         }
@@ -91,7 +92,7 @@ class CatalogScreenRobolectricTest {
     fun `new chain brand requires logo before save`() {
         var saves = 0
         val screenState = mutableStateOf(state())
-        compose.setContent { CoffeeTheme { CatalogScreen(screenState.value, {}, {}, {}, { saves++ }, {}, { _, _ -> }, {}, onOpenBrandEditor = { initial, type -> openBrandSession(screenState, initial, type) }) } }
+        compose.setContent { CoffeeTheme { CatalogScreen(screenState.value, {}, {}, {}, { saves++ }, {}, { _, _ -> }, {}, onOpenBrandEditor = { initial, type -> openBrandSession(screenState, initial, type) }, onUpdateBrandDraft = { update -> updateBrandDraft(screenState, update) }) } }
         compose.onNodeWithText("新增品牌").performClick()
         compose.onNodeWithText("品牌名称").performTextInput("自定义")
         compose.onNodeWithText("保存").performClick()
@@ -109,6 +110,7 @@ class CatalogScreenRobolectricTest {
                     onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {},
                     onSaveBrand = {}, onSaveItem = {}, onSetItemStatus = { _, _ -> }, onClearError = {},
                     onOpenItemEditor = { initial, brand -> openItemSession(screenState, initial, brand) },
+                    onUpdateItemDraft = { update -> updateItemDraft(screenState, update) },
                 )
             }
         }
@@ -128,6 +130,7 @@ class CatalogScreenRobolectricTest {
                     onSaveBrand = { screenState.value = screenState.value.copy(errorMessage = "同名") },
                     onSaveItem = {}, onSetItemStatus = { _, _ -> }, onClearError = {},
                     onOpenBrandEditor = { initial, type -> openBrandSession(screenState, initial, type) },
+                    onUpdateBrandDraft = { update -> updateBrandDraft(screenState, update) },
                 )
             }
         }
@@ -156,6 +159,7 @@ class CatalogScreenRobolectricTest {
                     onSetItemStatus = { _, _ -> },
                     onClearError = { screenState.value = screenState.value.copy(errorMessage = null) },
                     onOpenItemEditor = { initial, brand -> openItemSession(screenState, initial, brand) },
+                    onUpdateItemDraft = { update -> updateItemDraft(screenState, update) },
                 )
             }
         }
@@ -179,6 +183,7 @@ class CatalogScreenRobolectricTest {
                     onSaveBrand = { screenState.value = screenState.value.copy(saveCompletedToken = 8, editorSession = null) },
                     onSaveItem = {}, onSetItemStatus = { _, _ -> }, onClearError = {},
                     onOpenBrandEditor = { initial, type -> openBrandSession(screenState, initial, type) },
+                    onUpdateBrandDraft = { update -> updateBrandDraft(screenState, update) },
                 )
             }
         }
@@ -203,6 +208,7 @@ class CatalogScreenRobolectricTest {
                     onSaveItem = { screenState.value = screenState.value.copy(saveCompletedToken = 1, editorSession = null) },
                     onSetItemStatus = { _, _ -> }, onClearError = {},
                     onOpenItemEditor = { initial, brand -> openItemSession(screenState, initial, brand) },
+                    onUpdateItemDraft = { update -> updateItemDraft(screenState, update) },
                 )
             }
         }
@@ -328,9 +334,19 @@ class CatalogScreenRobolectricTest {
         val session = state.value.editorSession ?: return false
         if (session.leaseId != leaseId) return false
         state.value = state.value.copy(editorSession = when (session) {
-            is CatalogEditorSession.Brand -> session.copy(assetId = assetId)
-            is CatalogEditorSession.Item -> session.copy(assetId = assetId)
+            is CatalogEditorSession.Brand -> session.copy(assetId = assetId, draft = session.draft.copy(logoAssetId = assetId))
+            is CatalogEditorSession.Item -> session.copy(assetId = assetId, draft = session.draft.copy(imageAssetId = assetId))
         })
         return true
+    }
+
+    private fun updateBrandDraft(state: androidx.compose.runtime.MutableState<CatalogUiState>, update: (BrandEditor) -> BrandEditor) {
+        val session = state.value.editorSession as? CatalogEditorSession.Brand ?: return
+        state.value = state.value.copy(editorSession = session.copy(draft = update(session.draft)))
+    }
+
+    private fun updateItemDraft(state: androidx.compose.runtime.MutableState<CatalogUiState>, update: (ItemEditor) -> ItemEditor) {
+        val session = state.value.editorSession as? CatalogEditorSession.Item ?: return
+        state.value = state.value.copy(editorSession = session.copy(draft = update(session.draft)))
     }
 }

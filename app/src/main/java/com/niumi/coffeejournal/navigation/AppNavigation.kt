@@ -249,6 +249,7 @@ private fun ChainBrandProductsDestination(repository: CatalogRepository, imageSt
                 assetImportRequester(ImageKind.BRAND_LOGO, previous, callback)
             },
             onStageAsset = catalog::stageAsset,
+            onUpdateDraft = catalog::updateBrandDraft,
         )
     }
     catalogState.errorMessage?.let { message ->

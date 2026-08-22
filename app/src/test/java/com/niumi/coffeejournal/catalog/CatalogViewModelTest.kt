@@ -229,6 +229,25 @@ class CatalogViewModelTest {
     }
 
     @Test
+    fun `item editor draft retains every edited field with its staged asset`() = runBlocking {
+        val viewModel = viewModel(FakeCatalogRepository(), RecordingImageStore())
+        val brand = Brand("roaster", BrandType.ROASTER, "烘焙商", null, MaintenanceMode.MANUAL_ONLY, null)
+        viewModel.openItemEditor(null, brand)
+        val leaseId = (viewModel.uiState.value.editorSession as CatalogEditorSession.Item).leaseId
+        viewModel.updateItemDraft {
+            it.copy(name = "花魁", origin = "埃塞", processing = "日晒", roastLevel = "浅烘", flavorNotes = "莓果", brewMethod = "手冲", purchaseDate = "2026-08-01")
+        }
+        assertTrue(viewModel.stageAsset(leaseId, null, "package"))
+
+        val draft = (viewModel.uiState.value.editorSession as CatalogEditorSession.Item).draft
+        assertEquals("花魁", draft.name)
+        assertEquals("埃塞", draft.origin)
+        assertEquals("手冲", draft.brewMethod)
+        assertEquals("package", draft.imageAssetId)
+        assertEquals("2026-08-01", draft.purchaseDate)
+    }
+
+    @Test
     fun `explicit editor close cleans session lease while configuration disposal does not`() = runBlocking {
         val images = RecordingImageStore()
         val viewModel = viewModel(FakeCatalogRepository(), images)

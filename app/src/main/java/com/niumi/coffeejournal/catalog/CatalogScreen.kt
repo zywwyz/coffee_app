@@ -84,6 +84,8 @@ fun CatalogFeature(
         onClearError = catalogViewModel::clearError,
         onRequestAsset = onRequestAsset,
         onStageAsset = catalogViewModel::stageAsset,
+        onUpdateBrandDraft = catalogViewModel::updateBrandDraft,
+        onUpdateItemDraft = catalogViewModel::updateItemDraft,
         onOpenBrandEditor = catalogViewModel::openBrandEditor,
         onOpenItemEditor = catalogViewModel::openItemEditor,
         onCloseEditor = catalogViewModel::closeEditor,
@@ -105,6 +107,8 @@ fun CatalogScreen(
     onClearError: () -> Unit,
     onRequestAsset: CatalogAssetPicker = { _, _, _ -> },
     onStageAsset: suspend (String, String?, String) -> Boolean = { _, _, _ -> true },
+    onUpdateBrandDraft: ((BrandEditor) -> BrandEditor) -> Unit = {},
+    onUpdateItemDraft: ((ItemEditor) -> ItemEditor) -> Unit = {},
     onOpenBrandEditor: (Brand?, BrandType) -> Unit = { _, _ -> },
     onOpenItemEditor: (CatalogItem?, Brand) -> Unit = { _, _ -> },
     onCloseEditor: () -> Unit = {},
@@ -181,6 +185,7 @@ fun CatalogScreen(
             onSave = onSaveBrand,
             onRequestAsset = onRequestAsset,
             onStageAsset = onStageAsset,
+            onUpdateDraft = onUpdateBrandDraft,
         )
     }
     (state.editorSession as? CatalogEditorSession.Item)?.let { session ->
@@ -191,6 +196,7 @@ fun CatalogScreen(
             onSave = onSaveItem,
             onRequestAsset = onRequestAsset,
             onStageAsset = onStageAsset,
+            onUpdateDraft = onUpdateItemDraft,
         )
     }
     state.errorMessage?.let { message ->
@@ -268,24 +274,24 @@ fun BrandEditorDialog(
     session: CatalogEditorSession.Brand, saving: Boolean,
     onDismiss: () -> Unit, onSave: (BrandEditor) -> Unit, onRequestAsset: CatalogAssetPicker,
     onStageAsset: suspend (String, String?, String) -> Boolean,
+    onUpdateDraft: ((BrandEditor) -> BrandEditor) -> Unit,
 ) {
     val initial = session.initial
     val type = session.type
     val leaseId = session.leaseId
-    var name by remember(initial) { mutableStateOf(initial?.name.orEmpty()) }
     var logoError by remember(initial) { mutableStateOf(false) }
     EditorDialog(
         title = if (initial == null) "新增品牌" else "编辑品牌", saving = saving,
         onDismiss = onDismiss,
         onSave = {
-            if (type == BrandType.CHAIN && session.assetId == null) logoError = true
-            else onSave(BrandEditor(type, name, session.assetId, id = initial?.id, assetLeaseId = leaseId))
+            if (type == BrandType.CHAIN && session.currentAssetId == null) logoError = true
+            else onSave(session.draft)
         },
     ) {
-        Field(name, { name = it }, "品牌名称", enabled = !saving)
+        Field(session.draft.name, { value -> onUpdateDraft { it.copy(name = value) } }, "品牌名称", enabled = !saving)
         OutlinedButton(
             onClick = {
-                onRequestAsset(session.assetId, CatalogAssetKind.BRAND_LOGO) { selection ->
+                onRequestAsset(session.currentAssetId, CatalogAssetKind.BRAND_LOGO) { selection ->
                     if (onStageAsset(leaseId, initial?.logoAssetId, selection.assetId)) {
                         logoError = false
                         true
@@ -294,7 +300,7 @@ fun BrandEditorDialog(
             },
             enabled = !saving,
         ) {
-            Text(if (session.assetId == null) "选择 Logo" else "更换 Logo")
+            Text(if (session.currentAssetId == null) "选择 Logo" else "更换 Logo")
         }
         if (logoError) Text("请先选择 Logo", color = MaterialTheme.colorScheme.error)
     }
@@ -305,80 +311,60 @@ private fun ItemEditorDialog(
     session: CatalogEditorSession.Item, saving: Boolean,
     onDismiss: () -> Unit, onSave: (ItemEditor) -> Unit, onRequestAsset: CatalogAssetPicker,
     onStageAsset: suspend (String, String?, String) -> Boolean,
+    onUpdateDraft: ((ItemEditor) -> ItemEditor) -> Unit,
 ) {
     val initial = session.initial
     val brand = session.brand
     val leaseId = session.leaseId
-    var name by remember(initial) { mutableStateOf(initial?.name.orEmpty()) }
-    var origin by remember(initial) { mutableStateOf(initial?.origin.orEmpty()) }
-    var processing by remember(initial) { mutableStateOf(initial?.processing.orEmpty()) }
-    var roast by remember(initial) { mutableStateOf(initial?.roastLevel.orEmpty()) }
-    var flavors by remember(initial) { mutableStateOf(initial?.flavorNotes.orEmpty()) }
-    var brew by remember(initial) { mutableStateOf(initial?.brewMethod.orEmpty()) }
-    var caffeine by remember(initial) { mutableStateOf(initial?.caffeineMg?.toString().orEmpty()) }
-    var description by remember(initial) { mutableStateOf(initial?.officialDescription.orEmpty()) }
-    var purchaseDate by remember(initial) { mutableStateOf(initial?.purchaseDate.orEmpty()) }
-    var roastDate by remember(initial) { mutableStateOf(initial?.roastDate.orEmpty()) }
-    var sourceUrl by remember(initial) { mutableStateOf(initial?.sourceUrl.orEmpty()) }
-    var category by remember(initial) { mutableStateOf(initial?.category.orEmpty()) }
-    var specification by remember(initial) { mutableStateOf(initial?.specificationDescription.orEmpty()) }
-    var status by remember(initial) { mutableStateOf(initial?.status ?: ItemStatus.ACTIVE) }
-    var chainProductKind by remember(initial) { mutableStateOf(initial?.chainProductKind) }
+    val draft = session.draft
     var caffeineError by remember(initial) { mutableStateOf<String?>(null) }
     val type = if (brand.type == BrandType.CHAIN) ItemType.CHAIN_PRODUCT else ItemType.PERSONAL_BEAN
     EditorDialog(
         title = if (initial == null) "新增${if (type == ItemType.PERSONAL_BEAN) "豆子" else "产品"}" else "编辑条目",
         saving = saving, onDismiss = onDismiss,
         onSave = {
-            val caffeineResult = validateCaffeineInput(caffeine)
+            val caffeineResult = validateCaffeineInput(draft.caffeineMg?.toString().orEmpty())
             if (caffeineResult is CaffeineInput.Invalid) {
                 caffeineError = "请输入非负的有效咖啡因数值"
                 return@EditorDialog
             }
             caffeineError = null
-            onSave(
-                ItemEditor(
-                    brand.id, type, name, session.assetId, origin, processing, roast, flavors, brew, status,
-                    (caffeineResult as CaffeineInput.Valid).milligrams,
-                    description, purchaseDate, roastDate, sourceUrl, initial?.id,
-                    category, specification, leaseId, chainProductKind,
-                ),
-            )
+            onSave(draft.copy(caffeineMg = (caffeineResult as CaffeineInput.Valid).milligrams))
         },
     ) {
-        Field(name, { name = it }, "名称", enabled = !saving)
-        Field(origin, { origin = it }, "产地（可选）", enabled = !saving)
-        Field(processing, { processing = it }, "处理法（可选）", enabled = !saving)
-        Field(roast, { roast = it }, "烘焙度（可选）", enabled = !saving)
-        Field(flavors, { flavors = it }, "风味描述（可选）", enabled = !saving)
-        Field(brew, { brew = it }, "默认冲煮方式（可选）", enabled = !saving)
+        Field(draft.name, { v -> onUpdateDraft { it.copy(name = v) } }, "名称", enabled = !saving)
+        Field(draft.origin.orEmpty(), { v -> onUpdateDraft { it.copy(origin = v) } }, "产地（可选）", enabled = !saving)
+        Field(draft.processing.orEmpty(), { v -> onUpdateDraft { it.copy(processing = v) } }, "处理法（可选）", enabled = !saving)
+        Field(draft.roastLevel.orEmpty(), { v -> onUpdateDraft { it.copy(roastLevel = v) } }, "烘焙度（可选）", enabled = !saving)
+        Field(draft.flavorNotes.orEmpty(), { v -> onUpdateDraft { it.copy(flavorNotes = v) } }, "风味描述（可选）", enabled = !saving)
+        Field(draft.brewMethod.orEmpty(), { v -> onUpdateDraft { it.copy(brewMethod = v) } }, "默认冲煮方式（可选）", enabled = !saving)
         if (type == ItemType.CHAIN_PRODUCT) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("咖啡类型")
                 listOf(ChainProductKind.BLACK, ChainProductKind.FRUIT, ChainProductKind.MILK).forEach { value ->
-                    FilterChip(chainProductKind == value, { chainProductKind = value }, label = { Text(chainProductKindLabel(value)) }, enabled = !saving)
+                    FilterChip(draft.chainProductKind == value, { onUpdateDraft { it.copy(chainProductKind = value) } }, label = { Text(chainProductKindLabel(value)) }, enabled = !saving)
                 }
             }
-            Field(category, { category = it }, "产品分类（可选）", enabled = !saving)
-            Field(specification, { specification = it }, "规格描述（可选）", enabled = !saving)
-            Field(caffeine, { caffeine = it; caffeineError = null }, "咖啡因 mg（可选）", enabled = !saving)
+            Field(draft.category.orEmpty(), { v -> onUpdateDraft { it.copy(category = v) } }, "产品分类（可选）", enabled = !saving)
+            Field(draft.specificationDescription.orEmpty(), { v -> onUpdateDraft { it.copy(specificationDescription = v) } }, "规格描述（可选）", enabled = !saving)
+            Field(draft.caffeineMg?.toString().orEmpty(), { v -> onUpdateDraft { it.copy(caffeineMg = v.toDoubleOrNull()) }; caffeineError = null }, "咖啡因 mg（可选）", enabled = !saving)
             caffeineError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            Field(description, { description = it }, "官方描述（可选）", enabled = !saving)
-            Field(sourceUrl, { sourceUrl = it }, "来源链接（可选）", enabled = !saving)
+            Field(draft.officialDescription.orEmpty(), { v -> onUpdateDraft { it.copy(officialDescription = v) } }, "官方描述（可选）", enabled = !saving)
+            Field(draft.sourceUrl.orEmpty(), { v -> onUpdateDraft { it.copy(sourceUrl = v) } }, "来源链接（可选）", enabled = !saving)
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("当前状态")
                 listOf(ItemStatus.ACTIVE, ItemStatus.NEEDS_IMAGE, ItemStatus.DISCONTINUED, ItemStatus.ARCHIVED)
                     .forEach { value ->
-                        FilterChip(status == value, { status = value }, label = { Text(statusLabel(value)) }, enabled = !saving)
+                        FilterChip(draft.status == value, { onUpdateDraft { it.copy(status = value) } }, label = { Text(statusLabel(value)) }, enabled = !saving)
                     }
             }
         } else {
-            Field(description, { description = it }, "备注（可选）", enabled = !saving)
-            Field(purchaseDate, { purchaseDate = it }, "购买日期 YYYY-MM-DD（可选）", enabled = !saving)
-            Field(roastDate, { roastDate = it }, "烘焙日期 YYYY-MM-DD（可选）", enabled = !saving)
+            Field(draft.officialDescription.orEmpty(), { v -> onUpdateDraft { it.copy(officialDescription = v) } }, "备注（可选）", enabled = !saving)
+            Field(draft.purchaseDate.orEmpty(), { v -> onUpdateDraft { it.copy(purchaseDate = v) } }, "购买日期 YYYY-MM-DD（可选）", enabled = !saving)
+            Field(draft.roastDate.orEmpty(), { v -> onUpdateDraft { it.copy(roastDate = v) } }, "烘焙日期 YYYY-MM-DD（可选）", enabled = !saving)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CatalogViewModel.BEAN_FILTERS.forEach { value ->
-                    FilterChip(status == value, { status = value }, label = { Text(value.beanStatusLabel()) }, enabled = !saving)
+                    FilterChip(draft.status == value, { onUpdateDraft { it.copy(status = value) } }, label = { Text(value.beanStatusLabel()) }, enabled = !saving)
                 }
             }
         }
@@ -389,7 +375,7 @@ private fun ItemEditorDialog(
                 } else {
                     CatalogAssetKind.BEAN_PACKAGE
                 }
-                onRequestAsset(session.assetId, assetKind) { selection ->
+                onRequestAsset(session.currentAssetId, assetKind) { selection ->
                     if (onStageAsset(leaseId, initial?.imageAssetId, selection.assetId)) {
                         true
                     } else false
@@ -397,7 +383,7 @@ private fun ItemEditorDialog(
             },
             enabled = !saving,
         ) {
-            Text(if (session.assetId == null) "选择图片" else "更换图片")
+            Text(if (session.currentAssetId == null) "选择图片" else "更换图片")
         }
     }
 }
