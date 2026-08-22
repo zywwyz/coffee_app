@@ -65,6 +65,30 @@ class CatalogScreenRobolectricTest {
     }
 
     @Test
+    fun `raw caffeine input is retained and validated before saving`() {
+        var saved: ItemEditor? = null
+        val chain = Brand("chain", BrandType.CHAIN, "连锁", null, MaintenanceMode.MANUAL_ONLY, null)
+        val screenState = mutableStateOf(state().copy(editorSession = CatalogEditorSession.Item(null, chain, "lease", null)))
+        compose.setContent {
+            CoffeeTheme {
+                CatalogScreen(
+                    state = screenState.value, onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {},
+                    onSaveBrand = {}, onSaveItem = { saved = it }, onSetItemStatus = { _, _ -> }, onClearError = {},
+                    onUpdateItemCaffeineInput = { updateCaffeineInput(screenState, it) },
+                )
+            }
+        }
+
+        compose.onNodeWithText("咖啡因 mg（可选）").performTextInput("abc")
+        compose.onNodeWithText("保存").performClick()
+        compose.onNodeWithText("请输入非负的有效咖啡因数值").assertIsDisplayed()
+        compose.runOnIdle { org.junit.Assert.assertEquals(null, saved) }
+        compose.onNodeWithText("咖啡因 mg（可选）").performTextReplacement("10")
+        compose.onNodeWithText("保存").performClick()
+        compose.runOnIdle { org.junit.Assert.assertEquals(10.0, saved?.caffeineMg) }
+    }
+
+    @Test
     fun `brand editor exposes replaceable asset boundary and disables save while saving`() {
         var assetRequested = false
         val screenState = mutableStateOf(beanState())
@@ -348,5 +372,10 @@ class CatalogScreenRobolectricTest {
     private fun updateItemDraft(state: androidx.compose.runtime.MutableState<CatalogUiState>, update: (ItemEditor) -> ItemEditor) {
         val session = state.value.editorSession as? CatalogEditorSession.Item ?: return
         state.value = state.value.copy(editorSession = session.copy(draft = update(session.draft)))
+    }
+
+    private fun updateCaffeineInput(state: androidx.compose.runtime.MutableState<CatalogUiState>, input: String) {
+        val session = state.value.editorSession as? CatalogEditorSession.Item ?: return
+        state.value = state.value.copy(editorSession = session.copy(caffeineInput = input))
     }
 }
