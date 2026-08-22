@@ -32,9 +32,12 @@ class JournalViewModel(
     coroutineScope: CoroutineScope? = null,
     private val imagePathResolver: ImagePathResolver = ImagePathResolver { null },
     private val clock: Clock = SystemClock,
+    private val calendarDisplayPreference: CalendarDisplayPreference = DefaultCalendarDisplayPreference,
 ) : ViewModel() {
     private val scope = coroutineScope ?: viewModelScope
-    private val mutableState = MutableStateFlow(JournalUiState.empty(initialYear, initialMonth))
+    private val mutableState = MutableStateFlow(
+        JournalUiState.empty(initialYear, initialMonth).copy(calendarDisplayMode = calendarDisplayPreference.read()),
+    )
     val uiState: StateFlow<JournalUiState> = mutableState.asStateFlow()
     private val draftQueue = Channel<DrinkDraft>(Channel.CONFLATED)
     private val selectionMutex = Mutex()
@@ -76,6 +79,12 @@ class JournalViewModel(
     fun nextMonth() = changeMonth(1)
     fun selectDate(localDate: String?) { mutableState.value = mutableState.value.copy(selectedDate = localDate) }
 
+    fun setCalendarDisplayMode(mode: CalendarDisplayMode) {
+        if (mutableState.value.calendarDisplayMode == mode) return
+        mutableState.value = mutableState.value.copy(calendarDisplayMode = mode)
+        calendarDisplayPreference.write(mode)
+    }
+
     fun setSourceType(type: ItemType) {
         if (mutableState.value.editor.saving || mutableState.value.editor.attachingImage) return
         selectionGeneration++
@@ -111,7 +120,7 @@ class JournalViewModel(
         observeItemsForBrand(brandId)
     }
 
-    fun selectItem(type: ItemType, itemId: String) {
+    fun selectItem(type: ItemType, itemId: String, onCompleted: ((Boolean) -> Unit)? = null) {
         if (mutableState.value.editor.saving || mutableState.value.editor.attachingImage) return
         val generation = ++selectionGeneration
         selectionJob?.cancel()
@@ -160,6 +169,7 @@ class JournalViewModel(
                             errorMessage = null,
                         ),
                     )
+                    onCompleted?.invoke(true)
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: Exception) {
@@ -172,6 +182,7 @@ class JournalViewModel(
                             ),
                         )
                     }
+                    onCompleted?.invoke(false)
                 }
             }
         }
@@ -489,6 +500,7 @@ class JournalViewModel(
             brands = mutableState.value.brands,
             items = mutableState.value.items,
             saveCompletedToken = mutableState.value.saveCompletedToken,
+            calendarDisplayMode = mutableState.value.calendarDisplayMode,
         )
         observeMonth()
     }
@@ -512,6 +524,7 @@ class JournalViewModel(
             year: Int,
             month: Int,
             imagePathResolver: ImagePathResolver,
+            calendarDisplayPreference: CalendarDisplayPreference = DefaultCalendarDisplayPreference,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
@@ -521,6 +534,7 @@ class JournalViewModel(
                     year,
                     month,
                     imagePathResolver = imagePathResolver,
+                    calendarDisplayPreference = calendarDisplayPreference,
                 ) as T
         }
     }

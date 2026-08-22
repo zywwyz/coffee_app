@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -56,7 +58,28 @@ class JournalScreenRobolectricTest {
     }
 
     @Test
-    fun `missing image dialog exposes screenshot select and skip actions`() {
+    fun `calendar display switch labels are exact and selects one mode`() {
+        var selected: CalendarDisplayMode? = null
+        compose.setContent {
+            CoffeeTheme {
+                JournalScreen(
+                    state = JournalUiState.empty(2026, 8),
+                    onPreviousMonth = {}, onNextMonth = {}, onDayClick = {}, onRecordDrink = {},
+                    onCalendarDisplayModeChange = { selected = it },
+                )
+            }
+        }
+
+        compose.onNodeWithText("品牌").assertIsDisplayed()
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CalendarCoffeeDisplayMode)
+            .assertIsDisplayed().assertIsSelected()
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CalendarBrandDisplayMode).assertIsNotSelected()
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CalendarBrandDisplayMode).performClick()
+        compose.runOnIdle { assertEquals(CalendarDisplayMode.BRAND, selected) }
+    }
+
+    @Test
+    fun `missing image dialog exposes real image and brand logo actions`() {
         compose.setContent {
             CoffeeTheme {
                 RecordDrinkScreen(
@@ -65,14 +88,34 @@ class JournalScreenRobolectricTest {
                     items = emptyList(),
                     onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {},
                     onRatingChange = {}, onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {},
-                    onSave = {}, onBack = {}, onScreenshot = {}, onSelectImage = {}, onSkipImage = {},
+                    onSave = {}, onBack = {}, onSelectImage = {}, onSkipImage = {},
                 )
             }
         }
 
-        compose.onNodeWithText("上传完整截图").assertIsDisplayed()
-        compose.onNodeWithText("选择图片").assertIsDisplayed()
+        compose.onNodeWithText("选择实拍图片").assertIsDisplayed()
+        compose.onNodeWithText("当前产品没有图片。选择实拍图片，或使用品牌 Logo。").assertIsDisplayed()
         compose.onNodeWithText("暂时跳过").assertIsDisplayed()
+    }
+
+    @Test
+    fun `chain brand selection exposes quick add product action`() {
+        var requested = false
+        compose.setContent {
+            CoffeeTheme {
+                RecordDrinkScreen(
+                    state = JournalUiState.empty(2026, 8).editor.copy(selectedBrandId = "brand"),
+                    brands = emptyList(), items = emptyList(),
+                    onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {},
+                    onRatingChange = {}, onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {},
+                    onSave = {}, onBack = {}, onSelectImage = {}, onSkipImage = {},
+                    onAddProduct = { requested = true },
+                )
+            }
+        }
+
+        compose.onNodeWithText("添加新产品").assertIsEnabled().performClick()
+        compose.runOnIdle { assert(requested) }
     }
 
     @Test
@@ -141,7 +184,7 @@ class JournalScreenRobolectricTest {
                     items = listOf(item),
                     onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {},
                     onRatingChange = {}, onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {},
-                    onSave = {}, onBack = {}, onScreenshot = {}, onSelectImage = {}, onSkipImage = {},
+                    onSave = {}, onBack = {}, onSelectImage = {}, onSkipImage = {},
                 )
             }
         }
@@ -161,7 +204,7 @@ class JournalScreenRobolectricTest {
                     brands = emptyList(), items = emptyList(),
                     onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {},
                     onRatingChange = {}, onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {},
-                    onSave = {}, onBack = {}, onScreenshot = {}, onSelectImage = {}, onSkipImage = {},
+                    onSave = {}, onBack = {}, onSelectImage = {}, onSkipImage = {},
                 )
             }
         }
@@ -179,7 +222,7 @@ class JournalScreenRobolectricTest {
                     brands = emptyList(), items = emptyList(),
                     onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {},
                     onRatingChange = {}, onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {},
-                    onSave = {}, onBack = {}, onScreenshot = {}, onSelectImage = {}, onSkipImage = {},
+                    onSave = {}, onBack = {}, onSelectImage = {}, onSkipImage = {},
                 )
             }
         }
@@ -198,7 +241,7 @@ class JournalScreenRobolectricTest {
                     onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {},
                     onRatingChange = {}, onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {},
                     onSave = {}, onDiscardDraft = { discarded = true }, onBack = {},
-                    onScreenshot = {}, onSelectImage = {}, onSkipImage = {},
+                    onSelectImage = {}, onSkipImage = {},
                 )
             }
         }
@@ -227,7 +270,7 @@ class JournalScreenRobolectricTest {
                     brands = emptyList(), items = emptyList(),
                     onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {},
                     onRatingChange = {}, onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {},
-                    onSave = {}, onBack = {}, onScreenshot = {}, onSelectImage = {}, onSkipImage = {},
+                    onSave = {}, onBack = {}, onSelectImage = {}, onSkipImage = {},
                 )
             }
         }

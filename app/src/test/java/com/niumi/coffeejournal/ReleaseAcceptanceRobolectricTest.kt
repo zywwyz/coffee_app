@@ -20,9 +20,12 @@ import com.niumi.coffeejournal.core.database.ImageAssetEntity
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.CatalogItem
+import com.niumi.coffeejournal.core.model.ChainProductKind
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
+import com.niumi.coffeejournal.journal.CalendarDisplayMode
+import com.niumi.coffeejournal.journal.CalendarDisplayPreference
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -48,6 +51,16 @@ class ReleaseAcceptanceRobolectricTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
     @Test
+    fun `calendar mode switch uses isolated application preference`() {
+        val app = compose.activity.application as InMemoryCoffeeJournalApp
+        compose.onNodeWithTag(TestTags.CalendarCoffeeDisplayMode).assertIsSelected()
+
+        compose.onNodeWithTag(TestTags.CalendarBrandDisplayMode).performClick()
+
+        compose.runOnIdle { assertEquals(CalendarDisplayMode.BRAND, app.calendarDisplayPreference.value) }
+    }
+
+    @Test
     fun `main activity journey records two logo-only coffees and preserves history`() = runBlocking {
         val app = compose.activity.application as InMemoryCoffeeJournalApp
         appToClose = app
@@ -58,7 +71,8 @@ class ReleaseAcceptanceRobolectricTest {
         val brand = Brand(BRAND_ID, BrandType.CHAIN, BRAND_NAME, LOGO_ID, MaintenanceMode.MANUAL_ONLY, null)
         val item = CatalogItem(
             ITEM_ID, BRAND_ID, ItemType.CHAIN_PRODUCT, ORIGINAL_ITEM_NAME, null,
-            null, null, null, null, null, ItemStatus.NEEDS_IMAGE,
+            null, null, null, null, null, ItemStatus.ACTIVE,
+            chainProductKind = ChainProductKind.MILK,
         )
         app.catalogRepository.upsertBrand(brand)
         app.catalogRepository.upsertItem(item)
@@ -116,11 +130,11 @@ class ReleaseAcceptanceRobolectricTest {
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText(BRAND_NAME).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithText(BRAND_NAME).performClick()
+        compose.onNodeWithText(BRAND_NAME).performScrollTo().performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText(ORIGINAL_ITEM_NAME).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithText(ORIGINAL_ITEM_NAME).performClick()
+        compose.onNodeWithText(ORIGINAL_ITEM_NAME).performScrollTo().performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithTag(TestTags.MissingImagePrompt).fetchSemanticsNodes().isNotEmpty()
         }
@@ -168,6 +182,7 @@ class InMemoryCoffeeJournalApp : CoffeeJournalApp() {
     override val journalClock = object : com.niumi.coffeejournal.journal.Clock {
         override fun read() = fixedReading
     }
+    override val calendarDisplayPreference = FakeCalendarDisplayPreference()
     val acceptanceYearMonth: Pair<Int, Int> = fixedReading.localDate
         .let { it.substring(0, 4).toInt() to it.substring(5, 7).toInt() }
 
@@ -176,6 +191,13 @@ class InMemoryCoffeeJournalApp : CoffeeJournalApp() {
             .allowMainThreadQueries()
             .build()
     }
+}
+
+class FakeCalendarDisplayPreference(
+    var value: CalendarDisplayMode = CalendarDisplayMode.COFFEE,
+) : CalendarDisplayPreference {
+    override fun read(): CalendarDisplayMode = value
+    override fun write(mode: CalendarDisplayMode) { value = mode }
 }
 
 private fun acceptanceClockReading(): com.niumi.coffeejournal.journal.ClockReading {

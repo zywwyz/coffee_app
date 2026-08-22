@@ -275,6 +275,55 @@ class JournalViewModelTest {
         assertEquals("/private/logo-at-save.png", day.imagePath)
     }
 
+    @Test
+    fun `calendar mode persists without changing projected month data`() = runBlocking {
+        val journal = FakeJournalRepository().apply {
+            month.value = listOf(
+                DrinkRecord(
+                    "drink", 100, "2026-08-05", ItemType.CHAIN_PRODUCT, "item", null, null, null, null,
+                    DrinkSnapshot("瑞幸", "拿铁", null, null, "product-asset", "brand-asset"),
+                ),
+            )
+        }
+        val preference = FakeCalendarDisplayPreference()
+        val resolver = ImagePathResolver { if (it == "product-asset") "product.webp" else "brand.webp" }
+        val viewModel = JournalViewModel(
+            journal, FakeCatalogRepository(), 2026, 8, CoroutineScope(Job() + Dispatchers.Unconfined),
+            imagePathResolver = resolver,
+            calendarDisplayPreference = preference,
+        )
+        val before = viewModel.uiState.value
+
+        viewModel.setCalendarDisplayMode(CalendarDisplayMode.BRAND)
+
+        val after = viewModel.uiState.value
+        assertEquals(CalendarDisplayMode.BRAND, after.calendarDisplayMode)
+        assertEquals(before.records, after.records)
+        assertEquals(before.days, after.days)
+        assertEquals(before.summary, after.summary)
+        assertEquals(CalendarDisplayMode.BRAND, preference.value)
+
+        viewModel.nextMonth()
+        assertEquals(CalendarDisplayMode.BRAND, viewModel.uiState.value.calendarDisplayMode)
+        assertEquals(0, journal.saveCalls)
+    }
+
+    @Test
+    fun `fresh view model reads persisted calendar mode`() = runBlocking {
+        val preference = FakeCalendarDisplayPreference()
+        val first = JournalViewModel(
+            FakeJournalRepository(), FakeCatalogRepository(), 2026, 8,
+            CoroutineScope(Job() + Dispatchers.Unconfined), calendarDisplayPreference = preference,
+        )
+        first.setCalendarDisplayMode(CalendarDisplayMode.BRAND)
+        val fresh = JournalViewModel(
+            FakeJournalRepository(), FakeCatalogRepository(), 2026, 8,
+            CoroutineScope(Job() + Dispatchers.Unconfined), calendarDisplayPreference = preference,
+        )
+
+        assertEquals(CalendarDisplayMode.BRAND, fresh.uiState.value.calendarDisplayMode)
+    }
+
     private fun record(
         id: String,
         date: String,
@@ -363,6 +412,13 @@ class JournalViewModelTest {
         override suspend fun upsertBrand(brand: Brand) = Unit
         override suspend fun upsertItem(item: CatalogItem) { savedItem = item; currentItem = item }
         override suspend fun lastPriceFen(itemId: String): Long? = 990
+    }
+
+    private class FakeCalendarDisplayPreference(
+        var value: CalendarDisplayMode = CalendarDisplayMode.COFFEE,
+    ) : CalendarDisplayPreference {
+        override fun read(): CalendarDisplayMode = value
+        override fun write(mode: CalendarDisplayMode) { value = mode }
     }
 
     private inner class DelayedCatalogRepository(initial: CatalogItem) : CatalogRepository {

@@ -42,6 +42,19 @@ enum class ItemType {
 }
 
 @Serializable
+enum class ChainProductKind { BLACK, FRUIT, MILK, PENDING }
+
+fun legacyChainProductKind(name: String, category: String?): ChainProductKind {
+    val normalized = "$name ${category.orEmpty()}".lowercase()
+    return when {
+        listOf("果", "柠檬", "橙", "葡萄", "莓", "桃", "气泡").any(normalized::contains) -> ChainProductKind.FRUIT
+        listOf("拿铁", "澳白", "卡布", "dirty", "奶", "乳").any(normalized::contains) -> ChainProductKind.MILK
+        listOf("黑咖", "美式", "浓缩", "冷萃", "手冲").any(normalized::contains) -> ChainProductKind.BLACK
+        else -> ChainProductKind.PENDING
+    }
+}
+
+@Serializable
 enum class ItemStatus {
     ACTIVE,
     NEEDS_IMAGE,
@@ -123,6 +136,7 @@ data class CatalogItem(
     val category: String? = null,
     val specificationDescription: String? = null,
     val imageSourceUrl: String? = null,
+    val chainProductKind: ChainProductKind? = null,
 ) {
     init {
         require(informationCompleteness in 0..100) {

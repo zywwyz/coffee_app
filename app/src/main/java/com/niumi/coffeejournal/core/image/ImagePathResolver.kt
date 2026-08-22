@@ -21,6 +21,7 @@ class RoomImagePathResolver(
             val path = imageAssetDao.get(assetId)?.localPath ?: return@withContext null
             val file = File(path)
             if (!file.isFile || !file.canRead()) return@withContext null
+            if (file.extension.lowercase() !in SUPPORTED_EXTENSIONS) return@withContext null
             if (!file.hasSupportedImageHeader()) return@withContext null
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(file.absolutePath, bounds)
@@ -39,6 +40,7 @@ private fun File.hasSupportedImageHeader(): Boolean {
     val jpeg = header[0] == 0xff.toByte() && header[1] == 0xd8.toByte() && header[2] == 0xff.toByte()
     val webp = read >= 12 && String(header, 0, 4, Charsets.US_ASCII) == "RIFF" &&
         String(header, 8, 4, Charsets.US_ASCII) == "WEBP"
-    val heif = read >= 12 && String(header, 4, 4, Charsets.US_ASCII) == "ftyp"
-    return png || jpeg || webp || heif
+    return png || jpeg || webp
 }
+
+private val SUPPORTED_EXTENSIONS = setOf("png", "jpg", "jpeg", "webp")

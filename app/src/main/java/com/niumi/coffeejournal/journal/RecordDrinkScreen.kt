@@ -56,9 +56,9 @@ fun RecordDrinkScreen(
     onSave: () -> Unit,
     onDiscardDraft: () -> Unit = {},
     onBack: () -> Unit,
-    onScreenshot: () -> Unit,
     onSelectImage: () -> Unit,
     onSkipImage: () -> Unit,
+    onAddProduct: () -> Unit = {},
 ) {
     val editorBusy = state.saving || state.selecting || state.attachingImage
     val hasDraft = state.selectedItemId != null || state.invalidItem || state.editingRecordId != null
@@ -94,6 +94,9 @@ fun RecordDrinkScreen(
         }
         SelectionRow("选择品牌", brands, state.selectedBrandId, !state.saving, { it.id }, { it.name }, onBrandSelect)
         SelectionRow("选择产品", items, state.selectedItemId, !state.saving, { it.id }, { it.name }, onItemSelect)
+        if (state.sourceType == ItemType.CHAIN_PRODUCT && state.selectedBrandId != null) {
+            OutlinedButton(onClick = onAddProduct, enabled = !editorBusy) { Text("添加新产品") }
+        }
         Text("饮用日期与时间", style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
@@ -203,7 +206,7 @@ fun RecordDrinkScreen(
     }
 
     if (state.needsImagePrompt) {
-        MissingImageDialog(!editorBusy, onScreenshot, onSelectImage, onSkipImage)
+        MissingImageDialog(!editorBusy, onSelectImage, onSkipImage)
     }
     if (confirmDiscard) {
         AlertDialog(
@@ -247,7 +250,6 @@ private fun <T> SelectionRow(
 @Composable
 private fun MissingImageDialog(
     enabled: Boolean,
-    onScreenshot: () -> Unit,
     onSelectImage: () -> Unit,
     onSkip: () -> Unit,
 ) {
@@ -255,11 +257,10 @@ private fun MissingImageDialog(
         modifier = Modifier.testTag(TestTags.MissingImagePrompt),
         onDismissRequest = onSkip,
         title = { Text("为产品补充图片") },
-        text = { Text("当前产品没有图片。可以上传原始屏幕截图，稍后由本机裁剪；也可以选择已裁好的图片，或先使用品牌 Logo。") },
+        text = { Text("当前产品没有图片。选择实拍图片，或使用品牌 Logo。") },
         confirmButton = {
             Column {
-                Button(onClick = onScreenshot, enabled = enabled) { Text("上传完整截图") }
-                OutlinedButton(onClick = onSelectImage, enabled = enabled) { Text("选择图片") }
+                Button(onClick = onSelectImage, enabled = enabled) { Text("选择实拍图片") }
             }
         },
         dismissButton = { TextButton(onClick = onSkip, enabled = enabled) { Text("暂时跳过") } },

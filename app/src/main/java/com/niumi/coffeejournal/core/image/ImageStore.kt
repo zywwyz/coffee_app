@@ -14,6 +14,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.UUID
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.ensureActive
@@ -22,7 +23,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 interface ImageStore {
-    suspend fun importCropped(source: Uri, crop: CropRect, kind: ImageKind = ImageKind.PRODUCT): ImageAsset
     suspend fun importWhole(source: Uri, kind: ImageKind): ImageAsset
     suspend fun deleteIfUnreferenced(assetId: String): Boolean
 }
@@ -30,6 +30,22 @@ interface ImageStore {
 /** Serializes all mutations of managed image files with their image_assets rows. */
 internal object ImageMutationCoordinator {
     val mutex = Mutex()
+}
+
+internal interface WholeImportHooks {
+    suspend fun afterPrepared()
+    suspend fun beforeMutationLock()
+    suspend fun afterMutationCommitted()
+    suspend fun afterMutationReturned()
+    suspend fun beforeRollback()
+
+    data object None : WholeImportHooks {
+        override suspend fun afterPrepared() = Unit
+        override suspend fun beforeMutationLock() = Unit
+        override suspend fun afterMutationCommitted() = Unit
+        override suspend fun afterMutationReturned() = Unit
+        override suspend fun beforeRollback() = Unit
+    }
 }
 
 enum class ImageKind { PRODUCT, BRAND_LOGO, BEAN_PACKAGE, RECORD_SNAPSHOT }
@@ -41,24 +57,9 @@ data class ImageAsset(
     val kind: ImageKind,
 )
 
-data class CropRect(val left: Int, val top: Int, val right: Int, val bottom: Int) {
-    val width: Int get() = right - left
-    val height: Int get() = bottom - top
-
-    fun requireInside(width: Int, height: Int): CropRect {
-        if (this.width <= 0 || this.height <= 0 || left < 0 || top < 0 || right > width || bottom > height) {
-            throw InvalidCropException(this, width, height)
-        }
-        return this
-    }
-}
-
-class InvalidCropException(crop: CropRect, width: Int, height: Int) :
-    IllegalArgumentException("Crop $crop is outside ${width}x$height")
-
 class ImageDecodeException : IllegalArgumentException("The selected image cannot be decoded")
 
-class LocalImageStore(
+internal class LocalImageStore(
     context: Context,
     private val imageAssetDao: ImageAssetDao,
     private val now: () -> Long = System::currentTimeMillis,
@@ -69,24 +70,102 @@ class LocalImageStore(
             ?: error("Image asset was not persisted")
     },
     private val beforeAssetDelivery: suspend (ImageAsset) -> Unit = {},
+    private val wholeImportHooks: WholeImportHooks = WholeImportHooks.None,
 ) : ImageStore {
     private val resolver: ContentResolver = context.applicationContext.contentResolver
     private val imageDirectory = File(context.applicationContext.filesDir, "images")
 
-    override suspend fun importCropped(source: Uri, crop: CropRect, kind: ImageKind): ImageAsset =
-        importConfirmed(source, kind) { decoded ->
-            crop.requireInside(decoded.orientedWidth, decoded.orientedHeight)
-            val left = (crop.left * decoded.bitmap.width.toDouble() / decoded.orientedWidth).toInt()
-            val top = (crop.top * decoded.bitmap.height.toDouble() / decoded.orientedHeight).toInt()
-            val right = (crop.right * decoded.bitmap.width.toDouble() / decoded.orientedWidth).toInt()
-                .coerceAtLeast(left + 1).coerceAtMost(decoded.bitmap.width)
-            val bottom = (crop.bottom * decoded.bitmap.height.toDouble() / decoded.orientedHeight).toInt()
-                .coerceAtLeast(top + 1).coerceAtMost(decoded.bitmap.height)
-            Bitmap.createBitmap(decoded.bitmap, left, top, right - left, bottom - top)
+    override suspend fun importWhole(source: Uri, kind: ImageKind): ImageAsset {
+        var temporary: File? = null
+        try {
+            val prepared = withContext(Dispatchers.IO) {
+                imageDirectory.mkdirs()
+                val createdTemporary = File.createTempFile("whole-", ".tmp", imageDirectory)
+                temporary = createdTemporary
+                try {
+                    streamSourceToTemporary(source, createdTemporary)
+                    requireDecodeableBounds(createdTemporary)
+                    val extension = imageExtension(createdTemporary) ?: throw ImageDecodeException()
+                    val preparedImage = WholeImagePreparation(createdTemporary, extension, sha256(createdTemporary))
+                    wholeImportHooks.afterPrepared()
+                    preparedImage
+                } catch (error: Throwable) {
+                    createdTemporary.delete()
+                    throw error
+                }
+            }
+            val preparedTemporary = prepared.temporary
+            coroutineContext.ensureActive()
+            wholeImportHooks.beforeMutationLock()
+            return ImageMutationCoordinator.mutex.withLock {
+                var target: File? = null
+                var createdTarget = false
+                var createdAsset: ImageAssetEntity? = null
+                try {
+                    val delivered = withContext(Dispatchers.IO) {
+                        imageAssetDao.getBySha256(prepared.sha256)?.let { existing ->
+                            preparedTemporary.delete()
+                            temporary = null
+                            return@withContext validateStored(existing, prepared.sha256)
+                        }
+                        target = File(imageDirectory, "${prepared.sha256}.${prepared.extension}")
+                        if (target.exists()) {
+                            preparedTemporary.delete()
+                        } else {
+                            if (!preparedTemporary.renameTo(target)) throw IllegalStateException("Unable to atomically store image")
+                            createdTarget = true
+                        }
+                        val candidate = ImageAssetEntity(
+                            newAssetId(),
+                            checkNotNull(target).absolutePath,
+                            prepared.sha256,
+                            kind.name,
+                            now(),
+                        )
+                        var stored: ImageAssetEntity? = null
+                        withContext(NonCancellable) {
+                            stored = persistAsset(candidate)
+                            if (stored?.id == candidate.id) createdAsset = stored
+                        }
+                        val delivered = validateStored(checkNotNull(stored), prepared.sha256)
+                        wholeImportHooks.afterMutationCommitted()
+                        beforeAssetDelivery(delivered)
+                        coroutineContext.ensureActive()
+                        temporary = null
+                        delivered
+                    }
+                    wholeImportHooks.afterMutationReturned()
+                    delivered
+                } catch (error: Throwable) {
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        wholeImportHooks.beforeRollback()
+                        preparedTemporary.delete()
+                        temporary = null
+                        createdAsset?.let { owned ->
+                            runCatching {
+                                if (imageAssetDao.referenceCount(owned.id) == 0 && imageAssetDao.deleteIfUnreferenced(owned.id) == 1) {
+                                    managedFileOrNull(owned.localPath)?.delete()
+                                }
+                            }
+                        }
+                        if (createdTarget) {
+                            val hasDatabaseOwner = target?.let { file ->
+                                runCatching { imageAssetDao.getBySha256(file.nameWithoutExtension) != null }.getOrDefault(false)
+                            } == true
+                            if (!hasDatabaseOwner) target?.delete()
+                        }
+                    }
+                    throw error
+                }
+            }
+        } finally {
+            temporary?.let { lingeringTemporary ->
+                withContext(NonCancellable + Dispatchers.IO) {
+                    lingeringTemporary.delete()
+                }
+            }
         }
-
-    override suspend fun importWhole(source: Uri, kind: ImageKind): ImageAsset =
-        importConfirmed(source, kind) { it.bitmap }
+    }
 
     override suspend fun deleteIfUnreferenced(assetId: String): Boolean = withContext(Dispatchers.IO) {
         ImageMutationCoordinator.mutex.withLock {
@@ -205,6 +284,30 @@ class LocalImageStore(
         )
     }
 
+    private suspend fun streamSourceToTemporary(source: Uri, temporary: File) {
+        resolver.openInputStream(source)?.use { input ->
+            FileOutputStream(temporary).use { output ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var total = 0L
+                while (true) {
+                    coroutineContext.ensureActive()
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    total += count
+                    if (total > MAX_WHOLE_IMAGE_BYTES) throw ImageDecodeException()
+                    output.write(buffer, 0, count)
+                }
+                output.fd.sync()
+            }
+        } ?: throw ImageDecodeException()
+    }
+
+    private fun requireDecodeableBounds(file: File) {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw ImageDecodeException()
+    }
+
     private fun managedFileOrNull(path: String): File? {
         val root = imageDirectory.canonicalFile
         val candidate = try { File(path).canonicalFile } catch (_: Exception) { return null }
@@ -221,10 +324,26 @@ class LocalImageStore(
     }
 
     private data class DecodedImage(val bitmap: Bitmap, val orientedWidth: Int, val orientedHeight: Int)
+    private data class WholeImagePreparation(val temporary: File, val extension: String, val sha256: String)
 
     private companion object {
         const val MAX_DECODE_DIMENSION = 2048
-        val SAFE_FILE_NAME = Regex("[0-9a-f]{64}\\.webp")
+        const val MAX_WHOLE_IMAGE_BYTES = 20L * 1024 * 1024
+        val SAFE_FILE_NAME = Regex("[0-9a-f]{64}\\.(png|jpg|jpeg|webp)")
+
+        fun imageExtension(file: File): String? = file.inputStream().use { input ->
+            val header = ByteArray(12)
+            val count = input.read(header)
+            when {
+                count >= 8 && header.copyOfRange(0, 8).contentEquals(PNG_MAGIC) -> "png"
+                count >= 3 && header[0] == 0xff.toByte() && header[1] == 0xd8.toByte() && header[2] == 0xff.toByte() -> "jpg"
+                count >= 12 && String(header, 0, 4, Charsets.US_ASCII) == "RIFF" &&
+                    String(header, 8, 4, Charsets.US_ASCII) == "WEBP" -> "webp"
+                else -> null
+            }
+        }
+
+        val PNG_MAGIC = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
         fun sampleSize(width: Int, height: Int): Int {
             var sample = 1
             while (width / sample > MAX_DECODE_DIMENSION || height / sample > MAX_DECODE_DIMENSION) sample *= 2

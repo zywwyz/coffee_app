@@ -36,6 +36,36 @@ class BackupArchiveCodecTest {
         } finally { root.deleteRecursively() }
     }
 
+    @Test fun `round trip accepts png jpg jpeg and webp image codecs`() {
+        val root = createTempDirectory("backup-codecs-").toFile()
+        try {
+            val db = File(root, "source.sqlite").apply { writeBytes("SQLite format 3\u0000payload".toByteArray()) }
+            val png = byteArrayOf(0x89.toByte(),0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a)
+            val jpeg = byteArrayOf(0xff.toByte(),0xd8.toByte(),0xff.toByte(),0xd9.toByte())
+            val webp = byteArrayOf(0x52,0x49,0x46,0x46,4,0,0,0,0x57,0x45,0x42,0x50)
+            val images = listOf("png" to png, "jpg" to jpeg, "jpeg" to jpeg, "webp" to webp).mapIndexed { i, (ext, bytes) ->
+                val file = File(root, "$i.$ext").apply { writeBytes(bytes) }
+                BackupImage("asset-$i", "images/asset-$i.$ext", file, "PRODUCT")
+            }
+            val archive = File(root, "backup.zip")
+            codec.encode(archive, db, images, BackupCounts(0,0,0,4,0,0), 1, 1)
+
+            assertEquals(4, codec.decode(archive, File(root, "decoded")).images.size)
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun `image extension and magic mismatch is rejected on decode`() {
+        val root = createTempDirectory("backup-image-mismatch-").toFile()
+        try {
+            val db = File(root, "source.sqlite").apply { writeBytes("SQLite format 3\u0000payload".toByteArray()) }
+            val png = File(root, "image.png").apply { writeBytes(byteArrayOf(0x89.toByte(),0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a)) }
+            val archive = File(root, "backup.zip")
+            codec.encode(archive, db, listOf(BackupImage("asset", "images/asset.jpg", png, "PRODUCT")), BackupCounts(0,0,0,1,0,0), 1, 1)
+
+            assertThrows(BackupValidationException::class.java) { codec.decode(archive, File(root, "decoded")) }
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun `future format is rejected`() {
         val root = createTempDirectory("backup-future-").toFile()
         try {

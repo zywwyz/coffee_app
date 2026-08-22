@@ -31,6 +31,9 @@ interface BrandDao {
         insertIgnoringExisting(brands)
     }
 
+    @Query("UPDATE brands SET logoAssetId=:assetId WHERE id=:brandId AND logoAssetId IS NULL")
+    suspend fun attachLogoIfMissing(brandId: String, assetId: String): Int
+
     @Query("SELECT * FROM brands ORDER BY name")
     fun observe(): Flow<List<BrandEntity>>
 
@@ -40,6 +43,24 @@ interface BrandDao {
     @Query("SELECT * FROM brands WHERE id = :id")
     suspend fun get(id: String): BrandEntity?
 
+    @Query("SELECT * FROM brands WHERE type = :type AND normalizedName IN (:names)")
+    suspend fun getByNormalizedNames(type: String, names: List<String>): List<BrandEntity>
+
+    @Transaction
+    suspend fun adoptAsBundledId(legacy: BrandEntity, bundledId: String) {
+        if (legacy.id == bundledId || get(bundledId) != null) return
+        renameId(legacy.id, bundledId)
+    }
+
+    @Query("UPDATE brands SET id = :toBrandId WHERE id = :fromBrandId")
+    suspend fun renameId(fromBrandId: String, toBrandId: String)
+
+    @Query("UPDATE catalog_items SET brandId = :toBrandId WHERE brandId = :fromBrandId")
+    suspend fun moveCatalogItemsBrandId(fromBrandId: String, toBrandId: String)
+
+    @Query("DELETE FROM brands WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Query(
         "SELECT EXISTS(SELECT 1 FROM brands WHERE type = :type AND normalizedName = :name AND id != :id)",
     )
@@ -48,9 +69,7 @@ interface BrandDao {
     @Query(
         """
         SELECT b.*,
-          (SELECT COUNT(*) FROM catalog_items i WHERE i.brandId = b.id) AS itemCount,
-          (SELECT MAX(u.fetchedAtEpochMillis) FROM catalog_updates u
-             WHERE u.brandId = b.id AND u.status = 'CONFIRMED') AS lastUpdatedAtEpochMillis
+          (SELECT COUNT(*) FROM catalog_items i WHERE i.brandId = b.id) AS itemCount
         FROM brands b WHERE b.type = :type ORDER BY b.name
         """,
     )
@@ -66,7 +85,6 @@ data class BrandOverviewRow(
     val maintenanceMode: String,
     val publicSourceUrl: String?,
     val itemCount: Int,
-    val lastUpdatedAtEpochMillis: Long?,
 )
 
 @Dao
@@ -89,6 +107,9 @@ interface CatalogItemDao {
 
     @Query("SELECT * FROM catalog_items WHERE id = :id")
     suspend fun get(id: String): CatalogItemEntity?
+
+    @Query("DELETE FROM catalog_items WHERE id = :id")
+    suspend fun deleteById(id: String)
 
     @Query(
         "SELECT EXISTS(SELECT 1 FROM catalog_items WHERE brandId = :brandId AND normalizedName = :name AND id != :id)",

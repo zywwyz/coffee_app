@@ -2,6 +2,7 @@
 .worktrees/
 .local-tools/
 .gradle/
+.kotlin/
 local.properties
 build/
 .idea/

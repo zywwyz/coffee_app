@@ -1,7 +1,6 @@
 package com.niumi.coffeejournal.catalog
 
 import android.net.Uri
-import com.niumi.coffeejournal.core.image.CropRect
 import com.niumi.coffeejournal.core.image.ImageAsset
 import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.core.image.ImageStore
@@ -26,30 +25,14 @@ import org.junit.Test
 
 class CatalogViewModelTest {
     @Test
-    fun `seed metadata is exactly the five supported chain brands`() {
+    fun `seed metadata is exactly the bundled chain brands`() {
         assertEquals(
-            listOf("瑞幸", "Manner", "M Stand", "Peet's", "% Arabica"),
+            listOf("瑞幸", "库迪", "NOWWA", "幸运咖", "星巴克", "肯悦咖啡", "MANNER", "沪咖", "Tims", "M Stand", "Peet's", "%Arabica"),
             seedBrands().map { it.name },
         )
         assertTrue(seedBrands().all { it.logoAssetId == null && it.type == BrandType.CHAIN })
-        assertEquals(
-            mapOf(
-                "瑞幸" to MaintenanceMode.PUBLIC_SOURCE,
-                "M Stand" to MaintenanceMode.PUBLIC_SOURCE,
-                "Manner" to MaintenanceMode.MANUAL_ONLY,
-                "Peet's" to MaintenanceMode.MANUAL_ONLY,
-                "% Arabica" to MaintenanceMode.MANUAL_ONLY,
-            ),
-            seedBrands().associate { it.name to it.maintenanceMode },
-        )
-        assertEquals(
-            "https://www.luckincoffee.com/cn/menu/signature-lattes",
-            seedBrands().single { it.name == "瑞幸" }.publicSourceUrl,
-        )
-        assertEquals(
-            "https://mstand.cn/ProductInfoCategory?categoryId=575736",
-            seedBrands().single { it.name == "M Stand" }.publicSourceUrl,
-        )
+        assertTrue(seedBrands().all { it.maintenanceMode == MaintenanceMode.MANUAL_ONLY })
+        assertTrue(seedBrands().all { it.publicSourceUrl == null })
     }
 
     @Test
@@ -230,6 +213,84 @@ class CatalogViewModelTest {
 
         assertTrue(repository.items.value.isEmpty())
         assertEquals(listOf("new-image"), images.deleteAttempts)
+    }
+
+    @Test
+    fun `brand editor session survives recomposition with a stable lease and staged asset`() = runBlocking {
+        val viewModel = viewModel(FakeCatalogRepository(), RecordingImageStore())
+
+        viewModel.openBrandEditor(null, BrandType.CHAIN)
+        val opened = viewModel.uiState.value.editorSession as CatalogEditorSession.Brand
+        viewModel.openBrandEditor(null, BrandType.CHAIN)
+        assertEquals(opened.leaseId, (viewModel.uiState.value.editorSession as CatalogEditorSession.Brand).leaseId)
+
+        assertTrue(viewModel.stageAsset(opened.leaseId, null, "logo"))
+        assertEquals("logo", (viewModel.uiState.value.editorSession as CatalogEditorSession.Brand).assetId)
+    }
+
+    @Test
+    fun `item editor draft retains every edited field with its staged asset`() = runBlocking {
+        val viewModel = viewModel(FakeCatalogRepository(), RecordingImageStore())
+        val brand = Brand("roaster", BrandType.ROASTER, "烘焙商", null, MaintenanceMode.MANUAL_ONLY, null)
+        viewModel.openItemEditor(null, brand)
+        val leaseId = (viewModel.uiState.value.editorSession as CatalogEditorSession.Item).leaseId
+        viewModel.updateItemDraft {
+            it.copy(name = "花魁", origin = "埃塞", processing = "日晒", roastLevel = "浅烘", flavorNotes = "莓果", brewMethod = "手冲", purchaseDate = "2026-08-01")
+        }
+        assertTrue(viewModel.stageAsset(leaseId, null, "package"))
+
+        val draft = (viewModel.uiState.value.editorSession as CatalogEditorSession.Item).draft
+        assertEquals("花魁", draft.name)
+        assertEquals("埃塞", draft.origin)
+        assertEquals("手冲", draft.brewMethod)
+        assertEquals("package", draft.imageAssetId)
+        assertEquals("2026-08-01", draft.purchaseDate)
+    }
+
+    @Test
+    fun `item editor retains raw caffeine input across session reads`() {
+        val viewModel = viewModel(FakeCatalogRepository())
+        viewModel.openItemEditor(null, Brand("chain", BrandType.CHAIN, "连锁", null, MaintenanceMode.MANUAL_ONLY, null))
+        viewModel.updateItemCaffeineInput("1")
+        viewModel.updateItemCaffeineInput("10")
+
+        assertEquals("10", (viewModel.uiState.value.editorSession as CatalogEditorSession.Item).caffeineInput)
+    }
+
+    @Test
+    fun `explicit editor close cleans session lease while configuration disposal does not`() = runBlocking {
+        val images = RecordingImageStore()
+        val viewModel = viewModel(FakeCatalogRepository(), images)
+        viewModel.openItemEditor(item(ItemStatus.ACTIVE), Brand("roaster", BrandType.ROASTER, "烘焙商", null, MaintenanceMode.MANUAL_ONLY, null))
+        val leaseId = (viewModel.uiState.value.editorSession as CatalogEditorSession.Item).leaseId
+        assertTrue(viewModel.stageAsset(leaseId, null, "image"))
+
+        assertEquals("image", (viewModel.uiState.value.editorSession as CatalogEditorSession.Item).assetId)
+        assertTrue(images.deleteAttempts.isEmpty())
+        viewModel.closeEditor()
+        yield()
+
+        assertEquals(null, viewModel.uiState.value.editorSession)
+        assertEquals(listOf("image"), images.deleteAttempts)
+    }
+
+    @Test
+    fun `successful save clears editor session while failed save retains it`() = runBlocking {
+        val repository = FakeCatalogRepository().apply { failItemSave = true }
+        val viewModel = viewModel(repository, RecordingImageStore())
+        val brand = Brand("roaster", BrandType.ROASTER, "烘焙商", null, MaintenanceMode.MANUAL_ONLY, null)
+        viewModel.openItemEditor(null, brand)
+        val session = viewModel.uiState.value.editorSession as CatalogEditorSession.Item
+        assertTrue(viewModel.stageAsset(session.leaseId, null, "image"))
+
+        viewModel.saveItem(editor(imageAssetId = "image", assetLeaseId = session.leaseId))
+        yield()
+        assertEquals(session.leaseId, viewModel.uiState.value.editorSession?.leaseId)
+
+        repository.failItemSave = false
+        viewModel.saveItem(editor(imageAssetId = "image", assetLeaseId = session.leaseId))
+        yield()
+        assertEquals(null, viewModel.uiState.value.editorSession)
     }
 
     @Test
@@ -414,8 +475,6 @@ class CatalogViewModelTest {
     ) : ImageStore {
         val deleteAttempts = mutableListOf<String>()
         val retainedAssets = protectedAssets.toMutableSet()
-        override suspend fun importCropped(source: Uri, crop: CropRect, kind: ImageKind): ImageAsset =
-            error("unexpected")
         override suspend fun importWhole(source: Uri, kind: ImageKind): ImageAsset = error("unexpected")
         override suspend fun deleteIfUnreferenced(assetId: String): Boolean {
             deleteAttempts += assetId

@@ -1,6 +1,5 @@
 package com.niumi.coffeejournal.journal
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,12 +18,13 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -32,8 +32,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
@@ -42,13 +40,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.niumi.coffeejournal.catalog.CatalogRepository
+import com.niumi.coffeejournal.catalog.ManualProductEditorDialog
+import com.niumi.coffeejournal.catalog.ManualProductEditorEvent
+import com.niumi.coffeejournal.catalog.ManualProductEditorViewModel
 import com.niumi.coffeejournal.core.image.ImagePathResolver
-import com.niumi.coffeejournal.core.image.CalendarThumbnailLoader
-import com.niumi.coffeejournal.core.image.ThumbnailLoader
+import com.niumi.coffeejournal.core.image.ImageStore
+import com.niumi.coffeejournal.core.image.LocalAssetImage
 import com.niumi.coffeejournal.core.model.DrinkRecord
+import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.image.ImageKind
-import com.niumi.coffeejournal.importer.AssetImportRequester
-import com.niumi.coffeejournal.importer.ImageImportMode
+import com.niumi.coffeejournal.core.image.AssetImportRequester
 import com.niumi.coffeejournal.TestTags
 import java.util.Calendar
 
@@ -57,7 +58,10 @@ fun JournalFeature(
     journalRepository: JournalRepository,
     catalogRepository: CatalogRepository,
     imagePathResolver: ImagePathResolver,
-    assetImportRequester: AssetImportRequester = { _, _, _, _ -> },
+    assetImportRequester: AssetImportRequester = { _, _, _ -> },
+    imageStore: ImageStore? = null,
+    calendarDisplayPreference: CalendarDisplayPreference = DefaultCalendarDisplayPreference,
+    onOpenSettings: () -> Unit = {},
 ) {
     val today = remember { Calendar.getInstance() }
     val journalViewModel: JournalViewModel = viewModel(
@@ -67,12 +71,26 @@ fun JournalFeature(
             today.get(Calendar.YEAR),
             today.get(Calendar.MONTH) + 1,
             imagePathResolver,
+            calendarDisplayPreference,
         ),
     )
     val state by journalViewModel.uiState.collectAsStateWithLifecycle()
+    val productEditor: ManualProductEditorViewModel = viewModel(
+        key = "journal-manual-product-editor",
+        factory = ManualProductEditorViewModel.factory(catalogRepository, imageStore),
+    )
     var editorOpen by remember { mutableStateOf(false) }
     LaunchedEffect(state.saveCompletedToken) {
         if (state.saveCompletedToken > 0) editorOpen = false
+    }
+    LaunchedEffect(productEditor) {
+        productEditor.events.collect { event ->
+            if (event is ManualProductEditorEvent.Saved) {
+                journalViewModel.selectItem(ItemType.CHAIN_PRODUCT, event.itemId) { selected ->
+                    if (selected) productEditor.completeSaved() else productEditor.selectionFailed()
+                }
+            }
+        }
     }
 
     if (editorOpen) {
@@ -91,20 +109,18 @@ fun JournalFeature(
             onSave = journalViewModel::save,
             onDiscardDraft = journalViewModel::discardDraft,
             onBack = { editorOpen = false },
-            onScreenshot = {
-                val previousAssetId = state.items.firstOrNull { it.id == state.editor.selectedItemId }?.imageAssetId
-                assetImportRequester(ImageKind.PRODUCT, ImageImportMode.SCREENSHOT, previousAssetId) { selection ->
-                    journalViewModel.attachImportedImage(selection.assetId, selection.actualPriceFen)
-                }
-            },
             onSelectImage = {
                 val previousAssetId = state.items.firstOrNull { it.id == state.editor.selectedItemId }?.imageAssetId
-                assetImportRequester(ImageKind.PRODUCT, ImageImportMode.WHOLE_IMAGE, previousAssetId) { selection ->
+                assetImportRequester(ImageKind.PRODUCT, previousAssetId) { selection ->
                     journalViewModel.attachImportedImage(selection.assetId, null)
                 }
             },
             onSkipImage = journalViewModel::skipImagePrompt,
+            onAddProduct = {
+                state.brands.firstOrNull { it.id == state.editor.selectedBrandId }?.let(productEditor::openNew)
+            },
         )
+        ManualProductEditorDialog(productEditor, assetImportRequester, imagePathResolver)
     } else {
         JournalScreen(
             state = state,
@@ -118,6 +134,8 @@ fun JournalFeature(
                 editorOpen = true
             },
             onDeleteRecord = journalViewModel::deleteRecord,
+            onOpenSettings = onOpenSettings,
+            onCalendarDisplayModeChange = journalViewModel::setCalendarDisplayMode,
         )
     }
 }
@@ -131,9 +149,16 @@ fun JournalScreen(
     onRecordDrink: () -> Unit,
     onEditRecord: (String) -> Unit = {},
     onDeleteRecord: (String) -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+    onCalendarDisplayModeChange: (CalendarDisplayMode) -> Unit = {},
 ) {
-    val thumbnailLoader = remember { CalendarThumbnailLoader() }
     Scaffold(
+        topBar = {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("咖啡日历", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.testTag(TestTags.RootScreenTitle))
+                TextButton(onClick = onOpenSettings, modifier = Modifier.testTag(TestTags.RootScreenSettings)) { Text("设置") }
+            }
+        },
         floatingActionButton = {
             Button(onClick = onRecordDrink, modifier = Modifier.testTag(TestTags.RecordButton)) {
                 Text("记录一杯")
@@ -148,6 +173,7 @@ fun JournalScreen(
                 .padding(horizontal = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            CalendarDisplayModeControl(state.calendarDisplayMode, onCalendarDisplayModeChange)
             MonthHeader(state.year, state.month, onPreviousMonth, onNextMonth)
             WeekdayHeader()
             Column(Modifier.fillMaxWidth().testTag(TestTags.Calendar)) {
@@ -158,7 +184,7 @@ fun JournalScreen(
                                 day = day,
                                 onClick = { onDayClick(day.localDate) },
                                 modifier = Modifier.weight(1f),
-                                thumbnailLoader = thumbnailLoader,
+                                mode = state.calendarDisplayMode,
                             )
                         }
                     }
@@ -176,6 +202,26 @@ fun JournalScreen(
             onEdit = onEditRecord,
             onDelete = onDeleteRecord,
         )
+    }
+}
+
+@Composable
+private fun CalendarDisplayModeControl(
+    selectedMode: CalendarDisplayMode,
+    onModeChange: (CalendarDisplayMode) -> Unit,
+) {
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        listOf(CalendarDisplayMode.BRAND to "品牌", CalendarDisplayMode.COFFEE to "咖啡").forEachIndexed { index, (mode, label) ->
+            SegmentedButton(
+                selected = selectedMode == mode,
+                onClick = { onModeChange(mode) },
+                shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(index, 2),
+                modifier = Modifier.testTag(
+                    if (mode == CalendarDisplayMode.BRAND) TestTags.CalendarBrandDisplayMode
+                    else TestTags.CalendarCoffeeDisplayMode,
+                ),
+            ) { Text(label) }
+        }
     }
 }
 
@@ -206,7 +252,7 @@ private fun CalendarDay(
     day: CalendarDayUi,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    thumbnailLoader: ThumbnailLoader,
+    mode: CalendarDisplayMode,
 ) {
     Box(
         modifier = modifier
@@ -221,10 +267,10 @@ private fun CalendarDay(
         if (day.drinkCount == 0) {
             Text(day.dayNumber.toString(), modifier = Modifier.align(Alignment.Center))
         } else {
-            LocalCoffeeImage(
-                imagePath = day.imagePath,
-                brandLogoPath = day.brandLogoPath,
-                thumbnailLoader = thumbnailLoader,
+            LocalAssetImage(
+                primaryPath = if (mode == CalendarDisplayMode.BRAND) day.brandLogoPath else day.imagePath,
+                fallbackPath = if (mode == CalendarDisplayMode.COFFEE) day.brandLogoPath else null,
+                contentDescription = "咖啡图片",
                 modifier = Modifier.matchParentSize().clip(RoundedCornerShape(8.dp)),
             )
             Text(day.dayNumber.toString(), style = MaterialTheme.typography.labelSmall)
@@ -237,36 +283,6 @@ private fun CalendarDay(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun LocalCoffeeImage(
-    imagePath: String?,
-    brandLogoPath: String?,
-    thumbnailLoader: ThumbnailLoader,
-    modifier: Modifier = Modifier,
-) {
-    val loaded by produceState<ImageBitmap?>(null, imagePath, brandLogoPath, thumbnailLoader) {
-        value = thumbnailLoader.load(imagePath) ?: thumbnailLoader.load(brandLogoPath)
-    }
-    val image = loaded
-    if (image == null) {
-        Box(
-            modifier = modifier
-                .background(MaterialTheme.colorScheme.secondaryContainer)
-                .semantics { contentDescription = "通用咖啡占位图" },
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("☕", style = MaterialTheme.typography.headlineMedium)
-        }
-    } else {
-        Image(
-            bitmap = image,
-            contentDescription = "咖啡图片",
-            contentScale = ContentScale.Crop,
-            modifier = modifier,
-        )
     }
 }
 

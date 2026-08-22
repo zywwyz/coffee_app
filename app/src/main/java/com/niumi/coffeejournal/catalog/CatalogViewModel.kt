@@ -7,6 +7,7 @@ import com.niumi.coffeejournal.core.image.ImageStore
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.CatalogItem
+import com.niumi.coffeejournal.core.model.ChainProductKind
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
@@ -26,7 +27,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import com.niumi.coffeejournal.importer.validatePublicSourceConfiguration
 
 enum class CatalogTab { CHAINS, BEANS }
 
@@ -34,8 +34,8 @@ data class BrandEditor(
     val type: BrandType,
     val name: String,
     val logoAssetId: String?,
-    val maintenanceMode: MaintenanceMode,
-    val publicSourceUrl: String?,
+    val maintenanceMode: MaintenanceMode = MaintenanceMode.MANUAL_ONLY,
+    val publicSourceUrl: String? = null,
     val id: String? = null,
     val assetLeaseId: String? = null,
 )
@@ -60,6 +60,7 @@ data class ItemEditor(
     val category: String? = null,
     val specificationDescription: String? = null,
     val assetLeaseId: String? = null,
+    val chainProductKind: ChainProductKind? = null,
 )
 
 data class CatalogUiState(
@@ -71,9 +72,43 @@ data class CatalogUiState(
     val saving: Boolean = false,
     val errorMessage: String? = null,
     val saveCompletedToken: Long = 0,
+    val editorSession: CatalogEditorSession? = null,
 ) {
     val visibleItems: List<CatalogItem>
         get() = if (tab == CatalogTab.BEANS) items.filter { it.status == beanStatus } else items
+}
+
+sealed interface CatalogEditorSession {
+    val leaseId: String
+    val assetId: String?
+
+    data class Brand(
+        val initial: com.niumi.coffeejournal.core.model.Brand?,
+        val type: BrandType,
+        override val leaseId: String,
+        override val assetId: String?,
+        val draft: BrandEditor = BrandEditor(type, initial?.name.orEmpty(), assetId, id = initial?.id, assetLeaseId = leaseId),
+    ) : CatalogEditorSession {
+        val currentAssetId get() = draft.logoAssetId
+    }
+
+    data class Item(
+        val initial: CatalogItem?,
+        val brand: com.niumi.coffeejournal.core.model.Brand,
+        override val leaseId: String,
+        override val assetId: String?,
+        val draft: ItemEditor = ItemEditor(
+            brand.id, if (brand.type == BrandType.CHAIN) ItemType.CHAIN_PRODUCT else ItemType.PERSONAL_BEAN,
+            initial?.name.orEmpty(), assetId, initial?.origin, initial?.processing, initial?.roastLevel,
+            initial?.flavorNotes, initial?.brewMethod, initial?.status ?: ItemStatus.ACTIVE,
+            initial?.caffeineMg, initial?.officialDescription, initial?.purchaseDate, initial?.roastDate,
+            initial?.sourceUrl, initial?.id, initial?.category, initial?.specificationDescription, leaseId,
+            initial?.chainProductKind,
+        ),
+        val caffeineInput: String = initial?.caffeineMg?.toString().orEmpty(),
+    ) : CatalogEditorSession {
+        val currentAssetId get() = draft.imageAssetId
+    }
 }
 
 class CatalogViewModel(
@@ -138,7 +173,7 @@ class CatalogViewModel(
                 Brand(
                     id = editor.id ?: idGenerator(), type = editor.type, name = name,
                     logoAssetId = editor.logoAssetId, maintenanceMode = editor.maintenanceMode,
-                    publicSourceUrl = validatePublicSourceConfiguration(editor.maintenanceMode, editor.publicSourceUrl),
+                    publicSourceUrl = null,
                 ),
             )
         } catch (error: Throwable) {
@@ -175,6 +210,7 @@ class CatalogViewModel(
                 } else editor.specificationDescription.clean()
             } else null,
             imageSourceUrl = existing?.imageSourceUrl,
+            chainProductKind = if (editor.type == ItemType.CHAIN_PRODUCT) editor.chainProductKind else null,
         )
         beginAssetCommit(editor.assetLeaseId, editor.imageAssetId)
         try {
@@ -198,6 +234,39 @@ class CatalogViewModel(
         mutableState.value = mutableState.value.copy(errorMessage = null)
     }
 
+    fun openBrandEditor(initial: Brand?, type: BrandType) {
+        val current = mutableState.value.editorSession
+        if (current is CatalogEditorSession.Brand && current.initial?.id == initial?.id && current.type == type) return
+        openEditor(CatalogEditorSession.Brand(initial, type, idGenerator(), initial?.logoAssetId))
+    }
+
+    fun openItemEditor(initial: CatalogItem?, brand: Brand) {
+        val current = mutableState.value.editorSession
+        if (current is CatalogEditorSession.Item && current.initial?.id == initial?.id && current.brand.id == brand.id) return
+        openEditor(CatalogEditorSession.Item(initial, brand, idGenerator(), initial?.imageAssetId))
+    }
+
+    fun closeEditor() {
+        val session = mutableState.value.editorSession ?: return
+        mutableState.value = mutableState.value.copy(editorSession = null)
+        discardAssetLease(session.leaseId)
+    }
+
+    fun updateBrandDraft(update: (BrandEditor) -> BrandEditor) {
+        val session = mutableState.value.editorSession as? CatalogEditorSession.Brand ?: return
+        mutableState.value = mutableState.value.copy(editorSession = session.copy(draft = update(session.draft)))
+    }
+
+    fun updateItemDraft(update: (ItemEditor) -> ItemEditor) {
+        val session = mutableState.value.editorSession as? CatalogEditorSession.Item ?: return
+        mutableState.value = mutableState.value.copy(editorSession = session.copy(draft = update(session.draft)))
+    }
+
+    fun updateItemCaffeineInput(input: String) {
+        val session = mutableState.value.editorSession as? CatalogEditorSession.Item ?: return
+        mutableState.value = mutableState.value.copy(editorSession = session.copy(caffeineInput = input))
+    }
+
     suspend fun stageAsset(
         leaseId: String,
         persistedAssetId: String?,
@@ -205,20 +274,31 @@ class CatalogViewModel(
     ): Boolean {
         val store = imageStore ?: return false
         val replacedStaged = leaseMutex.withLock {
-            val lease = assetLeases[leaseId] ?: return false
+            val lease = assetLeases[leaseId] ?: mutableState.value.editorSession
+                ?.takeIf { it.leaseId == leaseId }
+                ?.let { StagedAssetLease(null, persistedAssetId).also { assetLeases[leaseId] = it } }
+                ?: return false
             check(!lease.committing) { "Cannot replace an asset during save" }
             val previous = lease.stagedAssetId?.takeIf { it != stagedAssetId }
             lease.stagedAssetId = stagedAssetId
             previous
         }
         replacedStaged?.let { runCatching { store.deleteIfUnreferenced(it) } }
+        mutableState.value.editorSession?.let { session ->
+            if (session.leaseId == leaseId) {
+                mutableState.value = mutableState.value.copy(editorSession = when (session) {
+                    is CatalogEditorSession.Brand -> session.copy(assetId = stagedAssetId, draft = session.draft.copy(logoAssetId = stagedAssetId))
+                    is CatalogEditorSession.Item -> session.copy(assetId = stagedAssetId, draft = session.draft.copy(imageAssetId = stagedAssetId))
+                })
+            }
+        }
         return true
     }
 
     suspend fun retainAssetLease(leaseId: String, persistedAssetId: String?): Boolean {
         if (imageStore == null) return false
         return leaseMutex.withLock {
-            if (assetLeases.containsKey(leaseId)) return@withLock false
+            if (assetLeases.containsKey(leaseId)) return@withLock true
             assetLeases[leaseId] = StagedAssetLease(null, persistedAssetId)
             true
         }
@@ -285,10 +365,18 @@ class CatalogViewModel(
 
     private suspend fun commitAssetLease(leaseId: String?, committedAssetId: String?) {
         if (leaseId == null) return
-        val lease = leaseMutex.withLock { assetLeases.remove(leaseId) } ?: return
-        lease.persistedAssetId?.takeIf { it != committedAssetId }?.let { oldAssetId ->
+        val lease = leaseMutex.withLock { assetLeases.remove(leaseId) }
+        lease?.persistedAssetId?.takeIf { it != committedAssetId }?.let { oldAssetId ->
             imageStore?.let { store -> runCatching { store.deleteIfUnreferenced(oldAssetId) } }
         }
+        if (mutableState.value.editorSession?.leaseId == leaseId) {
+            mutableState.value = mutableState.value.copy(editorSession = null)
+        }
+    }
+
+    private fun openEditor(session: CatalogEditorSession) {
+        mutableState.value = mutableState.value.copy(editorSession = session, errorMessage = null)
+        scope.launch { retainAssetLease(session.leaseId, session.assetId) }
     }
 
     private fun observeBrands(type: BrandType) {

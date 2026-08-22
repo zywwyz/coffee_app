@@ -1,245 +1,77 @@
 # 项目状态
 
-> 本文件保存未来开发需要的高密度上下文。不要把临时日志或完整会话历史写入此处。
+> 本文件只保存后续开发需要的高密度状态，不记录临时日志或完整会话历史。
 
 ## 项目简介
 
-### 产品目标
+个人使用、完全离线的 Android“咖啡日历”。记录连锁咖啡与个人咖啡豆，在月历按品牌或咖啡显示每日饮用图片，提供月度/年度统计、手动目录和本地备份恢复。无服务端、账号、登录或云同步，业务数据在应用私有目录；用户可自行把导出的备份传到外部存储。
 
-个人使用、免费、完全离线优先的 Android 咖啡日记：记录连锁咖啡和个人咖啡豆，按月历展示每日饮用图片，提供月度/年度统计、手动维护品牌与产品，以及完整本地备份恢复。
+## 当前开发阶段
 
-### 当前开发阶段
+纯手动连锁豆库改版已实现并完成发布矩阵验证；规格状态为 implemented。Release APK 尚未签名，仅供后续配置个人签名后发布。
 
-当前个人 Debug 侧载范围已取得发布 GO。真机试用后已确认下一里程碑：重做连锁豆库，改为三列品牌 Logo → 双列实拍产品的纯手动流程，并删除不可用的官网更新、截图 OCR 与裁剪。整体规格已确认；另确认当前 Manifest 缺少 NoActionBar 主题，导致系统 `Coffee Journal` ActionBar 遮挡三个根 Tab 的顶部内容。本次会把 App 和首个 Tab 统一改名为“咖啡日历”，不设全局顶栏，并为月历增加可记忆的“品牌／咖啡”显示切换。尚未修改生产代码。
+## 技术栈与架构
 
----
+- Kotlin、Jetpack Compose、Material 3；ViewModel + StateFlow；Room / SQLite；Coil。
+- Room 数据库为 v3，包含 v1→v2、v2→v3 迁移。
+- `journal`：记录、草稿、日历显示模式、详情与不可变快照。
+- `catalog`：12 个内置 Logo、连锁品牌/产品的手动 CRUD、个人豆库。
+- `core/image`：本地原始图片字节、引用、产品图→Logo→占位图回退及变更协调。
+- `backup` / `settings`：版本化 ZIP、校验、原子恢复与 SAF 设置页；恢复协调器支持旧配置恢复。
+- 已删除 `importer` 和网络相关架构：无官网更新、OCR、截图裁剪、ML Kit、OkHttp 或 `INTERNET` 权限。
 
-# 技术栈
+## 已实现范围
 
-## 客户端
+- App 与首 Tab 改名“咖啡日历”，无全局顶栏；底部根 Tab 为咖啡日历、豆库、总结。
+- 月历“品牌／咖啡”显示模式持久化；图片原字节保存、CenterCrop 显示并按三级回退。
+- 12 个预置连锁品牌 Logo，三列品牌网格与双列产品网格。
+- 手动新增/编辑/删除自定义连锁品牌与 Logo；手动新增/编辑/删除产品名称、黑咖/果咖/奶咖分类和可选实拍图。内置品牌不可删，自定义品牌需先删除产品。
+- 个人豆库、记录补记/编辑/删除、草稿保留与快捷新增产品后自动选中。
+- 月度/年度总结。
+- Room v3，旧备份 v1/v2/v3 兼容；离线图片导入协调、配置恢复和原子备份恢复。
 
-- Kotlin、Jetpack Compose、Material 3
-- ViewModel + StateFlow
-- Room / SQLite
-- Coil 图片加载
-- 当前基线仍包含 ML Kit OCR 和 OkHttp 官网更新；下一里程碑将删除两者及相应联网权限
+## 关键数据流与决策
 
-## 服务端 / Authentication
+记录：`JournalViewModel` 持久化草稿 → `JournalRepository` Room 事务写入记录和目录/图片快照 → 日历及总结 Flow 自动刷新。目录更新不得改写历史快照；只有显式更换产品才产生新快照。
 
-无服务端、无账号、无登录、无云同步。业务数据保存在应用私有目录。
+目录：用户在本地选择 Logo/整张实拍图并手动维护。连锁产品仅有黑咖、果咖、奶咖三类；无图回退到品牌 Logo。图片只通过系统 picker 获得单文件授权，原字节保存。
 
-## 部署方式
+恢复：备份先在 staging 进行格式、数据库和图片校验，再通过图片协调锁和单一 Room 事务替换数据；失败或取消保持当前数据。ZIP 不加密，卸载或清除数据前必须导出。
 
-个人侧载 Debug APK。Release APK 当前未配置用户签名。系统云备份和设备迁移均显式排除应用私有数据；迁移设备前必须手动导出备份。
+## 已知风险 / 后续事项
 
----
+1. Debug APK 使用 debug 签名且可调试；Release APK 当前为 unsigned。签名不同的升级需卸载，未导出数据会丢失。
+2. ADB 命令在沙箱外可运行但本次没有连接设备；仍需在目标手机验证安装、系统 picker、真机图片显示、完整备份恢复与 Android 6+ 侧载体验。
 
-# 当前架构
+## 重要文件
 
-- `app/src/main/java/com/niumi/coffeejournal/core/model` — 领域模型和不变量
-- `core/database` — Room entities、DAO、数据库与迁移
-- `journal` — 记录、草稿、月历、记录详情及其 Repository/ViewModel/UI
-- `catalog` — 连锁品牌、产品和个人豆库
-- `importer` — 官网候选更新、截图 OCR/裁剪与人工确认
-- `core/image` — 本地图片内容寻址、引用与三级回退
-- `insights` — 月度/年度汇总和记录详情
-- `backup` / `settings` — 版本化流式 ZIP、校验、原子恢复和 SAF 设置页
+- `app/src/main/java/com/niumi/coffeejournal/core/database/CoffeeDatabase.kt` — Room v3 与迁移。
+- `app/src/main/java/com/niumi/coffeejournal/catalog/BundledBrandCatalog.kt` — 12 个内置品牌 Logo。
+- `app/src/main/java/com/niumi/coffeejournal/catalog` — 手动连锁目录与个人豆库。
+- `app/src/main/java/com/niumi/coffeejournal/journal` — 记录、草稿、日历与显示偏好。
+- `app/src/main/java/com/niumi/coffeejournal/backup` — 备份校验、兼容与恢复。
+- `README.md` — 安装、使用、离线/隐私说明。
+- `docs/superpowers/specs/2026-08-16-manual-chain-catalog-redesign-design.md` — 已实施规格。
 
----
-
-# 关键数据流
-
-记录咖啡：
-
-用户选择目录条目并填写表单
-→ `JournalViewModel`
-→ 持久化 `draft_records`
-→ `JournalRepository`
-→ Room 事务写入记录与不可变目录/图片快照
-→ 日历和 Insights 的 Flow 自动刷新
-
-目录维护（下一里程碑）：
-
-用户选择或新建品牌
-→ 手动填写产品名和黑咖／果咖／奶咖类型
-→ 可选导入实拍原图
-→ 写入当前目录；不得修改历史记录快照
-
-图片回退：产品实拍图 → 品牌 Logo → 通用占位图。图片只从本机选择并保存原图，显示时居中裁切。
-
-备份恢复：
-
-六张业务表一致 Room 快照 + 被引用图片
-→ 版本化流式 ZIP 和 SHA/大小/magic 校验
-→ 私有 staging 二次校验
-→ 图片协调锁 + 单一 Room 事务原子替换
-→ 失败/取消回滚并清理临时文件。
-
----
-
-# 重要技术决策
-
-### 本地优先、零账号
-
-不建设后端或云同步；Android 系统备份与设备迁移也被禁用。跨设备或卸载前必须手动导出备份。
-
-### 连锁目录只允许手动维护（已确认的新方向）
-
-删除官网抓取、微信小程序接口、截图 OCR 和裁剪。品牌与产品均由用户手动维护；产品只允许黑咖、果咖、奶咖三类，实拍图可选且缺图时回退到品牌 Logo。
-
-### 预置品牌与布局（已确认）
-
-按 2025 年底中国大陆在营门店数量预置 Top 10（包含窗口店口径），另保留 Peet's 和 %Arabica，共 12 个本地 Logo。豆库不显示门店数或排名；连锁品牌为三列 Logo 卡片，点击进入双列产品实拍图子页面。
-
-### 历史快照不可被目录更新改写
-
-记录保存产品名称、属性、产品图及品牌 Logo 快照。普通目录更新不改变历史；显式编辑记录且更换产品时才生成新快照。
-
-### 图片与恢复共享变更协调锁
-
-普通图片导入/删除和备份恢复使用同一个 `ImageMutationCoordinator`，避免数据库引用与文件状态竞态。
-
-### 备份安全边界
-
-ZIP 解压限额和压缩比按实际流式读取字节计算，不能信任中心目录大小。恢复写入前重新验证 DB 和每张图片，事务提交边界与取消语义明确。
-
----
-
-# 当前 Milestone
-
-## 当前目标
-
-实施并验收纯手动连锁豆库改版：
-
-- 三列品牌 Logo 首页与双列产品子页面
-- Top 10 + Peet's / %Arabica 共 12 个预置品牌
-- 手动新增／编辑品牌 Logo 和产品名称／实拍图／三分类
-- 记录页快速新增产品并自动选中
-- App／首个 Tab 改名“咖啡日历”，三个 Tab 使用各自页面标题且不设全局顶栏
-- 月历支持可记忆的“品牌／咖啡”显示模式
-- Room v3 与 v1/v2/v3 备份兼容
-- 删除官网更新、截图 OCR、裁剪、相关依赖及联网权限
-
-## 已完成并验证
-
-- 目录、个人豆库、五个初始品牌和自定义品牌
-- 日历图片、同日 `×N`、月度/年度总结
-- 真实产品图、Logo 和通用占位三级回退
-- 截图 OCR/裁剪和缺图提示
-- 用户确认的官网更新和失败重试/截图/手工回退
-- 不可变历史快照
-- 安全的本地备份与原子恢复
-- Android 12+ 数据提取规则、隐私披露和正式 App 图标
-- 真实 `MainActivity → Navigation → Room → Repository/ViewModel → UI` 验收旅程
-
-最近一次已验证基线 `77b4bcb`：278 个 JVM/Robolectric 测试通过，Lint 0 error，Debug/androidTest/Release APK 构建成功；Debug APK v1/v2 签名有效。
-
-## 正在进行
-
-2026-08-16 已完成连锁豆库改版的分段需求确认，正式规格见 `docs/superpowers/specs/2026-08-16-manual-chain-catalog-redesign-design.md`。当前仍处于规格确认阶段，未开始 Room v3 或 UI 实施。
-
-## 下一步
-
-1. 用户整体确认新版规格。
-2. 生成可执行实施计划，按 TDD 交由 implementer 实施。
-3. Room v3、旧备份恢复和图片一致性完成 critical review。
-4. 生成新版 Debug APK并进行真机验收。
-
----
-
-# 已知问题 / 残余风险
-
-- 当前设备侧已完成一次 Debug APK 试用，但新版系统图片选择、品牌／产品编辑和完整恢复仍待真机验证。
-- 个人侧载的是 debuggable Debug APK；Release APK 尚未配置个人签名。
-- 12 个真实品牌 Logo 的官方资产来源、尺寸归一和商标说明需在实施时记录。
-- `AndroidManifest.xml` 未指定应用主题，系统原生 ActionBar 与 Compose 页面重叠；应在 Activity 窗口主题层修复，不能给三个页面分别堆叠 padding。
-- 项目多 Agent 配置使用当前运行时支持的 Terra（explorer / implementer / reviewer）与 Sol（critical reviewer）。
-
----
-
-# 重要文件
-
-- `AGENTS.md` — 项目多 Agent 工作流和验收规范
-- `.codex/config.toml` / `.codex/agents/*.toml` — 项目 Agent 配置
-- `docs/superpowers/specs/2026-08-01-coffee-journal-android-design.md` — 产品与技术设计
-- `docs/superpowers/specs/2026-08-16-manual-chain-catalog-redesign-design.md` — 纯手动连锁豆库改版规格
-- `docs/superpowers/plans/2026-08-01-coffee-journal-android-implementation.md` — 分阶段实现计划
-- `app/src/main/java/com/niumi/coffeejournal/CoffeeJournalApp.kt` — 应用依赖入口
-- `app/src/main/java/com/niumi/coffeejournal/core/database/CoffeeDatabase.kt` — Room 版本与迁移
-- `app/src/main/java/com/niumi/coffeejournal/journal/JournalRepository.kt` — 草稿、记录和快照事务
-- `app/src/main/java/com/niumi/coffeejournal/backup/BackupManager.kt` — 导出、验证和恢复
-- `README.md` — 构建、使用、备份与隐私说明
-
----
-
-# 项目约定
-
-- 金额统一以分存储；评分统一为 1–10 个半星单位，可为空。
-- 时间以 epoch millis 存储，月历和统计按用户本地时区投影。
-- 可选图片、评分、价格、冲煮和备注不得阻止保存；未选择具体目录条目必须阻止保存。
-- 所有候选目录更新和 OCR 结果都必须用户确认。
-- 删除、迁移、恢复、并发和数据一致性修改使用 `critical_reviewer`。
-- 保留用户未提交改动；文件编辑使用 `apply_patch`；发布成功前必须有新鲜验证证据。
-
----
-
-# Build / Test / Lint
-
-在功能 worktree 中：
+## 构建与验证
 
 ```bash
 export JAVA_HOME="$PWD/.local-tools/jdk/Contents/Home"
 export ANDROID_HOME="$PWD/.local-tools/android-sdk"
 export GRADLE_USER_HOME="$PWD/.gradle"
 export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
-```
 
-Targeted / 首次恢复验证：
-
-```bash
-./.local-tools/gradle-8.13/bin/gradle testDebugUnitTest --no-daemon
-```
-
-完整发布矩阵：
-
-```bash
 ./.local-tools/gradle-8.13/bin/gradle clean testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease --no-daemon
 ```
 
-Debug APK：
+发布矩阵（2026-08-22）：
 
-```text
-app/build/outputs/apk/debug/app-debug.apk
-```
+- `clean testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease`：PASS，137 tasks。
+- 单元／Robolectric：305 tests，0 fail／error／skip；lint：0 errors、20 warnings。
+- Room schema：v3 已导出；12 个内置品牌 Logo 已打包。
+- Debug APK：`app/build/outputs/apk/debug/app-debug.apk`，13,399,186 bytes，SHA-256 `c77034ede25b9bcfc86d7b18b688a6a8a3793b288aca60a8b545ee546bdcd41c`；v1/v2 签名均为 true，debug 证书 SHA-256 `60d2e7…a3713`。
+- AndroidTest APK：1,143,024 bytes，SHA-256 `ab118…932f`。
+- Release APK（unsigned）：9,578,339 bytes，SHA-256 `080c…84bd`。
+- 合并 Manifest：minSdk 23、targetSdk 36；仅有包内 `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`，无 `INTERNET`／相机／定位／存储权限；`allowBackup`、`fullBackupContent`、`cleartextTraffic` 均为 false，并声明 `dataExtractionRules`。
 
-真机验收（有设备时）：
-
-```bash
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-./.local-tools/gradle-8.13/bin/gradle connectedDebugAndroidTest --no-daemon
-```
-
----
-
-# 最近的重要变更
-
-## 2026-08-11
-
-- 完成饮用日期时间、草稿恢复、记录编辑/删除、revision CAS 和 Room v1→v2 迁移。
-- 增加合法 v1 备份真实恢复到 v2、恶意 schema 结构拒绝和提交后取消竞态测试。
-- 307 个本地测试和完整发布矩阵通过，高风险复审 PASS；审计修复已提交为 `72dcb28` 和 `8e939f0`。
-- 最终发布审计 GO：0 Critical、0 Important。
-
-## 2026-08-10
-
-- 引入项目级多 Agent 配置和 `AGENTS.md`。
-- 最终发布审计发现日期时间、草稿恢复、记录编辑/删除三个跨模块缺口；审计修复已静态实现但尚未验证。
-
-## 2026-08-03
-
-- `77b4bcb` 形成最近一次完整验证的发布候选基线。
-- Task 11 备份恢复和 Task 12 跨层验收均通过独立规格/质量复审。
-
----
-
-最后更新：2026-08-11
+最后更新：2026-08-22

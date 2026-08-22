@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.room.Room
 import com.niumi.coffeejournal.core.database.CoffeeDatabase
 import com.niumi.coffeejournal.core.database.ImageAssetEntity
-import com.niumi.coffeejournal.core.image.CropRect
 import com.niumi.coffeejournal.core.image.ImageAsset
 import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.core.image.ImageStore
@@ -114,12 +113,6 @@ class CatalogAssetLeaseRoomTest {
     ) : ImageStore {
         val deleteAttempts = mutableListOf<String>()
         val associationsAtDelete = mutableListOf<String?>()
-
-        override suspend fun importCropped(
-            source: Uri,
-            crop: CropRect,
-            kind: ImageKind,
-        ): ImageAsset = error("unexpected")
 
         override suspend fun importWhole(source: Uri, kind: ImageKind): ImageAsset =
             error("unexpected")

@@ -1,6 +1,7 @@
 package com.niumi.coffeejournal.catalog
 
 import android.content.Context
+import android.net.Uri
 import androidx.room.Room
 import com.niumi.coffeejournal.core.database.BrandEntity
 import com.niumi.coffeejournal.core.database.BrandDao
@@ -9,9 +10,14 @@ import com.niumi.coffeejournal.core.database.CatalogItemEntity
 import com.niumi.coffeejournal.core.database.CoffeeDatabase
 import com.niumi.coffeejournal.core.database.DataIntegrityException
 import com.niumi.coffeejournal.core.database.DrinkRecordEntity
+import com.niumi.coffeejournal.core.database.ImageAssetEntity
+import com.niumi.coffeejournal.core.image.ImageAsset
+import com.niumi.coffeejournal.core.image.ImageKind
+import com.niumi.coffeejournal.core.image.ImageStore
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.CatalogItem
+import com.niumi.coffeejournal.core.model.ChainProductKind
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
@@ -19,6 +25,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -31,6 +39,17 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class CatalogRepositoryTest {
+    @Test fun `rejects invalid chain product kinds and personal bean kinds on save`() = runBlocking {
+        val chain = item("类型").copy(type = ItemType.CHAIN_PRODUCT)
+        repository.upsertBrand(brand())
+        assertIllegalArgument { repository.upsertItem(chain.copy(chainProductKind = null)) }
+        assertIllegalArgument { repository.upsertItem(chain.copy(chainProductKind = ChainProductKind.PENDING)) }
+        listOf(ChainProductKind.BLACK, ChainProductKind.FRUIT, ChainProductKind.MILK).forEach { kind ->
+            repository.upsertItem(chain.copy(id = kind.name, name = kind.name, chainProductKind = kind))
+        }
+        assertIllegalArgument { repository.upsertItem(item("个人豆").copy(type = ItemType.PERSONAL_BEAN, chainProductKind = ChainProductKind.MILK)) }
+    }
+
     private lateinit var database: CoffeeDatabase
     private lateinit var repository: RoomCatalogRepository
 
@@ -132,6 +151,62 @@ class CatalogRepositoryTest {
     }
 
     @Test
+    fun `deleting a custom product preserves its historical drink record`() = runBlocking {
+        repository.upsertBrand(brand())
+        repository.upsertItem(item("美式"))
+        database.drinkDao().insert(record("historic", occurredAt = 2, priceFen = 990))
+
+        assertEquals(CatalogDeleteResult.Deleted, repository.deleteCustomItem(ITEM_ID))
+        assertNull(database.catalogItemDao().get(ITEM_ID))
+        assertEquals(1, database.drinkDao().observeRange("1970-01-01", "2100-01-01").first().size)
+    }
+
+    @Test
+    fun `deleting a custom brand is blocked until its products are removed`() = runBlocking {
+        repository.upsertBrand(brand())
+        repository.upsertItem(item("美式"))
+
+        assertEquals(CatalogDeleteResult.HasProducts, repository.deleteCustomBrand(BRAND_ID))
+        assertNotNull(database.brandDao().get(BRAND_ID))
+        repository.deleteCustomItem(ITEM_ID)
+        assertEquals(CatalogDeleteResult.Deleted, repository.deleteCustomBrand(BRAND_ID))
+        assertNull(database.brandDao().get(BRAND_ID))
+    }
+
+    @Test
+    fun `bundled chain brands cannot be deleted`() = runBlocking {
+        repository.ensureSeedBrands()
+
+        assertEquals(CatalogDeleteResult.Protected, repository.deleteCustomBrand("seed-chain-luckin"))
+        assertNotNull(database.brandDao().get("seed-chain-luckin"))
+    }
+
+    @Test
+    fun `deleting a chain product under a non-chain brand is protected`() = runBlocking {
+        val roaster = brand().copy(id = "roaster", type = BrandType.ROASTER)
+        val misplaced = item("不应删除").copy(id = "misplaced", brandId = roaster.id)
+        repository.upsertBrand(roaster)
+        repository.upsertItem(misplaced)
+
+        assertEquals(CatalogDeleteResult.Protected, repository.deleteCustomItem(misplaced.id))
+        assertNotNull(database.catalogItemDao().get(misplaced.id))
+    }
+
+    @Test
+    fun `deleting a product keeps its image when a drink snapshot still references it`() = runBlocking {
+        val images = RecordingBrandLogoStore(database)
+        val imageRepository = RoomCatalogRepository(database.brandDao(), database.catalogItemDao(), database.drinkDao(), images)
+        val image = images.persist("product-image")
+        imageRepository.upsertBrand(brand())
+        imageRepository.upsertItem(item("冷萃").copy(imageAssetId = image.id))
+        database.drinkDao().insert(record("snapshot", occurredAt = 2, priceFen = 990).copy(snapshotImageAssetId = image.id))
+
+        assertEquals(CatalogDeleteResult.Deleted, imageRepository.deleteCustomItem(ITEM_ID))
+        assertNotNull(database.imageAssetDao().get(image.id))
+        assertEquals(listOf(image.id), images.deleted)
+    }
+
+    @Test
     fun `unknown persisted enum reports field and value`() = runBlocking {
         database.brandDao().upsert(
             BrandEntity(
@@ -154,21 +229,131 @@ class CatalogRepositoryTest {
     }
 
     @Test
-    fun `seed inserts exactly five chain brands and is idempotent without overwriting edits`() = runBlocking {
+    fun `seed inserts bundled chain brands in catalog order and preserves user edits`() = runBlocking {
         repository.ensureSeedBrands()
-        val expected = listOf("% Arabica", "M Stand", "Manner", "Peet's", "瑞幸")
+        val expected = BUNDLED_CHAIN_BRANDS.map { it.brand.name }
         assertEquals(expected, repository.observeBrands(BrandType.CHAIN).first().map(Brand::name))
 
         val luckin = repository.observeBrands(BrandType.CHAIN).first().single { it.name == "瑞幸" }
         repository.upsertBrand(luckin.copy(name = "我的瑞幸", publicSourceUrl = "https://example.test"))
         repository.ensureSeedBrands()
 
-        assertEquals(5, repository.observeBrands(BrandType.CHAIN).first().size)
+        assertEquals(12, repository.observeBrands(BrandType.CHAIN).first().size)
         assertEquals(
             "https://example.test",
             repository.getBrand(luckin.id).publicSourceUrl,
         )
         assertEquals("我的瑞幸", repository.getBrand(luckin.id).name)
+    }
+
+    @Test
+    fun `seed imports every missing bundled logo once and keeps a user logo`() = runBlocking {
+        val images = RecordingBrandLogoStore(database)
+        val seeded = logoRepository(images)
+
+        seeded.ensureSeedBrands()
+        seeded.ensureSeedBrands()
+
+        assertEquals(12, images.imported.size)
+        val luckin = seeded.getBrand("seed-chain-luckin")
+        val userLogo = images.persist("user-logo")
+        seeded.upsertBrand(luckin.copy(logoAssetId = userLogo.id))
+        seeded.ensureSeedBrands()
+
+        assertEquals(userLogo.id, seeded.getBrand(luckin.id).logoAssetId)
+        assertEquals(12, images.imported.size)
+    }
+
+    @Test
+    fun `seed retries only logos left missing after a failed import`() = runBlocking {
+        val images = RecordingBrandLogoStore(database, failAt = 4)
+        val seeded = logoRepository(images)
+
+        try {
+            seeded.ensureSeedBrands()
+            fail("Expected one import failure")
+        } catch (_: IllegalStateException) {
+        }
+        seeded.ensureSeedBrands()
+
+        assertEquals(13, images.imported.size)
+        assertTrue(BUNDLED_CHAIN_BRANDS.all { seeded.getBrand(it.brand.id).logoAssetId != null })
+    }
+
+    @Test
+    fun `seed cleans imported asset when CAS loses to a user logo`() = runBlocking {
+        val images = RecordingBrandLogoStore(database) { imported ->
+            if (imported.id != "import-1") return@RecordingBrandLogoStore
+            val userLogo = ImageAsset("user-${imported.id}", "/unused/user-${imported.id}", "user-${imported.id}", ImageKind.BRAND_LOGO)
+            database.imageAssetDao().upsert(
+                ImageAssetEntity(userLogo.id, userLogo.localPath, userLogo.sha256, userLogo.kind.name, 1),
+            )
+            database.brandDao().get("seed-chain-luckin")?.let { brand ->
+                database.brandDao().upsert(brand.copy(logoAssetId = userLogo.id))
+            }
+        }
+        val seeded = logoRepository(images)
+
+        seeded.ensureSeedBrands()
+
+        assertEquals("user-import-1", seeded.getBrand("seed-chain-luckin").logoAssetId)
+        assertEquals(listOf("import-1"), images.deleted)
+    }
+
+    @Test
+    fun `custom chain brands sort after the fixed bundled catalog order`() = runBlocking {
+        repository.ensureSeedBrands()
+        repository.upsertBrand(brand().copy(id = "custom", name = "AAA Coffee"))
+
+        assertEquals(
+            BUNDLED_CHAIN_BRANDS.map { it.brand.id } + "custom",
+            repository.observeBrands(BrandType.CHAIN).first().map { it.id },
+        )
+    }
+
+    @Test
+    fun `legacy alias adopts stable id and survives a later user rename`() = runBlocking {
+        val images = RecordingBrandLogoStore(database)
+        val userLogo = images.persist("legacy-logo")
+        database.brandDao().upsert(
+            BrandEntity("legacy-cotti", "CHAIN", "库迪咖啡", "库迪咖啡", userLogo.id, "MANUAL_ONLY", null),
+        )
+        repository.upsertItem(item("冷萃").copy(id = "legacy-item", brandId = "legacy-cotti"))
+        val seeded = logoRepository(images)
+
+        seeded.ensureSeedBrands()
+
+        val cotti = seeded.getBrand("seed-chain-cotti")
+        assertEquals("库迪咖啡", cotti.name)
+        assertEquals(userLogo.id, cotti.logoAssetId)
+        assertEquals("seed-chain-cotti", database.catalogItemDao().get("legacy-item")?.brandId)
+        seeded.upsertBrand(cotti.copy(name = "我的库迪"))
+        logoRepository(images).ensureSeedBrands()
+
+        assertEquals(12, seeded.observeBrands(BrandType.CHAIN).first().size)
+        assertEquals("我的库迪", seeded.getBrand("seed-chain-cotti").name)
+        assertEquals(userLogo.id, seeded.getBrand("seed-chain-cotti").logoAssetId)
+        assertEquals("seed-chain-cotti", database.catalogItemDao().get("legacy-item")?.brandId)
+        assertEquals(11, images.imported.size)
+    }
+
+    @Test
+    fun `legacy catalog updates remain untouched during alias adoption`() = runBlocking {
+        database.brandDao().upsert(
+            BrandEntity("legacy-cotti", "CHAIN", "库迪咖啡", "库迪咖啡", null, "MANUAL_ONLY", null),
+        )
+        repository.upsertItem(item("冷萃").copy(id = "legacy-item", brandId = "legacy-cotti"))
+        database.catalogUpdateDao().insert(
+            com.niumi.coffeejournal.core.database.CatalogUpdateEntity(
+                "legacy-update", "legacy-cotti", 1, "CONFIRMED", null, null,
+            ),
+        )
+        repository.ensureSeedBrands()
+
+        assertNull(database.brandDao().get("legacy-cotti"))
+        assertNotNull(database.brandDao().get("seed-chain-cotti"))
+        assertEquals("seed-chain-cotti", database.catalogItemDao().get("legacy-item")?.brandId)
+        assertEquals("legacy-cotti", database.catalogUpdateDao().latest("legacy-cotti")?.brandId)
     }
 
     @Test
@@ -218,19 +403,11 @@ class CatalogRepositoryTest {
     }
 
     @Test
-    fun `brand overview reports item count and latest confirmed update`() = runBlocking {
+    fun `brand overview reports item count without reading updates`() = runBlocking {
         repository.upsertBrand(brand())
         repository.upsertItem(item(name = "拿铁"))
-        database.catalogUpdateDao().insert(
-            com.niumi.coffeejournal.core.database.CatalogUpdateEntity(
-                id = "update", brandId = BRAND_ID, fetchedAtEpochMillis = 1234,
-                status = "CONFIRMED", sourceUrl = null, errorMessage = null,
-            ),
-        )
-
         val overview = repository.observeBrandOverviews(BrandType.CHAIN).first().single()
         assertEquals(1, overview.itemCount)
-        assertEquals(1234L, overview.lastUpdatedAtEpochMillis)
     }
 
     @Test
@@ -295,7 +472,16 @@ class CatalogRepositoryTest {
         flavorNotes = null,
         brewMethod = null,
         status = ItemStatus.ACTIVE,
+        chainProductKind = ChainProductKind.BLACK,
     )
+
+    private fun assertIllegalArgument(block: suspend () -> Unit) {
+        try {
+            runBlocking { block() }
+            fail("Expected IllegalArgumentException")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
 
     private fun record(id: String, occurredAt: Long, priceFen: Long?) = DrinkRecordEntity(
         id = id,
@@ -313,6 +499,41 @@ class CatalogRepositoryTest {
         const val ITEM_ID = "item-1"
     }
 
+    private fun logoRepository(images: RecordingBrandLogoStore) = RoomCatalogRepository(
+        database.brandDao(), database.catalogItemDao(), database.drinkDao(), images,
+    ) { resourceId -> Uri.parse("android.resource://test/$resourceId") }
+
+    private class RecordingBrandLogoStore(
+        private val database: CoffeeDatabase,
+        private val failAt: Int? = null,
+        private val afterImport: (suspend (ImageAsset) -> Unit)? = null,
+    ) : ImageStore {
+        val imported = mutableListOf<String>()
+        val deleted = mutableListOf<String>()
+
+        override suspend fun importWhole(source: Uri, kind: ImageKind): ImageAsset {
+            val id = "import-${imported.size + 1}"
+            imported += id
+            if (imported.size == failAt) error("expected import failure")
+            val asset = persist(id)
+            afterImport?.invoke(asset)
+            return asset
+        }
+
+        suspend fun persist(id: String): ImageAsset {
+            val asset = ImageAsset(id, "/unused/$id", id, ImageKind.BRAND_LOGO)
+            database.imageAssetDao().upsert(
+                ImageAssetEntity(id, asset.localPath, asset.sha256, asset.kind.name, 1),
+            )
+            return asset
+        }
+
+        override suspend fun deleteIfUnreferenced(assetId: String): Boolean {
+            deleted += assetId
+            return database.imageAssetDao().deleteIfUnreferenced(assetId) == 1
+        }
+    }
+
     private class RacingBrandDao(
         private val delegate: BrandDao,
         private val winner: BrandEntity,
@@ -322,9 +543,20 @@ class CatalogRepositoryTest {
         override suspend fun update(brand: BrandEntity): Int = delegate.update(brand)
         override suspend fun insertIgnoringExisting(brands: List<BrandEntity>): List<Long> =
             delegate.insertIgnoringExisting(brands)
+        override suspend fun attachLogoIfMissing(brandId: String, assetId: String): Int =
+            delegate.attachLogoIfMissing(brandId, assetId)
         override fun observe() = delegate.observe()
         override fun observeByType(type: String) = delegate.observeByType(type)
         override suspend fun get(id: String) = delegate.get(id)
+        override suspend fun getByNormalizedNames(type: String, names: List<String>) =
+            delegate.getByNormalizedNames(type, names)
+        override suspend fun adoptAsBundledId(legacy: BrandEntity, bundledId: String) =
+            delegate.adoptAsBundledId(legacy, bundledId)
+        override suspend fun renameId(fromBrandId: String, toBrandId: String) =
+            delegate.renameId(fromBrandId, toBrandId)
+        override suspend fun moveCatalogItemsBrandId(fromBrandId: String, toBrandId: String) =
+            delegate.moveCatalogItemsBrandId(fromBrandId, toBrandId)
+        override suspend fun deleteById(id: String) = delegate.deleteById(id)
         override suspend fun existsNamedOther(type: String, name: String, id: String): Boolean {
             if (!injected) {
                 injected = true
