@@ -67,7 +67,7 @@ export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 发布矩阵（2026-08-22）：
 
 - `clean testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease`：PASS，137 tasks。
-- 单元／Robolectric：305 tests，0 fail／error／skip；lint：0 errors、20 warnings。
+- 单元／Robolectric：305 tests，0 fail／error／skip；lint：0 errors、11 warnings。
 - Room schema：v3 已导出；12 个内置品牌 Logo 已打包。
 - Debug APK：`app/build/outputs/apk/debug/app-debug.apk`，13,399,186 bytes，SHA-256 `c77034ede25b9bcfc86d7b18b688a6a8a3793b288aca60a8b545ee546bdcd41c`；v1/v2 签名均为 true，debug 证书 SHA-256 `60d2e7…a3713`。
 - AndroidTest APK：1,143,024 bytes，SHA-256 `ab118…932f`。
