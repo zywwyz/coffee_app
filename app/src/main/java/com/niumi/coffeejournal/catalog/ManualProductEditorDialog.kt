@@ -65,7 +65,8 @@ fun ManualProductEditorDialog(
                     else Text(if (previewAssetId == null) "暂无图片" else "图片无法加载")
                 }
                 OutlinedButton(onClick = {
-                    assetImportRequester(ImageKind.PRODUCT, state.imageAssetId) { selection -> viewModel.acceptImportedAsset(selection.assetId) }
+                    val sessionToken = state.sessionToken ?: return@OutlinedButton
+                    assetImportRequester(ImageKind.PRODUCT, state.imageAssetId) { selection -> viewModel.acceptImportedAsset(sessionToken, selection.assetId) }
                 }, enabled = !state.saving) { Text(if (state.imageAssetId == null) "选择实拍图" else "更换实拍图") }
                 if (state.imageAssetId != null) TextButton(onClick = viewModel::removePhoto, enabled = !state.saving) { Text("移除实拍图") }
                 state.errorMessage?.let {

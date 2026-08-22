@@ -19,6 +19,8 @@ import com.niumi.coffeejournal.core.model.MaintenanceMode
 import com.niumi.coffeejournal.core.model.CatalogItem
 import java.io.File
 import java.io.FileOutputStream
+import java.time.Instant
+import java.time.ZoneId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
@@ -58,11 +60,12 @@ class QuickAddIntegrationTest {
         val brand = Brand("brand", BrandType.CHAIN, "品牌", null, MaintenanceMode.MANUAL_ONLY, null)
         catalog.upsertBrand(brand)
         catalog.upsertItem(CatalogItem("seed", "brand", ItemType.CHAIN_PRODUCT, "原产品", null, null, null, null, null, null, ItemStatus.ACTIVE, chainProductKind = ChainProductKind.BLACK))
-        val repository = DefaultJournalRepository(catalog, RoomDrinkStore(database), object : Clock { override fun read() = ClockReading(1000L, "1970-01-01") })
-        val journal = JournalViewModel(repository, catalog, 1970, 1, CoroutineScope(Dispatchers.Unconfined))
+        val consumedAt = System.currentTimeMillis()
+        val localDate = Instant.ofEpochMilli(consumedAt).atZone(ZoneId.systemDefault()).toLocalDate()
+        val repository = DefaultJournalRepository(catalog, RoomDrinkStore(database), object : Clock { override fun read() = ClockReading(consumedAt, localDate.toString()) })
+        val journal = JournalViewModel(repository, catalog, localDate.year, localDate.monthValue, CoroutineScope(Dispatchers.Unconfined))
         journal.selectItem(ItemType.CHAIN_PRODUCT, "seed")
         withTimeout(5_000) { journal.uiState.first { it.editor.selectedItemId == "seed" } }
-        val consumedAt = System.currentTimeMillis()
         journal.setConsumedAt(consumedAt)
         withTimeout(5_000) { journal.uiState.first { it.editor.consumedAtEpochMillis == consumedAt } }
         journal.setRating(9)
@@ -77,7 +80,7 @@ class QuickAddIntegrationTest {
         val image = images.importWhole(Uri.fromFile(source), ImageKind.PRODUCT)
         val editor = ManualProductEditorViewModel(catalog, images, CoroutineScope(Dispatchers.Unconfined), idGenerator = { "fruit" })
         val event = async { withTimeout(5_000) { editor.events.first() } }; yield()
-        editor.openNew(brand); editor.setName("果咖"); editor.setKind(ChainProductKind.FRUIT); editor.acceptImportedAsset(image.id); editor.save(); yield()
+        editor.openNew(brand); editor.setName("果咖"); editor.setKind(ChainProductKind.FRUIT); editor.acceptImportedAsset(requireNotNull(editor.state.value.sessionToken), image.id); editor.save(); yield()
         val saved = withTimeout(5_000) { catalog.observeItems("brand").first { items -> items.any { it.id == "fruit" } }.single { it.id == "fruit" } }
         assertEquals(ChainProductKind.FRUIT, saved.chainProductKind)
         assertEquals(source.readBytes().toList(), File(image.localPath).readBytes().toList())

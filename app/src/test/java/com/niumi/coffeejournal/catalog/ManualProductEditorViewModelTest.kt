@@ -19,6 +19,55 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ManualProductEditorViewModelTest {
+    @Test fun `late imported asset is rejected after dismiss`() = runBlocking {
+        val tokens = sequenceOf("session-a", "session-b").iterator()
+        val vm = ManualProductEditorViewModel(
+            FakeRepository(), coroutineScope = CoroutineScope(Dispatchers.Unconfined),
+            sessionTokenGenerator = { tokens.next() },
+        )
+        vm.openNew(brand())
+        val session = requireNotNull(vm.state.value.sessionToken)
+
+        vm.dismiss()
+
+        assertFalse(vm.acceptImportedAsset(session, "late"))
+        assertFalse(vm.state.value.open)
+    }
+
+    @Test fun `late rejected import is deleted by image association`() = runBlocking {
+        val images = Images()
+        val vm = ManualProductEditorViewModel(
+            FakeRepository(), images, CoroutineScope(Dispatchers.Unconfined),
+        )
+        vm.openNew(brand())
+        val session = requireNotNull(vm.state.value.sessionToken)
+        vm.dismiss()
+
+        assertFalse(associateImportedAsset(images, ImportedAssetSelection("late")) {
+            vm.acceptImportedAsset(session, it.assetId)
+        })
+        assertEquals(listOf("late"), images.deleted)
+    }
+
+    @Test fun `late imported asset cannot modify a newer editor session`() = runBlocking {
+        val tokens = sequenceOf("session-a", "session-b").iterator()
+        val vm = ManualProductEditorViewModel(
+            FakeRepository(), coroutineScope = CoroutineScope(Dispatchers.Unconfined),
+            sessionTokenGenerator = { tokens.next() },
+        )
+        vm.openNew(brand())
+        val firstSession = requireNotNull(vm.state.value.sessionToken)
+        vm.openEdit(brand(), item())
+        val secondSession = requireNotNull(vm.state.value.sessionToken)
+
+        assertFalse(vm.acceptImportedAsset(firstSession, "late"))
+        assertEquals(secondSession, vm.state.value.sessionToken)
+        assertEquals(item().id, vm.state.value.editing?.id)
+        assertNull(vm.state.value.imageAssetId)
+        assertTrue(vm.acceptImportedAsset(secondSession, "current"))
+        assertEquals("current", vm.state.value.imageAssetId)
+        assertFalse(vm.acceptImportedAsset(firstSession, "duplicate-late"))
+    }
     @Test fun `new editor trims name and saves active public product`() = runBlocking {
         val repo = FakeRepository(); val vm = ManualProductEditorViewModel(repo, coroutineScope = CoroutineScope(Dispatchers.Unconfined), idGenerator = { "new" })
         vm.openNew(brand()); vm.setName("  澳白  "); vm.setKind(ChainProductKind.MILK); vm.save(); yield()
@@ -44,15 +93,15 @@ class ManualProductEditorViewModelTest {
     }
     @Test fun `replace remove and dismiss clean staged assets`() = runBlocking {
         val images = Images(); val repo = FakeRepository(); val vm = ManualProductEditorViewModel(repo, images, CoroutineScope(Dispatchers.Unconfined)); vm.openNew(brand())
-        vm.acceptImportedAsset("one"); vm.acceptImportedAsset("two"); vm.removePhoto(); vm.dismiss(); yield()
+        vm.acceptImportedAsset(requireNotNull(vm.state.value.sessionToken), "one"); vm.acceptImportedAsset(requireNotNull(vm.state.value.sessionToken), "two"); vm.removePhoto(); vm.dismiss(); yield()
         assertEquals(listOf("one", "two"), images.deleted)
         assertTrue(repo.items.value.isEmpty())
     }
     @Test fun `failed save cleans staged image`() = runBlocking {
-        val images = Images(); val repo = FakeRepository(fail = true); val vm = ManualProductEditorViewModel(repo, images, CoroutineScope(Dispatchers.Unconfined)); vm.openNew(brand()); vm.acceptImportedAsset("new"); vm.setName("美式"); vm.setKind(ChainProductKind.BLACK); vm.save(); yield()
+        val images = Images(); val repo = FakeRepository(fail = true); val vm = ManualProductEditorViewModel(repo, images, CoroutineScope(Dispatchers.Unconfined)); vm.openNew(brand()); vm.acceptImportedAsset(requireNotNull(vm.state.value.sessionToken), "new"); vm.setName("美式"); vm.setKind(ChainProductKind.BLACK); vm.save(); yield()
         assertEquals(listOf("new"), images.deleted)
         assertNull(vm.state.value.imageAssetId)
-        vm.acceptImportedAsset("retry"); vm.save(); yield()
+        vm.acceptImportedAsset(requireNotNull(vm.state.value.sessionToken), "retry"); vm.save(); yield()
         assertEquals("retry", repo.items.value.single().imageAssetId)
     }
     @Test fun `failed catalog save emits no saved event and retains no item`() = runBlocking {
@@ -63,7 +112,7 @@ class ManualProductEditorViewModelTest {
         assertNull(withTimeoutOrNull(50) { vm.events.first() })
     }
     @Test fun `successful save retains staged image`() = runBlocking {
-        val images = Images(); val vm = ManualProductEditorViewModel(FakeRepository(), images, CoroutineScope(Dispatchers.Unconfined)); vm.openNew(brand()); vm.acceptImportedAsset("new"); vm.setName("美式"); vm.setKind(ChainProductKind.BLACK); vm.save(); yield()
+        val images = Images(); val vm = ManualProductEditorViewModel(FakeRepository(), images, CoroutineScope(Dispatchers.Unconfined)); vm.openNew(brand()); vm.acceptImportedAsset(requireNotNull(vm.state.value.sessionToken), "new"); vm.setName("美式"); vm.setKind(ChainProductKind.BLACK); vm.save(); yield()
         assertTrue(images.deleted.isEmpty())
     }
     @Test fun `selection failure keeps saved product dialog actionable`() = runBlocking {
@@ -117,7 +166,7 @@ class ManualProductEditorViewModelTest {
     }
     @Test fun `cancelled save cleans staged image non cancellably`() = runBlocking {
         val images = Images(); val gate = CompletableDeferred<Unit>(); val scope = CoroutineScope(Job() + Dispatchers.Unconfined)
-        val vm = ManualProductEditorViewModel(FakeRepository(gate = gate), images, scope); vm.openNew(brand()); vm.acceptImportedAsset("new"); vm.setName("美式"); vm.setKind(ChainProductKind.BLACK); vm.save(); scope.cancel(); yield()
+        val vm = ManualProductEditorViewModel(FakeRepository(gate = gate), images, scope); vm.openNew(brand()); vm.acceptImportedAsset(requireNotNull(vm.state.value.sessionToken), "new"); vm.setName("美式"); vm.setKind(ChainProductKind.BLACK); vm.save(); scope.cancel(); yield()
         assertEquals(listOf("new"), images.deleted)
     }
     private fun brand() = Brand("brand", BrandType.CHAIN, "品牌", null, MaintenanceMode.MANUAL_ONLY, null)

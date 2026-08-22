@@ -10,6 +10,7 @@ import com.niumi.coffeejournal.core.model.ChainProductKind
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.ItemType
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -28,7 +29,7 @@ import kotlinx.coroutines.withContext
 data class ManualProductEditorState(
     val open: Boolean = false, val brand: Brand? = null, val editing: CatalogItem? = null,
     val name: String = "", val kind: ChainProductKind? = null, val imageAssetId: String? = null,
-    val saving: Boolean = false, val errorMessage: String? = null,
+    val saving: Boolean = false, val errorMessage: String? = null, val sessionToken: String? = null,
 )
 
 sealed interface ManualProductEditorEvent { data class Saved(val itemId: String, val brandId: String) : ManualProductEditorEvent }
@@ -39,6 +40,7 @@ class ManualProductEditorViewModel(
     private val imageStore: ImageStore? = null,
     coroutineScope: CoroutineScope? = null,
     private val idGenerator: () -> String = { UUID.randomUUID().toString() },
+    private val sessionTokenGenerator: () -> String = { UUID.randomUUID().toString() },
 ) : ViewModel() {
     private val scope = coroutineScope ?: viewModelScope
     private val mutableState = MutableStateFlow(ManualProductEditorState())
@@ -46,30 +48,45 @@ class ManualProductEditorViewModel(
     private val mutableEvents = MutableSharedFlow<ManualProductEditorEvent>(replay = 1)
     val events: SharedFlow<ManualProductEditorEvent> = mutableEvents.asSharedFlow()
     private val operationMutex = Mutex()
-    private var stagedAssetId: String? = null
+    private val stagedAssetId = AtomicReference<String?>(null)
     private var pendingSavedEvent: ManualProductEditorEvent.Saved? = null
 
     fun openNew(brand: Brand) { open(brand, null) }
     fun openEdit(brand: Brand, item: CatalogItem) { open(brand, item) }
     private fun open(brand: Brand, item: CatalogItem?) {
-        mutableState.value = ManualProductEditorState(true, brand, item, item?.name.orEmpty(), item?.chainProductKind, item?.imageAssetId)
-        stagedAssetId = null
+        mutableState.value = ManualProductEditorState(
+            open = true,
+            brand = brand,
+            editing = item,
+            name = item?.name.orEmpty(),
+            kind = item?.chainProductKind,
+            imageAssetId = item?.imageAssetId,
+            sessionToken = sessionTokenGenerator(),
+        )
+        val staleStagedAssetId = stagedAssetId.getAndSet(null)
         pendingSavedEvent = null
+        staleStagedAssetId?.let { assetId -> scope.launch { deleteQuietly(assetId) } }
     }
     fun setName(value: String) { mutableState.value = mutableState.value.copy(name = value, errorMessage = null) }
     fun setKind(value: ChainProductKind?) { mutableState.value = mutableState.value.copy(kind = value, errorMessage = null) }
-    suspend fun acceptImportedAsset(assetId: String): Boolean = operationMutex.withLock {
-        val previousStaged = stagedAssetId
-        stagedAssetId = assetId.takeIf { it != mutableState.value.editing?.imageAssetId }
-        mutableState.value = mutableState.value.copy(imageAssetId = assetId)
+    suspend fun acceptImportedAsset(sessionToken: String, assetId: String): Boolean = operationMutex.withLock {
+        val current = mutableState.value
+        if (!current.open || current.sessionToken != sessionToken) return@withLock false
+        val previousStaged = stagedAssetId.getAndSet(assetId.takeIf { it != current.editing?.imageAssetId })
+        mutableState.value = current.copy(imageAssetId = assetId)
         previousStaged?.takeIf { it != assetId }?.let { deleteQuietly(it) }
         true
     }
     fun removePhoto() { scope.launch { operationMutex.withLock {
-        stagedAssetId?.let { deleteQuietly(it) }; stagedAssetId = null
+        stagedAssetId.getAndSet(null)?.let { deleteQuietly(it) }
         mutableState.value = mutableState.value.copy(imageAssetId = null)
     } } }
-    fun dismiss() { scope.launch { operationMutex.withLock { cleanupStaged(); clearSavedAction(); mutableState.value = ManualProductEditorState() } } }
+    fun dismiss() {
+        mutableState.value = ManualProductEditorState()
+        val staleStagedAssetId = stagedAssetId.getAndSet(null)
+        clearSavedAction()
+        staleStagedAssetId?.let { assetId -> scope.launch { deleteQuietly(assetId) } }
+    }
     fun save() {
         val snapshot = mutableState.value; val brand = snapshot.brand ?: return
         val name = snapshot.name.trim()
@@ -86,7 +103,7 @@ class ManualProductEditorViewModel(
                     repository.upsertItem(item)
                     withContext(NonCancellable) {
                         current.editing?.imageAssetId?.takeIf { it != item.imageAssetId }?.let { deleteQuietly(it) }
-                        stagedAssetId = null
+                        stagedAssetId.set(null)
                     }
                     ManualProductEditorEvent.Saved(item.id, brand.id).also {
                         pendingSavedEvent = it
@@ -132,7 +149,7 @@ class ManualProductEditorViewModel(
         pendingSavedEvent = null
         mutableEvents.resetReplayCache()
     }
-    private suspend fun cleanupStaged() { stagedAssetId?.let { deleteQuietly(it) }; stagedAssetId = null }
+    private suspend fun cleanupStaged() { stagedAssetId.getAndSet(null)?.let { deleteQuietly(it) } }
     private suspend fun deleteQuietly(assetId: String) { withContext(NonCancellable) { runCatching { imageStore?.deleteIfUnreferenced(assetId) } } }
     companion object {
         private val PUBLIC_KINDS = setOf(ChainProductKind.BLACK, ChainProductKind.FRUIT, ChainProductKind.MILK)
