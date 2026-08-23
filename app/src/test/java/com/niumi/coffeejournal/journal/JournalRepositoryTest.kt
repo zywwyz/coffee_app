@@ -87,26 +87,58 @@ class JournalRepositoryTest {
     @Test
     fun `save accepts today noon when clock reads eight in the morning`() = runBlocking {
         val zone = TimeZone.getTimeZone("Asia/Shanghai")
-        val clock = ClockReading(localNoonEpoch("2025-08-01", zone) - 4 * 60 * 60 * 1000, "2025-08-01")
-        val store = FakeDrinkStore()
-        val repository = DefaultJournalRepository(FakeCatalogRepository(item(), 990), store, object : Clock { override fun read() = clock })
+        val previous = TimeZone.getDefault()
+        TimeZone.setDefault(zone)
+        try {
+            val clock = ClockReading(localNoonEpoch("2025-08-01", zone) - 4 * 60 * 60 * 1000, "2025-08-01")
+            val store = FakeDrinkStore()
+            val repository = DefaultJournalRepository(FakeCatalogRepository(item(), 990), store, object : Clock { override fun read() = clock })
 
-        repository.save(draft("today").copy(consumedAtEpochMillis = localNoonEpoch("2025-08-01", zone)))
+            repository.save(draft("today").copy(consumedAtEpochMillis = localNoonEpoch("2025-08-01", zone)))
 
-        assertEquals("2025-08-01", store.saved.single().localDate)
+            assertEquals("2025-08-01", store.saved.single().localDate)
+        } finally {
+            TimeZone.setDefault(previous)
+        }
     }
 
     @Test
     fun `save rejects tomorrow date`() = runBlocking {
         val zone = TimeZone.getTimeZone("Asia/Shanghai")
-        val clock = ClockReading(localNoonEpoch("2025-08-01", zone), "2025-08-01")
-        val repository = DefaultJournalRepository(FakeCatalogRepository(item(), 990), FakeDrinkStore(), object : Clock { override fun read() = clock })
-
+        val previous = TimeZone.getDefault()
+        TimeZone.setDefault(zone)
         try {
-            repository.save(draft("tomorrow").copy(consumedAtEpochMillis = localNoonEpoch("2025-08-02", zone)))
-            fail("Expected tomorrow to be rejected")
-        } catch (error: IllegalArgumentException) {
-            assertEquals("Drink date cannot be after today", error.message)
+            val clock = ClockReading(localNoonEpoch("2025-08-01", zone), "2025-08-01")
+            val repository = DefaultJournalRepository(FakeCatalogRepository(item(), 990), FakeDrinkStore(), object : Clock { override fun read() = clock })
+
+            try {
+                repository.save(draft("tomorrow").copy(consumedAtEpochMillis = localNoonEpoch("2025-08-02", zone)))
+                fail("Expected tomorrow to be rejected")
+            } catch (error: IllegalArgumentException) {
+                assertEquals("Drink date cannot be after today", error.message)
+            }
+        } finally {
+            TimeZone.setDefault(previous)
+        }
+    }
+
+    @Test
+    fun `save rejects tomorrow date in Los Angeles default timezone`() = runBlocking {
+        val zone = TimeZone.getTimeZone("America/Los_Angeles")
+        val previous = TimeZone.getDefault()
+        TimeZone.setDefault(zone)
+        try {
+            val clock = ClockReading(localNoonEpoch("2025-08-01", zone), "2025-08-01")
+            val repository = DefaultJournalRepository(FakeCatalogRepository(item(), 990), FakeDrinkStore(), object : Clock { override fun read() = clock })
+
+            try {
+                repository.save(draft("tomorrow-la").copy(consumedAtEpochMillis = localNoonEpoch("2025-08-02", zone)))
+                fail("Expected tomorrow to be rejected")
+            } catch (error: IllegalArgumentException) {
+                assertEquals("Drink date cannot be after today", error.message)
+            }
+        } finally {
+            TimeZone.setDefault(previous)
         }
     }
 
