@@ -58,13 +58,14 @@ fun ManualProductEditorDialog(
                         FilterChip(selected = state.kind == kind, onClick = { viewModel.setKind(kind) }, label = { Text(label) }, enabled = !state.saving)
                     }
                 }
-                val previewAssetId = state.imageAssetId ?: state.brand?.logoAssetId
-                val bitmap by produceState<ImageBitmap?>(null, previewAssetId, thumbnailLoader) {
-                    value = loadManualProductPreview(previewAssetId, imagePathResolver, thumbnailLoader)
+                val preview by produceState(
+                    ManualProductPreview(null, false), state.imageAssetId, state.brand?.logoAssetId, imagePathResolver, thumbnailLoader,
+                ) {
+                    value = loadManualProductPreview(state.imageAssetId, state.brand?.logoAssetId, imagePathResolver, thumbnailLoader)
                 }
                 Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant).semantics { contentDescription = TestTags.ManualProductPreview }.padding(12.dp)) {
-                    if (bitmap != null) Image(bitmap = bitmap!!, contentDescription = if (state.imageAssetId != null) "产品实拍图" else "品牌 Logo", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().aspectRatio(1f))
-                    else Text(if (previewAssetId == null) "暂无图片" else "图片无法加载")
+                    if (preview.bitmap != null) Image(bitmap = preview.bitmap!!, contentDescription = if (preview.usesProductImage) "产品实拍图" else "品牌 Logo", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().aspectRatio(1f))
+                    else Text(if (state.imageAssetId == null && state.brand?.logoAssetId == null) "暂无图片" else "图片无法加载")
                 }
                 OutlinedButton(onClick = {
                     val sessionToken = state.sessionToken ?: return@OutlinedButton
@@ -82,11 +83,18 @@ fun ManualProductEditorDialog(
     )
 }
 
+internal data class ManualProductPreview(val bitmap: ImageBitmap?, val usesProductImage: Boolean)
+
 internal suspend fun loadManualProductPreview(
-    assetId: String?,
+    productAssetId: String?,
+    brandLogoAssetId: String?,
     imagePathResolver: ImagePathResolver,
     thumbnailLoader: ThumbnailLoader,
-) = thumbnailLoader.load(imagePathResolver.resolve(assetId))
+): ManualProductPreview {
+    val product = thumbnailLoader.load(imagePathResolver.resolve(productAssetId))
+    if (product != null) return ManualProductPreview(product, true)
+    return ManualProductPreview(thumbnailLoader.load(imagePathResolver.resolve(brandLogoAssetId)), false)
+}
 
 internal fun publicKindLabel(kind: ChainProductKind): String = when (kind) {
     ChainProductKind.BLACK -> "黑咖"

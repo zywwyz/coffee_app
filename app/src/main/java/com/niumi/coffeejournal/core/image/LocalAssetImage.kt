@@ -34,9 +34,9 @@ fun LocalAssetImage(primaryPath: String?, fallbackPath: String?, contentDescript
 }
 
 @Composable
-fun ResolvedLocalAssetImage(primaryAssetId: String?, fallbackAssetId: String?, resolver: ImagePathResolver, contentDescription: String, contentScale: ContentScale = ContentScale.Crop, modifier: Modifier = Modifier) {
+fun ResolvedLocalAssetImage(primaryAssetId: String?, fallbackAssetId: String?, resolver: ImagePathResolver, contentDescription: String, contentScale: ContentScale = ContentScale.Crop, modifier: Modifier = Modifier, fallbackPainter: Painter? = null) {
     val paths by produceState<Pair<String?, String?>?>(null, primaryAssetId, fallbackAssetId, resolver) {
         value = resolver.resolve(primaryAssetId) to resolver.resolve(fallbackAssetId)
     }
-    LocalAssetImage(paths?.first, paths?.second, contentDescription, contentScale, modifier)
+    LocalAssetImage(paths?.first, paths?.second, contentDescription, contentScale, modifier, fallbackPainter)
 }

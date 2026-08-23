@@ -59,8 +59,15 @@ fun BrandProductsScreen(brand: Brand, items: List<CatalogItem>, imagePathResolve
             items(shown, key = { it.id }) { item -> Column(Modifier.testTag(TestTags.BrandProductCardPrefix + item.id).clickable { onEditProduct(item) }) {
                 val bundled = BUNDLED_CHAIN_BRANDS.firstOrNull { it.brand.id == brand.id }
                 CatalogMediaFrame(Modifier.testTag(TestTags.BrandProductMediaFramePrefix + item.id)) {
-                    if (item.imageAssetId == null && bundled != null) Image(painterResource(bundled.logoRes), "${item.name} 图片", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-                    else ResolvedLocalAssetImage(item.imageAssetId, brand.logoAssetId, imagePathResolver, "${item.name} 图片", ContentScale.Fit, Modifier.fillMaxSize())
+                    ResolvedLocalAssetImage(
+                        primaryAssetId = item.imageAssetId,
+                        fallbackAssetId = brand.logoAssetId,
+                        resolver = imagePathResolver,
+                        fallbackPainter = bundled?.let { painterResource(it.logoRes) },
+                        contentDescription = "${item.name} 图片",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize(),
+                    )
                 }
                 Text(item.name, maxLines = 1); Text(item.chainProductKind?.let(::publicKindLabel) ?: "待分类")
                 if (custom) TextButton(onClick = { deletingProduct = item }) { Text("删除") }

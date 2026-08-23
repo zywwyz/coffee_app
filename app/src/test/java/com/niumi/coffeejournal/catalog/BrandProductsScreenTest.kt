@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -22,6 +23,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.RuntimeEnvironment
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w320dp-h480dp")
@@ -48,6 +51,33 @@ class BrandProductsScreenTest {
         compose.setContent { CoffeeTheme { BrandProductsScreen(Brand("custom", BrandType.CHAIN, "自定义", "logo", MaintenanceMode.MANUAL_ONLY, null), emptyList(), { null }, {}, { edits++ }, {}, {}) } }
         compose.onNodeWithText("编辑品牌").performClick()
         compose.runOnIdle { org.junit.Assert.assertEquals(1, edits) }
+    }
+
+    @Test fun `missing built in product image falls back to its bundled logo instead of placeholder`() {
+        compose.setContent { CoffeeTheme {
+            BrandProductsScreen(
+                brand = BUNDLED_CHAIN_BRANDS.first().brand,
+                items = listOf(CatalogItem("missing", BUNDLED_CHAIN_BRANDS.first().brand.id, ItemType.CHAIN_PRODUCT, "缺失图", null, null, null, null, null, "missing-product", ItemStatus.ACTIVE, chainProductKind = ChainProductKind.BLACK)),
+                imagePathResolver = { null }, onBack = {}, onEditBrand = {}, onAddProduct = {}, onEditProduct = {},
+            )
+        } }
+
+        compose.onNodeWithContentDescription("缺失图 图片").assertIsDisplayed()
+        compose.onAllNodesWithText("☕").assertCountEquals(0)
+    }
+
+    @Test fun `corrupt built in product image falls back to its bundled logo instead of placeholder`() {
+        val corruptFile = File(RuntimeEnvironment.getApplication().cacheDir, "corrupt-product-image.jpg").apply { writeText("not an image") }
+        compose.setContent { CoffeeTheme {
+            BrandProductsScreen(
+                brand = BUNDLED_CHAIN_BRANDS.first().brand,
+                items = listOf(CatalogItem("corrupt", BUNDLED_CHAIN_BRANDS.first().brand.id, ItemType.CHAIN_PRODUCT, "损坏图", null, null, null, null, null, "corrupt-product", ItemStatus.ACTIVE, chainProductKind = ChainProductKind.BLACK)),
+                imagePathResolver = { corruptFile.absolutePath }, onBack = {}, onEditBrand = {}, onAddProduct = {}, onEditProduct = {},
+            )
+        } }
+
+        compose.onNodeWithContentDescription("损坏图 图片").assertIsDisplayed()
+        compose.onAllNodesWithText("☕").assertCountEquals(0)
     }
 
     @Test fun `custom child header exposes a cancellable brand delete action`() {
