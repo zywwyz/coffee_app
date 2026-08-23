@@ -38,6 +38,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.annotation.DrawableRes
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.niumi.coffeejournal.catalog.CatalogRepository
@@ -274,14 +275,13 @@ private fun CalendarDay(
                 modifier = Modifier.align(Alignment.Center).testTag(TestTags.CalendarDayNumberPrefix + day.localDate),
             )
         } else {
-            val bundledLogo = bundledBrandLogoRes(day.brandName)
-            val isBrandMode = mode == CalendarDisplayMode.BRAND
+            val media = selectCalendarMedia(mode, day.imagePath, day.brandLogoPath, day.brandName)
             LocalAssetImage(
-                primaryPath = if (isBrandMode && bundledLogo == null) day.brandLogoPath else if (!isBrandMode) day.imagePath else null,
-                fallbackPath = if (!isBrandMode) day.brandLogoPath else null,
+                primaryPath = media.primaryPath,
+                fallbackPath = media.fallbackPath,
                 contentDescription = "咖啡图片",
                 contentScale = CompleteImageContentScale,
-                fallbackPainter = bundledLogo?.let { painterResource(it) },
+                fallbackPainter = media.bundledLogoRes?.let { painterResource(it) },
                 modifier = Modifier
                     .matchParentSize()
                     .clip(RoundedCornerShape(8.dp))
@@ -303,6 +303,47 @@ private fun CalendarDay(
                 )
             }
         }
+    }
+}
+
+internal enum class CalendarMediaFallback {
+    BUNDLED_LOGO,
+    CUSTOM_LOGO,
+    PLACEHOLDER,
+}
+
+internal data class CalendarMedia(
+    val primaryPath: String?,
+    val fallbackPath: String?,
+    @DrawableRes val bundledLogoRes: Int?,
+    val fallback: CalendarMediaFallback,
+)
+
+internal fun selectCalendarMedia(
+    mode: CalendarDisplayMode,
+    imagePath: String?,
+    brandLogoPath: String?,
+    brandName: String?,
+): CalendarMedia {
+    val bundledLogo = bundledBrandLogoRes(brandName)
+    val fallback = when {
+        bundledLogo != null -> CalendarMediaFallback.BUNDLED_LOGO
+        brandLogoPath != null -> CalendarMediaFallback.CUSTOM_LOGO
+        else -> CalendarMediaFallback.PLACEHOLDER
+    }
+    return when (mode) {
+        CalendarDisplayMode.BRAND -> CalendarMedia(
+            primaryPath = brandLogoPath.takeIf { bundledLogo == null },
+            fallbackPath = null,
+            bundledLogoRes = bundledLogo,
+            fallback = fallback,
+        )
+        CalendarDisplayMode.COFFEE -> CalendarMedia(
+            primaryPath = imagePath,
+            fallbackPath = brandLogoPath.takeIf { bundledLogo == null },
+            bundledLogoRes = bundledLogo,
+            fallback = fallback,
+        )
     }
 }
 

@@ -29,6 +29,7 @@ import com.niumi.coffeejournal.core.model.DrinkSnapshot
 import java.io.File
 import java.io.FileOutputStream
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
@@ -216,6 +217,51 @@ class JournalScreenRobolectricTest {
         val state = calendarState("2026-08-05", drinkCount = 1, imagePath = corrupt.absolutePath, brandName = "瑞幸")
         compose.setContent { CoffeeTheme { JournalScreen(state, {}, {}, {}, {}) } }
         compose.onAllNodesWithTag("calendar-image-2026-08-05", useUnmergedTree = true).assertCountEquals(1)
+    }
+
+    @Test
+    fun `calendar media selection protects bundled logos and distinguishes custom and placeholder fallbacks`() {
+        val bundled = selectCalendarMedia(
+            mode = CalendarDisplayMode.COFFEE,
+            imagePath = "/corrupt-product.png",
+            brandLogoPath = "/legacy-logo.png",
+            brandName = "瑞幸",
+        )
+        assertEquals("/corrupt-product.png", bundled.primaryPath)
+        assertNull(bundled.fallbackPath)
+        assertNotNull(bundled.bundledLogoRes)
+        assertEquals(CalendarMediaFallback.BUNDLED_LOGO, bundled.fallback)
+
+        val bundledWithoutProduct = selectCalendarMedia(
+            mode = CalendarDisplayMode.COFFEE,
+            imagePath = null,
+            brandLogoPath = "/legacy-logo.png",
+            brandName = "瑞幸",
+        )
+        assertNull(bundledWithoutProduct.primaryPath)
+        assertNull(bundledWithoutProduct.fallbackPath)
+        assertNotNull(bundledWithoutProduct.bundledLogoRes)
+
+        val custom = selectCalendarMedia(
+            mode = CalendarDisplayMode.COFFEE,
+            imagePath = null,
+            brandLogoPath = "/custom-logo.png",
+            brandName = "我的品牌",
+        )
+        assertEquals("/custom-logo.png", custom.fallbackPath)
+        assertNull(custom.bundledLogoRes)
+        assertEquals(CalendarMediaFallback.CUSTOM_LOGO, custom.fallback)
+
+        val placeholder = selectCalendarMedia(
+            mode = CalendarDisplayMode.COFFEE,
+            imagePath = null,
+            brandLogoPath = null,
+            brandName = null,
+        )
+        assertNull(placeholder.primaryPath)
+        assertNull(placeholder.fallbackPath)
+        assertNull(placeholder.bundledLogoRes)
+        assertEquals(CalendarMediaFallback.PLACEHOLDER, placeholder.fallback)
     }
 
     @Test
