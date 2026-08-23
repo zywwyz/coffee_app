@@ -38,6 +38,7 @@ import java.io.FileOutputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -120,6 +121,26 @@ class JournalScreenRobolectricTest {
         compose.onAllNodesWithText("咖啡", substring = false).assertCountEquals(1)
         compose.onAllNodesWithText("✓", substring = false).assertCountEquals(0)
         compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CalendarModeIndicator).assertIsDisplayed()
+    }
+
+    @Test
+    fun `each calendar mode option has a 48dp touch target`() {
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                CoffeeTheme { JournalScreen(JournalUiState.empty(2026, 8), {}, {}, {}, {}) }
+            }
+        }
+
+        compose.runOnIdle {
+            listOf(
+                com.niumi.coffeejournal.TestTags.CalendarBrandDisplayMode,
+                com.niumi.coffeejournal.TestTags.CalendarCoffeeDisplayMode,
+            ).forEach { tag ->
+                compose.onNodeWithTag(tag)
+                    .assert(SemanticsMatcher.expectValue(CalendarModeTouchTargetMinHeight, 48f))
+                assertTrue(compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot.height >= 48f)
+            }
+        }
     }
 
     @Test

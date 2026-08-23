@@ -68,6 +68,7 @@ internal val CalendarForestGreen = Color(0xFF1F4D3A)
 internal val CalendarWarmIvory = Color(0xFFFFF8E8)
 internal val RecordButtonContainerColor = SemanticsPropertyKey<Color>("RecordButtonContainerColor")
 internal val RecordButtonContentColor = SemanticsPropertyKey<Color>("RecordButtonContentColor")
+internal val CalendarModeTouchTargetMinHeight = SemanticsPropertyKey<Float>("CalendarModeTouchTargetMinHeight")
 
 @Composable
 fun JournalFeature(
@@ -251,9 +252,11 @@ private fun CalendarDisplayModeControl(
             Box(
                 modifier = Modifier
                     .weight(1f)
+                    .defaultMinSize(minHeight = 48.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(if (selected) CalendarForestGreen else CalendarWarmIvory)
                     .selectable(selected = selected, onClick = { onModeChange(mode) }, role = Role.RadioButton)
+                    .semantics { this[CalendarModeTouchTargetMinHeight] = 48f }
                     .testTag(
                         if (mode == CalendarDisplayMode.BRAND) TestTags.CalendarBrandDisplayMode
                         else TestTags.CalendarCoffeeDisplayMode,
