@@ -56,6 +56,35 @@ class BundledBrandLogoTest {
         assertEquals(12, BUNDLED_CHAIN_BRANDS.map { decodedPixelSha256(resources, it.logoRes) }.toSet().size)
     }
 
+    @Test fun `kcoffee and hucoffee preserve a bounded mark on transparent canvas`() {
+        val resources = RuntimeEnvironment.getApplication().resources
+        listOf(R.drawable.brand_logo_kcoffee, R.drawable.brand_logo_hucoffee).forEach { resource ->
+            val bitmap = requireNotNull(
+                BitmapFactory.decodeResource(resources, resource, BitmapFactory.Options().apply {
+                    inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+                }),
+            )
+            val pngBytes = resources.openRawResource(resource).use { it.readBytes() }
+            // PNG colour type 6 is RGBA; this verifies the packaged source retains alpha.
+            assertEquals(6, pngBytes[25].toInt() and 0xff)
+            val edgePixels = buildList {
+                for (index in 0 until bitmap.width) {
+                    add(bitmap.getPixel(index, 0)); add(bitmap.getPixel(index, bitmap.height - 1))
+                }
+                for (index in 1 until bitmap.height - 1) {
+                    add(bitmap.getPixel(0, index)); add(bitmap.getPixel(bitmap.width - 1, index))
+                }
+            }
+            org.junit.Assert.assertTrue(edgePixels.all { pixel -> (pixel ushr 24) == 0 })
+            val opaque = buildList {
+                for (y in 0 until bitmap.height) for (x in 0 until bitmap.width) if ((bitmap.getPixel(x, y) ushr 24) != 0) add(x to y)
+            }
+            org.junit.Assert.assertTrue(opaque.isNotEmpty())
+            org.junit.Assert.assertTrue(opaque.maxOf { it.first } - opaque.minOf { it.first } + 1 <= 420)
+            org.junit.Assert.assertTrue(opaque.maxOf { it.second } - opaque.minOf { it.second } + 1 <= 420)
+        }
+    }
+
     private fun decodedPixelSha256(resources: android.content.res.Resources, resId: Int): String {
         val bitmap = requireNotNull(BitmapFactory.decodeResource(resources, resId))
         val pixels = IntArray(bitmap.width * bitmap.height)
