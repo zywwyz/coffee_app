@@ -21,6 +21,7 @@ object TestTags {
     const val BottomCalendarTab = "bottom-tab-咖啡日历"
     const val BottomCatalogTab = "bottom-tab-豆库"
     const val BottomInsightsTab = "bottom-tab-总结"
+    const val BottomSelectedCapsule = "bottom-selected-capsule"
     const val RootScreenTitle = "root-screen-title"
     const val RootScreenSettings = "root-screen-settings"
     const val SettingsBack = "settings-back"

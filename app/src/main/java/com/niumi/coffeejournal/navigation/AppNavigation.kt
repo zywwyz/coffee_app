@@ -1,12 +1,17 @@
 package com.niumi.coffeejournal.navigation
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
@@ -23,8 +28,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.catalog.CatalogRepository
 import com.niumi.coffeejournal.catalog.CatalogFeature
@@ -76,13 +90,13 @@ data class ChainBrandProducts(val brandId: String) : NavKey
 private data class RootDestination(
     val key: NavKey,
     val label: String,
-    val iconLabel: String,
+    val iconRes: Int,
 )
 
 private val RootDestinations = listOf(
-    RootDestination(Journal, "咖啡日历", "咖啡"),
-    RootDestination(Catalog, "豆库", "豆"),
-    RootDestination(Insights, "总结", "图"),
+    RootDestination(Journal, "咖啡日历", com.niumi.coffeejournal.R.drawable.ic_calendar_outline),
+    RootDestination(Catalog, "豆库", com.niumi.coffeejournal.R.drawable.ic_catalog_outline),
+    RootDestination(Insights, "总结", com.niumi.coffeejournal.R.drawable.ic_insights_outline),
 )
 
 @Composable
@@ -138,27 +152,71 @@ private fun AppNavigationContent(
 
     Scaffold(
         bottomBar = {
-            if (showRootNavigation)
-            NavigationBar {
+            if (showRootNavigation) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceContainer)
+                        .navigationBarsPadding()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                ) {
                 RootDestinations.forEach { destination ->
-                    NavigationBarItem(
+                    val selected = selectedRoot == destination.key
+                    val tabTag = when (destination.key) {
+                        Journal -> TestTags.BottomCalendarTab
+                        Catalog -> TestTags.BottomCatalogTab
+                        else -> TestTags.BottomInsightsTab
+                    }
+                    Column(
                         modifier = Modifier.testTag(
-                            when (destination.key) {
-                                Journal -> TestTags.BottomCalendarTab
-                                Catalog -> TestTags.BottomCatalogTab
-                                else -> TestTags.BottomInsightsTab
-                            },
-                        ),
-                        selected = selectedRoot == destination.key,
-                        onClick = {
-                            if (backStack.last() != destination.key) {
-                                backStack.clear()
-                                backStack.add(destination.key)
-                            }
-                        },
-                        icon = { Text(destination.iconLabel) },
-                        label = { Text(destination.label) },
-                    )
+                            tabTag,
+                        )
+                            .weight(1f)
+                            .defaultMinSize(minHeight = 48.dp)
+                            .selectable(
+                                selected = selected,
+                                role = Role.Tab,
+                                onClick = {
+                                    if (backStack.last() != destination.key) {
+                                        backStack.clear()
+                                        backStack.add(destination.key)
+                                    }
+                                },
+                            )
+                            .semantics(mergeDescendants = true) { }
+                            .padding(horizontal = 2.dp, vertical = 2.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .then(
+                                    if (selected) Modifier
+                                        .testTag(TestTags.BottomSelectedCapsule)
+                                        .clip(RoundedCornerShape(50))
+                                        .background(MaterialTheme.colorScheme.secondaryContainer)
+                                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                                    else Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Image(
+                                painter = painterResource(destination.iconRes),
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface),
+                            )
+                        }
+                        Text(
+                            text = destination.label,
+                            color = if (selected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.labelMedium,
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Clip,
+                        )
+                    }
+                }
                 }
             }
         },
