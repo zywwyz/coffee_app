@@ -13,6 +13,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
+internal const val THUMBNAIL_TARGET_EDGE_PX = 512
+
 fun interface ThumbnailLoader {
     suspend fun load(path: String?): ImageBitmap?
 }
@@ -78,7 +80,7 @@ internal fun decodeThumbnailBitmap(path: String): android.graphics.Bitmap? {
     BitmapFactory.decodeFile(path, bounds)
     if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
     var sampleSize = 1
-    while (bounds.outWidth / sampleSize > 256 || bounds.outHeight / sampleSize > 256) sampleSize *= 2
+    while (maxOf(bounds.outWidth, bounds.outHeight) / (sampleSize * 2) >= THUMBNAIL_TARGET_EDGE_PX) sampleSize *= 2
     val bitmap = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sampleSize }) ?: return null
     val orientation = runCatching {
         ExifInterface(path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
