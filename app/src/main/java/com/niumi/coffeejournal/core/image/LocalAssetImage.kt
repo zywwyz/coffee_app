@@ -12,18 +12,25 @@ import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import com.niumi.coffeejournal.core.image.CalendarThumbnailLoader
 
+internal val CompleteImageContentScale = ContentScale.Fit
+
 @Composable
-fun LocalAssetImage(primaryPath: String?, fallbackPath: String?, contentDescription: String, contentScale: ContentScale = ContentScale.Crop, modifier: Modifier = Modifier) {
+fun LocalAssetImage(primaryPath: String?, fallbackPath: String?, contentDescription: String, contentScale: ContentScale = ContentScale.Crop, modifier: Modifier = Modifier, fallbackPainter: Painter? = null) {
     val loader = androidx.compose.runtime.remember { CalendarThumbnailLoader() }
-    val bitmap by produceState<ImageBitmap?>(null, primaryPath, fallbackPath) {
+    val bitmap by produceState<ImageBitmap?>(null, primaryPath, fallbackPath, fallbackPainter) {
         value = loader.load(primaryPath) ?: loader.load(fallbackPath)
     }
-    bitmap?.let { Image(it, contentDescription, modifier = modifier, contentScale = contentScale) } ?: Box(
-        modifier.fillMaxSize().background(MaterialTheme.colorScheme.secondaryContainer), contentAlignment = Alignment.Center,
-    ) { Text("☕") }
+    when {
+        bitmap != null -> Image(bitmap!!, contentDescription, modifier = modifier, contentScale = contentScale)
+        fallbackPainter != null -> Image(fallbackPainter, contentDescription, modifier = modifier, contentScale = contentScale)
+        else -> Box(
+            modifier.fillMaxSize().background(MaterialTheme.colorScheme.secondaryContainer), contentAlignment = Alignment.Center,
+        ) { Text("☕") }
+    }
 }
 
 @Composable

@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
@@ -40,12 +41,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.niumi.coffeejournal.catalog.CatalogRepository
+import com.niumi.coffeejournal.catalog.bundledBrandLogoRes
 import com.niumi.coffeejournal.catalog.ManualProductEditorDialog
 import com.niumi.coffeejournal.catalog.ManualProductEditorEvent
 import com.niumi.coffeejournal.catalog.ManualProductEditorViewModel
 import com.niumi.coffeejournal.core.image.ImagePathResolver
 import com.niumi.coffeejournal.core.image.ImageStore
 import com.niumi.coffeejournal.core.image.LocalAssetImage
+import com.niumi.coffeejournal.core.image.CompleteImageContentScale
 import com.niumi.coffeejournal.core.model.DrinkRecord
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.image.ImageKind
@@ -262,24 +265,41 @@ private fun CalendarDay(
             .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
             .semantics { contentDescription = "日期 ${day.localDate}" }
+            .testTag(TestTags.CalendarDayPrefix + day.localDate)
             .padding(4.dp),
     ) {
         if (day.drinkCount == 0) {
-            Text(day.dayNumber.toString(), modifier = Modifier.align(Alignment.Center))
-        } else {
-            LocalAssetImage(
-                primaryPath = if (mode == CalendarDisplayMode.BRAND) day.brandLogoPath else day.imagePath,
-                fallbackPath = if (mode == CalendarDisplayMode.COFFEE) day.brandLogoPath else null,
-                contentDescription = "咖啡图片",
-                modifier = Modifier.matchParentSize().clip(RoundedCornerShape(8.dp)),
+            Text(
+                day.dayNumber.toString(),
+                modifier = Modifier.align(Alignment.Center).testTag(TestTags.CalendarDayNumberPrefix + day.localDate),
             )
-            Text(day.dayNumber.toString(), style = MaterialTheme.typography.labelSmall)
+        } else {
+            val bundledLogo = bundledBrandLogoRes(day.brandName)
+            val isBrandMode = mode == CalendarDisplayMode.BRAND
+            LocalAssetImage(
+                primaryPath = if (isBrandMode && bundledLogo == null) day.brandLogoPath else if (!isBrandMode) day.imagePath else null,
+                fallbackPath = if (!isBrandMode) day.brandLogoPath else null,
+                contentDescription = "咖啡图片",
+                contentScale = CompleteImageContentScale,
+                fallbackPainter = bundledLogo?.let { painterResource(it) },
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                    .padding(6.dp)
+                    .testTag(TestTags.CalendarImagePrefix + day.localDate),
+            )
             if (day.drinkCount > 1) {
                 Text(
                     "×${day.drinkCount}",
-                    modifier = Modifier.align(Alignment.BottomEnd),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                        .testTag(TestTags.CalendarCountBadgePrefix + day.localDate),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimary,
                 )
             }
         }

@@ -6,8 +6,11 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -171,6 +174,51 @@ class JournalScreenRobolectricTest {
     }
 
     @Test
+    fun `empty day keeps its date but recorded day replaces the date with media`() {
+        val state = calendarState("2026-08-05", drinkCount = 1)
+
+        compose.setContent { CoffeeTheme { JournalScreen(state, {}, {}, {}, {}) } }
+
+        compose.onAllNodesWithTag("calendar-day-number-2026-08-04", useUnmergedTree = true).assertCountEquals(1)
+        compose.onAllNodesWithTag("calendar-day-number-2026-08-05", useUnmergedTree = true).assertCountEquals(0)
+        compose.onAllNodesWithTag("calendar-day-2026-08-05").assertCountEquals(1)
+    }
+
+    @Test
+    fun `calendar count badge appears only for multiple drinks`() {
+        val state = androidx.compose.runtime.mutableStateOf(calendarState("2026-08-05", drinkCount = 1))
+        compose.setContent { CoffeeTheme { JournalScreen(state.value, {}, {}, {}, {}) } }
+        compose.onAllNodesWithTag("calendar-count-badge-2026-08-05", useUnmergedTree = true).assertCountEquals(0)
+
+        compose.runOnIdle { state.value = calendarState("2026-08-05", drinkCount = 3) }
+        compose.onAllNodesWithTag("calendar-count-badge-2026-08-05", useUnmergedTree = true).assertCountEquals(1)
+        compose.onAllNodesWithText("×3").assertCountEquals(1)
+    }
+
+    @Test
+    fun `brand mode renders known bundled brand and custom logo as calendar media`() {
+        val customLogo = temporaryBitmap("custom-brand")
+        val bundled = calendarState("2026-08-05", drinkCount = 1, brandName = "瑞幸", brandLogoPath = "/bad/legacy-logo")
+            .copy(calendarDisplayMode = CalendarDisplayMode.BRAND)
+        val state = androidx.compose.runtime.mutableStateOf(bundled)
+        compose.setContent { CoffeeTheme { JournalScreen(state.value, {}, {}, {}, {}) } }
+        compose.onAllNodesWithTag("calendar-image-2026-08-05", useUnmergedTree = true).assertCountEquals(1)
+
+        val custom = calendarState("2026-08-05", drinkCount = 1, brandName = "自定义", brandLogoPath = customLogo.absolutePath)
+            .copy(calendarDisplayMode = CalendarDisplayMode.BRAND)
+        compose.runOnIdle { state.value = custom }
+        compose.onAllNodesWithTag("calendar-image-2026-08-05", useUnmergedTree = true).assertCountEquals(1)
+    }
+
+    @Test
+    fun `coffee mode falls back to known bundled logo when product image is unreadable`() {
+        val corrupt = File.createTempFile("corrupt-product", ".png").apply { writeText("broken") }
+        val state = calendarState("2026-08-05", drinkCount = 1, imagePath = corrupt.absolutePath, brandName = "瑞幸")
+        compose.setContent { CoffeeTheme { JournalScreen(state, {}, {}, {}, {}) } }
+        compose.onAllNodesWithTag("calendar-image-2026-08-05", useUnmergedTree = true).assertCountEquals(1)
+    }
+
+    @Test
     fun `all editor controls are disabled while saving`() {
         val brand = Brand("brand", BrandType.CHAIN, "测试品牌", null, MaintenanceMode.MANUAL_ONLY, null)
         val item = CatalogItem(
@@ -313,5 +361,22 @@ class JournalScreenRobolectricTest {
             Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.PNG, 100, output)
         }
         return file
+    }
+
+    private fun calendarState(
+        date: String,
+        drinkCount: Int,
+        imagePath: String? = null,
+        brandName: String? = null,
+        brandLogoPath: String? = null,
+    ): JournalUiState = JournalUiState.empty(2026, 8).let { empty ->
+        empty.copy(days = empty.days.map { day ->
+            if (day.localDate == date) day.copy(
+                drinkCount = drinkCount,
+                imagePath = imagePath,
+                brandName = brandName,
+                brandLogoPath = brandLogoPath,
+            ) else day
+        })
     }
 }
