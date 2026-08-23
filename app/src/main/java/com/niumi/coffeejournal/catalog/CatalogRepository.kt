@@ -17,8 +17,6 @@ import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
 import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.core.image.ImageStore
-import java.text.Normalizer
-import java.util.Locale
 import android.database.sqlite.SQLiteConstraintException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -292,26 +290,6 @@ private fun CatalogItem.toEntity() = CatalogItemEntity(
     imageSourceUrl = imageSourceUrl,
     chainProductKind = chainProductKind?.name,
 )
-
-fun normalizeCatalogName(raw: String): String {
-    val compatible = Normalizer.normalize(raw, Normalizer.Form.NFKC).lowercase(Locale.ROOT)
-    val normalized = StringBuilder()
-    var pendingSpace = false
-    var index = 0
-    while (index < compatible.length) {
-        val codePoint = compatible.codePointAt(index)
-        if (Character.isWhitespace(codePoint) || Character.isSpaceChar(codePoint)) {
-            pendingSpace = normalized.isNotEmpty()
-        } else {
-            if (pendingSpace) normalized.append(' ')
-            normalized.appendCodePoint(codePoint)
-            pendingSpace = false
-        }
-        index += Character.charCount(codePoint)
-    }
-    if (normalized.isEmpty()) throw InvalidCatalogNameException(raw)
-    return normalized.toString()
-}
 
 private inline fun <reified T : Enum<T>> enumValue(field: String, value: String): T =
     try {

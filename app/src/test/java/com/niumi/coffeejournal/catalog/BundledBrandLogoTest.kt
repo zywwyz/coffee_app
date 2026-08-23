@@ -22,6 +22,8 @@ class BundledBrandLogoTest {
         assertEquals(R.drawable.brand_logo_cotti, bundledBrandLogoRes("库迪咖啡"))
         assertEquals(R.drawable.brand_logo_manner, bundledBrandLogoRes("manner coffee"))
         assertEquals(R.drawable.brand_logo_mstand, bundledBrandLogoRes("Mstand"))
+        assertEquals(R.drawable.brand_logo_manner, bundledBrandLogoRes("　ＭＡＮＮＥＲ　"))
+        assertEquals(R.drawable.brand_logo_mstand, bundledBrandLogoRes("M\u00a0Stand"))
         assertNull(bundledBrandLogoRes("自定义咖啡"))
     }
 
@@ -29,7 +31,7 @@ class BundledBrandLogoTest {
         val definition = BUNDLED_CHAIN_BRANDS.first { it.brand.name == "MANNER" }
             .copy(aliases = setOf("  MANNER   Coffee  "))
 
-        assertEquals(setOf("manner", "manner   coffee"), definition.catalogNames())
+        assertEquals(setOf("manner", "manner coffee"), definition.catalogNames())
     }
 
     @Test fun `bundled chain logos are complete unique and stable`() {
