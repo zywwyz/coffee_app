@@ -83,6 +83,71 @@ class JournalScreenRobolectricTest {
     }
 
     @Test
+    fun `calendar mode control uses exact labels without a selection checkmark`() {
+        compose.setContent {
+            CoffeeTheme {
+                JournalScreen(
+                    state = JournalUiState.empty(2026, 8),
+                    onPreviousMonth = {}, onNextMonth = {}, onDayClick = {}, onRecordDrink = {},
+                )
+            }
+        }
+
+        compose.onAllNodesWithText("品牌", substring = false).assertCountEquals(1)
+        compose.onAllNodesWithText("咖啡", substring = false).assertCountEquals(1)
+        compose.onAllNodesWithText("✓", substring = false).assertCountEquals(0)
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CalendarModeIndicator).assertIsDisplayed()
+    }
+
+    @Test
+    fun `month header labels invoke their respective callbacks once`() {
+        var previousCalls = 0
+        var nextCalls = 0
+        compose.setContent {
+            CoffeeTheme {
+                JournalScreen(
+                    state = JournalUiState.empty(2026, 8),
+                    onPreviousMonth = { previousCalls++ }, onNextMonth = { nextCalls++ },
+                    onDayClick = {}, onRecordDrink = {},
+                )
+            }
+        }
+
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.PreviousMonth)
+            .assertIsDisplayed().performClick()
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.NextMonth)
+            .assertIsDisplayed().performClick()
+        compose.runOnIdle {
+            assertEquals(1, previousCalls)
+            assertEquals(1, nextCalls)
+        }
+    }
+
+    @Test
+    fun `calendar controls remain visible in a 360dp viewport and core actions stay reachable`() {
+        compose.setContent {
+            CoffeeTheme {
+                JournalScreen(
+                    state = JournalUiState.empty(2026, 8),
+                    onPreviousMonth = {}, onNextMonth = {}, onDayClick = {}, onRecordDrink = {},
+                )
+            }
+        }
+
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.PreviousMonth).assertIsDisplayed()
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.NextMonth).assertIsDisplayed()
+        listOf("一", "二", "三", "四", "五", "六", "日").forEach { weekday ->
+            compose.onNodeWithText(weekday, substring = false).assertIsDisplayed()
+        }
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.Calendar).assertIsDisplayed()
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.RecordButton).assertIsDisplayed()
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.RootScreenSettings).assertIsDisplayed()
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.Calendar).performTouchInput { swipeUp() }
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.MonthSummaryCard).assertIsDisplayed()
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.MonthlySpend).assertIsDisplayed()
+    }
+
+    @Test
     fun `missing image dialog exposes real image and brand logo actions`() {
         compose.setContent {
             CoffeeTheme {

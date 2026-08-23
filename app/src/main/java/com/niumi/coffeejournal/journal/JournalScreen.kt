@@ -1,7 +1,9 @@
 package com.niumi.coffeejournal.journal
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,15 +13,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -34,10 +37,12 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 import androidx.annotation.DrawableRes
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -214,31 +219,61 @@ private fun CalendarDisplayModeControl(
     selectedMode: CalendarDisplayMode,
     onModeChange: (CalendarDisplayMode) -> Unit,
 ) {
-    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-        listOf(CalendarDisplayMode.BRAND to "品牌", CalendarDisplayMode.COFFEE to "咖啡").forEachIndexed { index, (mode, label) ->
-            SegmentedButton(
-                selected = selectedMode == mode,
-                onClick = { onModeChange(mode) },
-                shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(index, 2),
-                modifier = Modifier.testTag(
-                    if (mode == CalendarDisplayMode.BRAND) TestTags.CalendarBrandDisplayMode
-                    else TestTags.CalendarCoffeeDisplayMode,
-                ),
-            ) { Text(label) }
+    val forestGreen = Color(0xFF1F4D3A)
+    val warmIvory = Color(0xFFFFF8E8)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(warmIvory)
+            .border(BorderStroke(1.dp, forestGreen), RoundedCornerShape(14.dp))
+            .selectableGroup()
+            .testTag(TestTags.CalendarModeIndicator),
+    ) {
+        listOf(CalendarDisplayMode.BRAND to "品牌", CalendarDisplayMode.COFFEE to "咖啡").forEach { (mode, label) ->
+            val selected = selectedMode == mode
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (selected) forestGreen else warmIvory)
+                    .selectable(selected = selected, onClick = { onModeChange(mode) }, role = Role.RadioButton)
+                    .testTag(
+                        if (mode == CalendarDisplayMode.BRAND) TestTags.CalendarBrandDisplayMode
+                        else TestTags.CalendarCoffeeDisplayMode,
+                    )
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(label, color = if (selected) Color.White else forestGreen, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
 
 @Composable
 private fun MonthHeader(year: Int, month: Int, previous: () -> Unit, next: () -> Unit) {
+    val forestGreen = Color(0xFF1F4D3A)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TextButton(onClick = previous) { Text("上月") }
-        Text("${year}年${month}月", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        TextButton(onClick = next) { Text("下月") }
+        Button(
+            onClick = previous,
+            modifier = Modifier.weight(1f).testTag(TestTags.PreviousMonth),
+            colors = ButtonDefaults.buttonColors(containerColor = forestGreen, contentColor = Color.White),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 7.dp),
+        ) { Text("上一月", style = MaterialTheme.typography.labelLarge, maxLines = 1) }
+        Box(Modifier.weight(1.15f), contentAlignment = Alignment.Center) {
+            Text("${year}年${month}月", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1)
+        }
+        Button(
+            onClick = next,
+            modifier = Modifier.weight(1f).testTag(TestTags.NextMonth),
+            colors = ButtonDefaults.buttonColors(containerColor = forestGreen, contentColor = Color.White),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 7.dp),
+        ) { Text("下一月", style = MaterialTheme.typography.labelLarge, maxLines = 1) }
     }
 }
 
@@ -350,14 +385,18 @@ internal fun selectCalendarMedia(
 @Composable
 private fun MonthSummary(summary: MonthSummaryUi) {
     val rating = summary.averageRatingStars?.let { "%.2f 星".format(it) } ?: "暂无评分"
-    Card(Modifier.fillMaxWidth().padding(bottom = 76.dp)) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 76.dp).testTag(TestTags.MonthSummaryCard),
+        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Color(0xFFF3E7CF)),
+    ) {
         Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("${summary.cupCount} 杯")
+            Text("${summary.cupCount} 杯", color = Color(0xFF1F4D3A), fontWeight = FontWeight.Bold)
             Text(
                 "¥${summary.totalSpendFen / 100}.${(summary.totalSpendFen % 100).toString().padStart(2, '0')}",
                 modifier = Modifier.testTag(TestTags.MonthlySpend),
+                color = Color(0xFF1F4D3A),
             )
-            Text(rating)
+            Text(rating, color = Color(0xFF1F4D3A))
         }
     }
 }
