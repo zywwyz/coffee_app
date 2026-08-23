@@ -207,9 +207,6 @@ private fun List<Brand>.sortedForCatalog(type: BrandType): List<Brand> {
     }.thenBy { normalizeCatalogName(it.name) })
 }
 
-private fun BundledBrandDefinition.catalogNames(): Set<String> =
-    (aliases + brand.name).mapTo(linkedSetOf(), ::normalizeCatalogName)
-
 private fun BrandEntity.toDomain() = Brand(
     id = id,
     type = enumValue("BrandEntity.type", type),

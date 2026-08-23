@@ -5,6 +5,7 @@ import com.niumi.coffeejournal.R
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
+import java.util.Locale
 
 data class BundledBrandDefinition(
     val brand: Brand,
@@ -27,6 +28,16 @@ val BUNDLED_CHAIN_BRANDS = listOf(
     bundled("seed-chain-peets", "Peet's", R.drawable.brand_logo_peets, 10),
     bundled("seed-chain-arabica", "%Arabica", R.drawable.brand_logo_arabica, 11),
 )
+
+internal fun BundledBrandDefinition.catalogNames(): Set<String> =
+    (aliases + brand.name).mapTo(linkedSetOf(), ::normalizeCatalogName)
+
+fun bundledBrandLogoRes(brandName: String?): Int? {
+    val normalizedName = brandName?.trim()?.lowercase(Locale.ROOT)?.takeIf(String::isNotEmpty) ?: return null
+    return BUNDLED_CHAIN_BRANDS.firstOrNull { definition ->
+        (definition.aliases + definition.brand.name).any { it.trim().lowercase(Locale.ROOT) == normalizedName }
+    }?.logoRes
+}
 
 private fun bundled(id: String, name: String, @DrawableRes logoRes: Int, order: Int, vararg aliases: String) = BundledBrandDefinition(
     brand = Brand(id, BrandType.CHAIN, name, null, MaintenanceMode.MANUAL_ONLY, null),

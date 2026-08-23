@@ -56,6 +56,22 @@ class JournalViewModelTest {
     }
 
     @Test
+    fun `month projection uses representative record brand name and leaves empty days blank`() {
+        val cell = projectMonth(
+            2026,
+            8,
+            listOf(
+                record("first", "2026-08-05", 100, null, brandName = "库迪"),
+                record("last", "2026-08-05", 200, null, brandName = "瑞幸"),
+            ),
+        ).single { it.localDate == "2026-08-05" }
+        val emptyCell = projectMonth(2026, 8, emptyList()).single { it.localDate == "2026-08-06" }
+
+        assertEquals("瑞幸", cell.brandName)
+        assertNull(emptyCell.brandName)
+    }
+
+    @Test
     fun `calendar image uses immutable snapshot path or generic`() {
         assertEquals("snapshot.webp", calendarImage("snapshot.webp"))
         assertEquals(GENERIC_COFFEE_IMAGE, calendarImage(null))
@@ -331,6 +347,7 @@ class JournalViewModelTest {
         image: String?,
         price: Long? = null,
         rating: Int? = null,
+        brandName: String = "瑞幸",
     ) = DrinkRecord(
         id = id,
         occurredAtEpochMillis = timestamp,
@@ -341,7 +358,7 @@ class JournalViewModelTest {
         ratingHalfStars = rating,
         actualPriceFen = price,
         note = null,
-        snapshot = DrinkSnapshot("瑞幸", "拿铁", null, null, image),
+        snapshot = DrinkSnapshot(brandName, "拿铁", null, null, image),
     )
 
     private fun item() = CatalogItem(

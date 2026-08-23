@@ -1,6 +1,7 @@
 package com.niumi.coffeejournal.catalog
 
 import android.graphics.BitmapFactory
+import com.niumi.coffeejournal.R
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
 import java.security.MessageDigest
@@ -16,6 +17,14 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class BundledBrandLogoTest {
+    @Test fun `bundled logo resolves canonical names and aliases`() {
+        assertEquals(R.drawable.brand_logo_luckin, bundledBrandLogoRes("  瑞幸  "))
+        assertEquals(R.drawable.brand_logo_cotti, bundledBrandLogoRes("库迪咖啡"))
+        assertEquals(R.drawable.brand_logo_manner, bundledBrandLogoRes("manner coffee"))
+        assertEquals(R.drawable.brand_logo_mstand, bundledBrandLogoRes("Mstand"))
+        assertNull(bundledBrandLogoRes("自定义咖啡"))
+    }
+
     @Test fun `bundled chain logos are complete unique and stable`() {
         val resources = RuntimeEnvironment.getApplication().resources
         assertEquals(12, BUNDLED_CHAIN_BRANDS.size)
