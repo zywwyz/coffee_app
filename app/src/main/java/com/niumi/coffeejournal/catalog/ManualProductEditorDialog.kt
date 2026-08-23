@@ -26,6 +26,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.core.image.ImageKind
@@ -60,8 +62,8 @@ fun ManualProductEditorDialog(
                 val bitmap by produceState<ImageBitmap?>(null, previewAssetId, thumbnailLoader) {
                     value = loadManualProductPreview(previewAssetId, imagePathResolver, thumbnailLoader)
                 }
-                Box(Modifier.fillMaxWidth().aspectRatio(1f).background(MaterialTheme.colorScheme.surfaceVariant).semantics { contentDescription = TestTags.ManualProductPreview }.padding(12.dp)) {
-                    if (bitmap != null) Image(bitmap = bitmap!!, contentDescription = if (state.imageAssetId != null) "产品实拍图" else "品牌 Logo", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth())
+                Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant).semantics { contentDescription = TestTags.ManualProductPreview }.padding(12.dp)) {
+                    if (bitmap != null) Image(bitmap = bitmap!!, contentDescription = if (state.imageAssetId != null) "产品实拍图" else "品牌 Logo", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().aspectRatio(1f))
                     else Text(if (previewAssetId == null) "暂无图片" else "图片无法加载")
                 }
                 OutlinedButton(onClick = {

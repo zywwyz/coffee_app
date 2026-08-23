@@ -45,6 +45,7 @@ class CatalogScreenRobolectricTest {
         compose.onNodeWithText("我的豆子").assertIsDisplayed()
         compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.ChainBrandGrid).assertIsDisplayed()
         compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.ChainBrandCardPrefix + "brand").assertIsDisplayed()
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.ChainBrandMediaFramePrefix + "brand", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("新增品牌").assertIsDisplayed()
     }
 

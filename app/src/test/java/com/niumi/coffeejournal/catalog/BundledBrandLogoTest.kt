@@ -49,8 +49,8 @@ class BundledBrandLogoTest {
             val bitmap = BitmapFactory.decodeResource(resources, it.logoRes)
             assertNotNull(bitmap)
             checkNotNull(bitmap).also { decoded ->
-                org.junit.Assert.assertTrue(decoded.width <= 512)
-                org.junit.Assert.assertTrue(decoded.height <= 512)
+                assertEquals(512, decoded.width)
+                assertEquals(512, decoded.height)
             }
         }
         assertEquals(12, BUNDLED_CHAIN_BRANDS.map { decodedPixelSha256(resources, it.logoRes) }.toSet().size)

@@ -38,6 +38,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -214,13 +218,23 @@ private fun ChainBrandRoot(brands: List<Brand>, imagePathResolver: ImagePathReso
         items(brands, key = { it.id }) { brand ->
             Column(Modifier.testTag(com.niumi.coffeejournal.TestTags.ChainBrandCardPrefix + brand.id).clickable { onOpen(brand.id) }) {
                 val bundled = BUNDLED_CHAIN_BRANDS.firstOrNull { it.brand.id == brand.id }
-                if (bundled != null) Image(painterResource(bundled.logoRes), "品牌 ${brand.name}", modifier = Modifier.fillMaxWidth().aspectRatio(1f), contentScale = ContentScale.Crop)
-                else ResolvedLocalAssetImage(brand.logoAssetId, null, imagePathResolver, "品牌 ${brand.name}", ContentScale.Crop, Modifier.fillMaxWidth().aspectRatio(1f))
+                CatalogMediaFrame(Modifier.testTag(com.niumi.coffeejournal.TestTags.ChainBrandMediaFramePrefix + brand.id)) {
+                    if (bundled != null) Image(painterResource(bundled.logoRes), "品牌 ${brand.name}", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                    else ResolvedLocalAssetImage(brand.logoAssetId, null, imagePathResolver, "品牌 ${brand.name}", ContentScale.Fit, Modifier.fillMaxSize())
+                }
                 Text(brand.name, maxLines = 1)
             }
         }
         item { Button(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text("新增品牌") } }
     }
+}
+
+@Composable
+internal fun CatalogMediaFrame(modifier: Modifier = Modifier, image: @Composable () -> Unit) {
+    Box(
+        modifier = modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant).padding(12.dp),
+    ) { image() }
 }
 
 @Composable

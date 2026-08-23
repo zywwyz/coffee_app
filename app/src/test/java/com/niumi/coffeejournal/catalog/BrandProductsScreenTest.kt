@@ -7,6 +7,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
@@ -37,6 +38,7 @@ class BrandProductsScreenTest {
         } }
         compose.onNodeWithTag(TestTags.BrandProductGrid).assertIsDisplayed()
         compose.onNodeWithTag(TestTags.BrandProductCardPrefix + "item").assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.BrandProductMediaFramePrefix + "item", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("冷萃").assertIsDisplayed()
         compose.onAllNodesWithText("黑咖").assertCountEquals(2)
     }

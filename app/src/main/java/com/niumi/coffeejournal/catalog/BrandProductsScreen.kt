@@ -58,8 +58,10 @@ fun BrandProductsScreen(brand: Brand, items: List<CatalogItem>, imagePathResolve
         else LazyVerticalGrid(GridCells.Fixed(2), modifier = Modifier.weight(1f).testTag(TestTags.BrandProductGrid), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(shown, key = { it.id }) { item -> Column(Modifier.testTag(TestTags.BrandProductCardPrefix + item.id).clickable { onEditProduct(item) }) {
                 val bundled = BUNDLED_CHAIN_BRANDS.firstOrNull { it.brand.id == brand.id }
-                if (item.imageAssetId == null && bundled != null) Image(painterResource(bundled.logoRes), "${item.name} 图片", modifier = Modifier.fillMaxWidth().aspectRatio(1f), contentScale = ContentScale.Crop)
-                else ResolvedLocalAssetImage(item.imageAssetId, brand.logoAssetId, imagePathResolver, "${item.name} 图片", ContentScale.Crop, Modifier.fillMaxWidth().aspectRatio(1f))
+                CatalogMediaFrame(Modifier.testTag(TestTags.BrandProductMediaFramePrefix + item.id)) {
+                    if (item.imageAssetId == null && bundled != null) Image(painterResource(bundled.logoRes), "${item.name} 图片", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                    else ResolvedLocalAssetImage(item.imageAssetId, brand.logoAssetId, imagePathResolver, "${item.name} 图片", ContentScale.Fit, Modifier.fillMaxSize())
+                }
                 Text(item.name, maxLines = 1); Text(item.chainProductKind?.let(::publicKindLabel) ?: "待分类")
                 if (custom) TextButton(onClick = { deletingProduct = item }) { Text("删除") }
             } }

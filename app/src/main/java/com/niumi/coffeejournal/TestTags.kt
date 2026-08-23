@@ -28,6 +28,8 @@ object TestTags {
     const val ManualProductPreview = "manual-product-preview"
     const val ChainBrandGrid = "chain-brand-grid"
     const val ChainBrandCardPrefix = "chain-brand-card-"
+    const val ChainBrandMediaFramePrefix = "chain-brand-media-frame-"
     const val BrandProductGrid = "brand-product-grid"
     const val BrandProductCardPrefix = "brand-product-card-"
+    const val BrandProductMediaFramePrefix = "brand-product-media-frame-"
 }
