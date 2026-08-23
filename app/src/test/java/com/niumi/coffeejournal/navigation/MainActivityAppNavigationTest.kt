@@ -11,6 +11,8 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import com.niumi.coffeejournal.catalog.BUNDLED_CHAIN_BRANDS
+import androidx.compose.ui.unit.dp
 import com.niumi.coffeejournal.InMemoryCoffeeJournalApp
 import com.niumi.coffeejournal.MainActivity
 import com.niumi.coffeejournal.TestTags
@@ -35,11 +37,12 @@ class MainActivityAppNavigationTest {
         )
 
         roots.forEach { (tabTag, label, title) ->
+            compose.onAllNodesWithTag(TestTags.BottomSelectedCapsule, useUnmergedTree = true).assertCountEquals(1)
             compose.onNodeWithTag(tabTag).assertIsDisplayed().assertTextEquals(label).performClick().assertIsSelected()
             roots.filterNot { it.first == tabTag }.forEach { (otherTag) ->
                 compose.onNodeWithTag(otherTag).assertIsNotSelected()
             }
-            compose.onNodeWithTag(TestTags.BottomSelectedCapsule, useUnmergedTree = true).assertIsDisplayed()
+            compose.onAllNodesWithTag(TestTags.BottomSelectedCapsule, useUnmergedTree = true).assertCountEquals(1)
             compose.onNodeWithTag(TestTags.RootScreenTitle).assertIsDisplayed().assertTextEquals(title)
             compose.onNodeWithTag(TestTags.RootScreenSettings).assertIsDisplayed().performClick()
             compose.onNodeWithText("备份与恢复").assertIsDisplayed()
@@ -54,11 +57,33 @@ class MainActivityAppNavigationTest {
     @Test
     fun bottom_tabs_have_equal_widths_and_hide_for_settings() {
         val tabs = listOf(TestTags.BottomCalendarTab, TestTags.BottomCatalogTab, TestTags.BottomInsightsTab)
-        val widths = tabs.map { compose.onNodeWithTag(it).fetchSemanticsNode().boundsInRoot.width }
-        assertTrue(widths.all { it >= 48f })
+        val bounds = tabs.map { compose.onNodeWithTag(it).fetchSemanticsNode().boundsInRoot }
+        val widths = bounds.map { it.width }
+        val minTouchTarget = with(compose.density) { 48.dp.toPx() }
+        assertTrue(bounds.all { it.height >= minTouchTarget })
         assertTrue(widths.max() - widths.min() <= 1f)
 
         compose.onNodeWithTag(TestTags.RootScreenSettings).performClick()
         tabs.forEach { compose.onAllNodesWithTag(it).assertCountEquals(0) }
+    }
+
+    @Test
+    fun bundled_chain_brand_hides_navigation_until_back_returns_to_catalog_root() {
+        val tabs = listOf(TestTags.BottomCalendarTab, TestTags.BottomCatalogTab, TestTags.BottomInsightsTab)
+        val brandTag = TestTags.ChainBrandCardPrefix + BUNDLED_CHAIN_BRANDS.first().brand.id
+
+        compose.onNodeWithTag(TestTags.BottomCatalogTab).performClick().assertIsSelected()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag(brandTag).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag(brandTag).performClick()
+        tabs.forEach { compose.onAllNodesWithTag(it).assertCountEquals(0) }
+
+        compose.activity.runOnUiThread {
+            compose.activity.onBackPressedDispatcher.onBackPressed()
+        }
+        compose.onNodeWithTag(TestTags.RootScreenTitle).assertTextEquals("我的咖啡豆库")
+        compose.onNodeWithTag(TestTags.BottomCatalogTab).assertIsDisplayed().assertIsSelected()
+        compose.onAllNodesWithTag(TestTags.BottomSelectedCapsule, useUnmergedTree = true).assertCountEquals(1)
     }
 }

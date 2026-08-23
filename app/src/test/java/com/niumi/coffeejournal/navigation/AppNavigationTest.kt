@@ -13,8 +13,17 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithTag
 import com.niumi.coffeejournal.TestTags
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import com.niumi.coffeejournal.ui.theme.Caramel
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
 import com.niumi.coffeejournal.ui.theme.Espresso
@@ -64,6 +73,44 @@ class AppNavigationTest {
             assertEquals(Espresso, colors.onSurface)
             assertEquals(Caramel, colors.secondaryContainer)
             assertEquals(Espresso, colors.onSecondaryContainer)
+        }
+    }
+
+    @Test
+    fun bottom_navigation_applies_injected_navigation_inset_without_shrinking_tab_targets() {
+        compose.setContent {
+            CoffeeTheme {
+                CoffeeBottomNavigation(
+                    selectedRoot = Journal,
+                    onRootSelected = {},
+                    navigationInsets = WindowInsets(bottom = 32),
+                )
+            }
+        }
+
+        val calendar = compose.onNodeWithTag(TestTags.BottomCalendarTab).fetchSemanticsNode().boundsInRoot
+        val catalog = compose.onNodeWithTag(TestTags.BottomCatalogTab).fetchSemanticsNode().boundsInRoot
+        val minTarget = with(compose.density) { 48.dp.toPx() }
+        assertEquals(calendar.width, catalog.width, 1f)
+        org.junit.Assert.assertTrue(calendar.height >= minTarget)
+    }
+
+    @Test
+    fun bottom_navigation_keeps_all_labels_visible_at_360dp_and_large_font_scale() {
+        compose.setContent {
+            CoffeeTheme {
+                CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 1.5f)) {
+                    Box(Modifier.width(360.dp)) {
+                        CoffeeBottomNavigation(selectedRoot = Journal, onRootSelected = {})
+                    }
+                }
+            }
+        }
+
+        listOf("咖啡日历", "豆库", "总结").forEach { compose.onNodeWithText(it).assertIsDisplayed() }
+        val minTarget = with(compose.density) { 48.dp.toPx() }
+        listOf(TestTags.BottomCalendarTab, TestTags.BottomCatalogTab, TestTags.BottomInsightsTab).forEach {
+            org.junit.Assert.assertTrue(compose.onNodeWithTag(it).fetchSemanticsNode().boundsInRoot.height >= minTarget)
         }
     }
 

@@ -8,8 +8,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.Scaffold
@@ -153,71 +155,12 @@ private fun AppNavigationContent(
     Scaffold(
         bottomBar = {
             if (showRootNavigation) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surfaceContainer)
-                        .navigationBarsPadding()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                ) {
-                RootDestinations.forEach { destination ->
-                    val selected = selectedRoot == destination.key
-                    val tabTag = when (destination.key) {
-                        Journal -> TestTags.BottomCalendarTab
-                        Catalog -> TestTags.BottomCatalogTab
-                        else -> TestTags.BottomInsightsTab
+                CoffeeBottomNavigation(selectedRoot = selectedRoot, onRootSelected = { destination ->
+                    if (backStack.last() != destination) {
+                        backStack.clear()
+                        backStack.add(destination)
                     }
-                    Column(
-                        modifier = Modifier.testTag(
-                            tabTag,
-                        )
-                            .weight(1f)
-                            .defaultMinSize(minHeight = 48.dp)
-                            .selectable(
-                                selected = selected,
-                                role = Role.Tab,
-                                onClick = {
-                                    if (backStack.last() != destination.key) {
-                                        backStack.clear()
-                                        backStack.add(destination.key)
-                                    }
-                                },
-                            )
-                            .semantics(mergeDescendants = true) { }
-                            .padding(horizontal = 2.dp, vertical = 2.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .then(
-                                    if (selected) Modifier
-                                        .testTag(TestTags.BottomSelectedCapsule)
-                                        .clip(RoundedCornerShape(50))
-                                        .background(MaterialTheme.colorScheme.secondaryContainer)
-                                        .padding(horizontal = 12.dp, vertical = 4.dp)
-                                    else Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Image(
-                                painter = painterResource(destination.iconRes),
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp),
-                                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface),
-                            )
-                        }
-                        Text(
-                            text = destination.label,
-                            color = if (selected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurface,
-                            style = MaterialTheme.typography.labelMedium,
-                            textAlign = TextAlign.Center,
-                            maxLines = 2,
-                            overflow = TextOverflow.Clip,
-                        )
-                    }
-                }
-                }
+                })
             }
         },
     ) { contentPadding ->
@@ -273,6 +216,65 @@ private fun AppNavigationContent(
                 }
             },
         )
+    }
+}
+
+@Composable
+internal fun CoffeeBottomNavigation(
+    selectedRoot: NavKey,
+    onRootSelected: (NavKey) -> Unit,
+    navigationInsets: WindowInsets = WindowInsets.navigationBars,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .windowInsetsPadding(navigationInsets)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        RootDestinations.forEach { destination ->
+            val selected = selectedRoot == destination.key
+            val tabTag = when (destination.key) {
+                Journal -> TestTags.BottomCalendarTab
+                Catalog -> TestTags.BottomCatalogTab
+                else -> TestTags.BottomInsightsTab
+            }
+            Column(
+                modifier = Modifier.testTag(tabTag)
+                    .weight(1f)
+                    .defaultMinSize(minHeight = 48.dp)
+                    .selectable(selected = selected, role = Role.Tab) {
+                        onRootSelected(destination.key)
+                    }
+                    .semantics(mergeDescendants = true) { }
+                    .padding(horizontal = 2.dp, vertical = 2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Box(
+                    modifier = Modifier.then(
+                        if (selected) Modifier.testTag(TestTags.BottomSelectedCapsule)
+                            .clip(RoundedCornerShape(50))
+                            .background(MaterialTheme.colorScheme.secondaryContainer)
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                        else Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        painter = painterResource(destination.iconRes), contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface),
+                    )
+                }
+                Text(
+                    text = destination.label,
+                    color = if (selected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.labelMedium,
+                    textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Clip,
+                )
+            }
+        }
     }
 }
 
