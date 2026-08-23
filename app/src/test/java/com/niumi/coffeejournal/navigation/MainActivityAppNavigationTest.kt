@@ -43,6 +43,10 @@ class MainActivityAppNavigationTest {
                 compose.onNodeWithTag(otherTag).assertIsNotSelected()
             }
             compose.onAllNodesWithTag(TestTags.BottomSelectedCapsule, useUnmergedTree = true).assertCountEquals(1)
+            compose.onAllNodesWithTag(TestTags.BottomSelectedCapsulePrefix + label, useUnmergedTree = true).assertCountEquals(1)
+            roots.filterNot { it.second == label }.forEach { (_, otherLabel) ->
+                compose.onAllNodesWithTag(TestTags.BottomSelectedCapsulePrefix + otherLabel, useUnmergedTree = true).assertCountEquals(0)
+            }
             compose.onNodeWithTag(TestTags.RootScreenTitle).assertIsDisplayed().assertTextEquals(title)
             compose.onNodeWithTag(TestTags.RootScreenSettings).assertIsDisplayed().performClick()
             compose.onNodeWithText("备份与恢复").assertIsDisplayed()

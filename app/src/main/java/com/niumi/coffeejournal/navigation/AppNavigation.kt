@@ -224,9 +224,10 @@ internal fun CoffeeBottomNavigation(
     selectedRoot: NavKey,
     onRootSelected: (NavKey) -> Unit,
     navigationInsets: WindowInsets = WindowInsets.navigationBars,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceContainer)
             .windowInsetsPadding(navigationInsets)
@@ -261,6 +262,9 @@ internal fun CoffeeBottomNavigation(
                     ),
                     contentAlignment = Alignment.Center,
                 ) {
+                    if (selected) {
+                        Box(Modifier.matchParentSize().testTag(TestTags.BottomSelectedCapsulePrefix + destination.label))
+                    }
                     Image(
                         painter = painterResource(destination.iconRes), contentDescription = null,
                         modifier = Modifier.size(24.dp),

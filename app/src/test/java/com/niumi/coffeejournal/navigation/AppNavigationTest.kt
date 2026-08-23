@@ -19,9 +19,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.niumi.coffeejournal.ui.theme.Caramel
@@ -78,20 +80,30 @@ class AppNavigationTest {
 
     @Test
     fun bottom_navigation_applies_injected_navigation_inset_without_shrinking_tab_targets() {
+        val insetPx = with(compose.density) { 32.dp.roundToPx() }
         compose.setContent {
             CoffeeTheme {
-                CoffeeBottomNavigation(
-                    selectedRoot = Journal,
-                    onRootSelected = {},
-                    navigationInsets = WindowInsets(bottom = 32),
-                )
+                Column {
+                    CoffeeBottomNavigation(
+                        selectedRoot = Journal, onRootSelected = {}, navigationInsets = WindowInsets(),
+                        modifier = Modifier.testTag("bottom-navigation-no-inset"),
+                    )
+                    CoffeeBottomNavigation(
+                        selectedRoot = Journal, onRootSelected = {}, navigationInsets = WindowInsets(bottom = insetPx),
+                        modifier = Modifier.testTag("bottom-navigation-with-inset"),
+                    )
+                }
             }
         }
 
-        val calendar = compose.onNodeWithTag(TestTags.BottomCalendarTab).fetchSemanticsNode().boundsInRoot
-        val catalog = compose.onNodeWithTag(TestTags.BottomCatalogTab).fetchSemanticsNode().boundsInRoot
+        val containers = compose.onAllNodesWithTag("bottom-navigation-no-inset").fetchSemanticsNodes()
+        val noInset = containers.single().boundsInRoot
+        val withInset = compose.onAllNodesWithTag("bottom-navigation-with-inset").fetchSemanticsNodes().single().boundsInRoot
+        val calendar = compose.onAllNodesWithTag(TestTags.BottomCalendarTab).fetchSemanticsNodes()[0].boundsInRoot
+        val catalog = compose.onAllNodesWithTag(TestTags.BottomCatalogTab).fetchSemanticsNodes()[0].boundsInRoot
         val minTarget = with(compose.density) { 48.dp.toPx() }
         assertEquals(calendar.width, catalog.width, 1f)
+        assertEquals(insetPx.toFloat(), withInset.height - noInset.height, 1f)
         org.junit.Assert.assertTrue(calendar.height >= minTarget)
     }
 
