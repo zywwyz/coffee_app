@@ -79,8 +79,11 @@ internal fun decodeThumbnailBitmap(path: String): android.graphics.Bitmap? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeFile(path, bounds)
     if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    val maxEdge = maxOf(bounds.outWidth, bounds.outHeight)
     var sampleSize = 1
-    while (maxOf(bounds.outWidth, bounds.outHeight) / (sampleSize * 2) >= THUMBNAIL_TARGET_EDGE_PX) sampleSize *= 2
+    while (maxEdge / sampleSize > THUMBNAIL_TARGET_EDGE_PX && sampleSize <= Int.MAX_VALUE / 2) {
+        sampleSize *= 2
+    }
     val bitmap = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sampleSize }) ?: return null
     val orientation = runCatching {
         ExifInterface(path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)

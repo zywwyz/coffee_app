@@ -25,7 +25,8 @@ class ThumbnailLoaderTest {
 
         assertNotNull(thumbnail)
         thumbnail!!
-        assertTrue(thumbnail.width in 512..1024)
+        assertTrue(thumbnail.width in 256..512)
+        assertTrue(thumbnail.width * thumbnail.height <= THUMBNAIL_TARGET_EDGE_PX * THUMBNAIL_TARGET_EDGE_PX)
         assertEquals(4, thumbnail.width * 3 / thumbnail.height)
     }
 
@@ -37,8 +38,21 @@ class ThumbnailLoaderTest {
 
         assertNotNull(thumbnail)
         thumbnail!!
-        assertTrue(thumbnail.height in 512..1024)
+        assertTrue(thumbnail.height in 256..512)
+        assertTrue(thumbnail.width * thumbnail.height <= THUMBNAIL_TARGET_EDGE_PX * THUMBNAIL_TARGET_EDGE_PX)
         assertEquals(3, thumbnail.width * 4 / thumbnail.height)
+    }
+
+    @Test
+    fun `thumbnail decoding caps near target square images at target edge`() {
+        val source = bitmap("near-target-square", "png", Bitmap.CompressFormat.PNG, 1023, 1023)
+
+        val thumbnail = decodeThumbnailBitmap(source.absolutePath)
+
+        assertNotNull(thumbnail)
+        thumbnail!!
+        assertTrue(maxOf(thumbnail.width, thumbnail.height) <= THUMBNAIL_TARGET_EDGE_PX)
+        assertTrue(thumbnail.width * thumbnail.height <= THUMBNAIL_TARGET_EDGE_PX * THUMBNAIL_TARGET_EDGE_PX)
     }
 
     @Test
