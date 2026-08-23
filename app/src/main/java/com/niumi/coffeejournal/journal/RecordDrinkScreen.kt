@@ -1,7 +1,6 @@
 package com.niumi.coffeejournal.journal
 
 import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
@@ -35,9 +34,7 @@ import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.CatalogItem
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.TestTags
-import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
 import java.util.Locale
 
 @Composable
@@ -97,7 +94,7 @@ fun RecordDrinkScreen(
         if (state.sourceType == ItemType.CHAIN_PRODUCT && state.selectedBrandId != null) {
             OutlinedButton(onClick = onAddProduct, enabled = !editorBusy) { Text("添加新产品") }
         }
-        Text("饮用日期与时间", style = MaterialTheme.typography.titleMedium)
+        Text("饮用日期", style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
                 enabled = !editorBusy && hasDraft,
@@ -105,39 +102,14 @@ fun RecordDrinkScreen(
                     DatePickerDialog(
                         context,
                         { _, year, month, day ->
-                            val changed = Calendar.getInstance().apply {
-                                timeInMillis = state.consumedAtEpochMillis
-                                set(year, month, day)
-                            }
-                            onConsumedAtChange(changed.timeInMillis)
+                            onConsumedAtChange(localNoonEpoch("%04d-%02d-%02d".format(Locale.ROOT, year, month + 1, day)))
                         },
                         selectedTime.get(Calendar.YEAR),
                         selectedTime.get(Calendar.MONTH),
                         selectedTime.get(Calendar.DAY_OF_MONTH),
                     ).show()
                 },
-            ) { Text(SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Date(state.consumedAtEpochMillis))) }
-            OutlinedButton(
-                enabled = !editorBusy && hasDraft,
-                onClick = {
-                    TimePickerDialog(
-                        context,
-                        { _, hour, minute ->
-                            val changed = Calendar.getInstance().apply {
-                                timeInMillis = state.consumedAtEpochMillis
-                                set(Calendar.HOUR_OF_DAY, hour)
-                                set(Calendar.MINUTE, minute)
-                                set(Calendar.SECOND, 0)
-                                set(Calendar.MILLISECOND, 0)
-                            }
-                            onConsumedAtChange(changed.timeInMillis)
-                        },
-                        selectedTime.get(Calendar.HOUR_OF_DAY),
-                        selectedTime.get(Calendar.MINUTE),
-                        true,
-                    ).show()
-                },
-            ) { Text(SimpleDateFormat("HH:mm", Locale.ROOT).format(Date(state.consumedAtEpochMillis))) }
+            ) { Text(localDateForEpoch(state.consumedAtEpochMillis)) }
         }
         Text("评分（支持半星）", style = MaterialTheme.typography.titleMedium)
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

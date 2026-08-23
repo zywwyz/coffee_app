@@ -478,7 +478,7 @@ class JournalScreenRobolectricTest {
     }
 
     @Test
-    fun `editor shows editable date time and clear rating control`() {
+    fun `editor shows editable date and no time entry`() {
         compose.setContent {
             CoffeeTheme {
                 RecordDrinkScreen(
@@ -496,7 +496,9 @@ class JournalScreenRobolectricTest {
         }
 
         compose.onNodeWithText("2025-08-01").assertIsDisplayed().assertIsEnabled()
-        compose.onNodeWithText("20:00").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("饮用日期").assertIsDisplayed()
+        compose.onAllNodesWithText("20:00").assertCountEquals(0)
+        compose.onAllNodesWithText("饮用日期与时间").assertCountEquals(0)
         compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.RecordEditorScroll).performTouchInput {
             swipeUp(startY = height * 0.75f, endY = height * 0.35f)
         }
