@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -38,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -61,6 +63,11 @@ import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.core.image.AssetImportRequester
 import com.niumi.coffeejournal.TestTags
 import java.util.Calendar
+
+internal val CalendarForestGreen = Color(0xFF1F4D3A)
+internal val CalendarWarmIvory = Color(0xFFFFF8E8)
+internal val RecordButtonContainerColor = SemanticsPropertyKey<Color>("RecordButtonContainerColor")
+internal val RecordButtonContentColor = SemanticsPropertyKey<Color>("RecordButtonContentColor")
 
 @Composable
 fun JournalFeature(
@@ -169,7 +176,18 @@ fun JournalScreen(
             }
         },
         floatingActionButton = {
-            Button(onClick = onRecordDrink, modifier = Modifier.testTag(TestTags.RecordButton)) {
+            Button(
+                onClick = onRecordDrink,
+                modifier = Modifier
+                    .testTag(TestTags.RecordButton)
+                    .semantics {
+                        this[RecordButtonContainerColor] = CalendarForestGreen
+                        this[RecordButtonContentColor] = Color.White
+                    },
+                shape = RoundedCornerShape(18.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = CalendarForestGreen, contentColor = Color.White),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp, vertical = 10.dp),
+            ) {
                 Text("记录一杯")
             }
         },
@@ -219,14 +237,12 @@ private fun CalendarDisplayModeControl(
     selectedMode: CalendarDisplayMode,
     onModeChange: (CalendarDisplayMode) -> Unit,
 ) {
-    val forestGreen = Color(0xFF1F4D3A)
-    val warmIvory = Color(0xFFFFF8E8)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(warmIvory)
-            .border(BorderStroke(1.dp, forestGreen), RoundedCornerShape(14.dp))
+            .background(CalendarWarmIvory)
+            .border(BorderStroke(1.dp, CalendarForestGreen), RoundedCornerShape(14.dp))
             .selectableGroup()
             .testTag(TestTags.CalendarModeIndicator),
     ) {
@@ -236,7 +252,7 @@ private fun CalendarDisplayModeControl(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(if (selected) forestGreen else warmIvory)
+                    .background(if (selected) CalendarForestGreen else CalendarWarmIvory)
                     .selectable(selected = selected, onClick = { onModeChange(mode) }, role = Role.RadioButton)
                     .testTag(
                         if (mode == CalendarDisplayMode.BRAND) TestTags.CalendarBrandDisplayMode
@@ -245,7 +261,7 @@ private fun CalendarDisplayModeControl(
                     .padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, color = if (selected) Color.White else forestGreen, fontWeight = FontWeight.Bold)
+                Text(label, color = if (selected) Color.White else CalendarForestGreen, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -253,7 +269,6 @@ private fun CalendarDisplayModeControl(
 
 @Composable
 private fun MonthHeader(year: Int, month: Int, previous: () -> Unit, next: () -> Unit) {
-    val forestGreen = Color(0xFF1F4D3A)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -261,19 +276,19 @@ private fun MonthHeader(year: Int, month: Int, previous: () -> Unit, next: () ->
     ) {
         Button(
             onClick = previous,
-            modifier = Modifier.weight(1f).testTag(TestTags.PreviousMonth),
-            colors = ButtonDefaults.buttonColors(containerColor = forestGreen, contentColor = Color.White),
+            modifier = Modifier.weight(1f).defaultMinSize(minHeight = 52.dp).testTag(TestTags.PreviousMonth),
+            colors = ButtonDefaults.buttonColors(containerColor = CalendarForestGreen, contentColor = Color.White),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 7.dp),
-        ) { Text("上一月", style = MaterialTheme.typography.labelLarge, maxLines = 1) }
+        ) { Text("上一月", style = MaterialTheme.typography.labelLarge, maxLines = 2) }
         Box(Modifier.weight(1.15f), contentAlignment = Alignment.Center) {
-            Text("${year}年${month}月", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text("${year}年${month}月", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 2)
         }
         Button(
             onClick = next,
-            modifier = Modifier.weight(1f).testTag(TestTags.NextMonth),
-            colors = ButtonDefaults.buttonColors(containerColor = forestGreen, contentColor = Color.White),
+            modifier = Modifier.weight(1f).defaultMinSize(minHeight = 52.dp).testTag(TestTags.NextMonth),
+            colors = ButtonDefaults.buttonColors(containerColor = CalendarForestGreen, contentColor = Color.White),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 7.dp),
-        ) { Text("下一月", style = MaterialTheme.typography.labelLarge, maxLines = 1) }
+        ) { Text("下一月", style = MaterialTheme.typography.labelLarge, maxLines = 2) }
     }
 }
 

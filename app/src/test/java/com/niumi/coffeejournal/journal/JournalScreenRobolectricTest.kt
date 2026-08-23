@@ -6,7 +6,9 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -17,6 +19,11 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.LocalDensity
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
@@ -62,14 +69,28 @@ class JournalScreenRobolectricTest {
     }
 
     @Test
+    fun `record button exposes the preview forest green style contract`() {
+        compose.setContent {
+            CoffeeTheme {
+                JournalScreen(JournalUiState.empty(2026, 8), {}, {}, {}, {})
+            }
+        }
+
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.RecordButton)
+            .assert(SemanticsMatcher.expectValue(RecordButtonContainerColor, Color(0xFF1F4D3A)))
+            .assert(SemanticsMatcher.expectValue(RecordButtonContentColor, Color.White))
+    }
+
+    @Test
     fun `calendar display switch labels are exact and selects one mode`() {
+        val selectedMode = mutableStateOf(CalendarDisplayMode.COFFEE)
         var selected: CalendarDisplayMode? = null
         compose.setContent {
             CoffeeTheme {
                 JournalScreen(
-                    state = JournalUiState.empty(2026, 8),
+                    state = JournalUiState.empty(2026, 8).copy(calendarDisplayMode = selectedMode.value),
                     onPreviousMonth = {}, onNextMonth = {}, onDayClick = {}, onRecordDrink = {},
-                    onCalendarDisplayModeChange = { selected = it },
+                    onCalendarDisplayModeChange = { mode -> selected = mode; selectedMode.value = mode },
                 )
             }
         }
@@ -80,6 +101,8 @@ class JournalScreenRobolectricTest {
         compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CalendarBrandDisplayMode).assertIsNotSelected()
         compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CalendarBrandDisplayMode).performClick()
         compose.runOnIdle { assertEquals(CalendarDisplayMode.BRAND, selected) }
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CalendarBrandDisplayMode).assertIsSelected()
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CalendarCoffeeDisplayMode).assertIsNotSelected()
     }
 
     @Test
@@ -124,6 +147,7 @@ class JournalScreenRobolectricTest {
     }
 
     @Test
+    @Config(qualifiers = "w360dp-h800dp")
     fun `calendar controls remain visible in a 360dp viewport and core actions stay reachable`() {
         compose.setContent {
             CoffeeTheme {
@@ -145,6 +169,22 @@ class JournalScreenRobolectricTest {
         compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.Calendar).performTouchInput { swipeUp() }
         compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.MonthSummaryCard).assertIsDisplayed()
         compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.MonthlySpend).assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h800dp")
+    fun `month header remains fully readable at 360dp with enlarged text`() {
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 1.5f)) {
+                CoffeeTheme {
+                    JournalScreen(JournalUiState.empty(2026, 8), {}, {}, {}, {})
+                }
+            }
+        }
+
+        compose.onNodeWithText("上一月", substring = false).assertIsDisplayed()
+        compose.onNodeWithText("2026年8月", substring = false).assertIsDisplayed()
+        compose.onNodeWithText("下一月", substring = false).assertIsDisplayed()
     }
 
     @Test
