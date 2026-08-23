@@ -25,6 +25,13 @@ class BundledBrandLogoTest {
         assertNull(bundledBrandLogoRes("自定义咖啡"))
     }
 
+    @Test fun `catalog names use the shared trimmed lowercase normalization`() {
+        val definition = BUNDLED_CHAIN_BRANDS.first { it.brand.name == "MANNER" }
+            .copy(aliases = setOf("  MANNER   Coffee  "))
+
+        assertEquals(setOf("manner", "manner   coffee"), definition.catalogNames())
+    }
+
     @Test fun `bundled chain logos are complete unique and stable`() {
         val resources = RuntimeEnvironment.getApplication().resources
         assertEquals(12, BUNDLED_CHAIN_BRANDS.size)

@@ -30,14 +30,14 @@ val BUNDLED_CHAIN_BRANDS = listOf(
 )
 
 internal fun BundledBrandDefinition.catalogNames(): Set<String> =
-    (aliases + brand.name).mapTo(linkedSetOf(), ::normalizeCatalogName)
+    (aliases + brand.name).mapTo(linkedSetOf(), ::normalizeBundledBrandName)
 
 fun bundledBrandLogoRes(brandName: String?): Int? {
-    val normalizedName = brandName?.trim()?.lowercase(Locale.ROOT)?.takeIf(String::isNotEmpty) ?: return null
-    return BUNDLED_CHAIN_BRANDS.firstOrNull { definition ->
-        (definition.aliases + definition.brand.name).any { it.trim().lowercase(Locale.ROOT) == normalizedName }
-    }?.logoRes
+    val normalizedName = brandName?.let(::normalizeBundledBrandName)?.takeIf(String::isNotEmpty) ?: return null
+    return BUNDLED_CHAIN_BRANDS.firstOrNull { normalizedName in it.catalogNames() }?.logoRes
 }
+
+internal fun normalizeBundledBrandName(name: String): String = name.trim().lowercase(Locale.ROOT)
 
 private fun bundled(id: String, name: String, @DrawableRes logoRes: Int, order: Int, vararg aliases: String) = BundledBrandDefinition(
     brand = Brand(id, BrandType.CHAIN, name, null, MaintenanceMode.MANUAL_ONLY, null),
