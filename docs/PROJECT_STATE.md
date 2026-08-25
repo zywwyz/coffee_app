@@ -8,12 +8,12 @@
 
 ## 当前开发阶段
 
-纯手动连锁豆库改版已实现并完成发布矩阵验证；规格状态为 implemented。Release APK 尚未签名，仅供后续配置个人签名后发布。
+日历视觉一致性、纯手动连锁豆库与 date-only 记录均已实现并完成发布矩阵验证；规格状态为 implemented。Release APK 尚未签名，仅供后续配置个人签名后发布。
 
 ## 技术栈与架构
 
-- Kotlin、Jetpack Compose、Material 3；ViewModel + StateFlow；Room / SQLite；Coil。
-- Room 数据库为 v3，包含 v1→v2、v2→v3 迁移。
+- Kotlin、Jetpack Compose、Material 3；ViewModel + StateFlow；Room / SQLite；本地 Bitmap 缩略图加载。
+- Room 数据库为 v3，包含 v1→v2、v2→v3 迁移；本次日历视觉验收未变更 schema。
 - `journal`：记录、草稿、日历显示模式、详情与不可变快照。
 - `catalog`：12 个内置 Logo、连锁品牌/产品的手动 CRUD、个人豆库。
 - `core/image`：本地原始图片字节、引用、产品图→Logo→占位图回退及变更协调。
@@ -23,7 +23,8 @@
 ## 已实现范围
 
 - App 与首 Tab 改名“咖啡日历”，无全局顶栏；底部根 Tab 为咖啡日历、豆库、总结。
-- 月历“品牌／咖啡”显示模式持久化；图片原字节保存、CenterCrop 显示并按三级回退。
+- 月历“品牌／咖啡”显示模式持久化；记录以本地中午的 date-only 语义保存，图片导入缩略图上限为 512px，并按三级回退。
+- 根导航使用自定义底部 Tab；12 个内置 Logo 随包提供。Robolectric 预览测试从真实 CoffeeTheme、根 Scaffold、JournalScreen 和 CoffeeBottomNavigation 生成日历 PNG，instrumentation 验收镜像关键路径（仍需设备执行）。
 - 12 个预置连锁品牌 Logo，三列品牌网格与双列产品网格。
 - 手动新增/编辑/删除自定义连锁品牌与 Logo；手动新增/编辑/删除产品名称、黑咖/果咖/奶咖分类和可选实拍图。内置品牌不可删，自定义品牌需先删除产品。
 - 个人豆库、记录补记/编辑/删除、草稿保留与快捷新增产品后自动选中。
@@ -52,6 +53,7 @@
 - `app/src/main/java/com/niumi/coffeejournal/backup` — 备份校验、兼容与恢复。
 - `README.md` — 安装、使用、离线/隐私说明。
 - `docs/superpowers/specs/2026-08-16-manual-chain-catalog-redesign-design.md` — 已实施规格。
+- `docs/superpowers/specs/2026-08-23-calendar-visual-parity-design.md` — 已实施的日历、Logo、日期和底栏视觉规格。
 
 ## 构建与验证
 
@@ -64,14 +66,14 @@ export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 ./.local-tools/gradle-8.13/bin/gradle clean testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease --no-daemon
 ```
 
-发布矩阵（2026-08-22）：
+发布矩阵（2026-08-23）：
 
 - `clean testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease`：PASS，137 tasks。
-- 单元／Robolectric：305 tests，0 fail／error／skip；lint：0 errors、11 warnings。
+- 单元／Robolectric：341 tests，0 fail／error／skip；lint：0 errors、7 warnings。Native Graphics 预览测试因图形运行时隔离，使用 `COFFEE_PREVIEW_PRODUCT_IMAGE=<真实照片> -PcalendarPreview --tests com.niumi.coffeejournal.CalendarPreviewRenderTest` 单独执行；真实照片参数缺失或不可解码时任务会失败。
 - Room schema：v3 已导出；12 个内置品牌 Logo 已打包。
-- Debug APK：`app/build/outputs/apk/debug/app-debug.apk`，13,399,186 bytes，SHA-256 `c77034ede25b9bcfc86d7b18b688a6a8a3793b288aca60a8b545ee546bdcd41c`；v1/v2 签名均为 true，debug 证书 SHA-256 `60d2e7…a3713`。
-- AndroidTest APK：1,143,024 bytes，SHA-256 `ab118…932f`。
-- Release APK（unsigned）：9,578,339 bytes，SHA-256 `080c…84bd`。
+- Debug APK：`app/build/outputs/apk/debug/app-debug.apk`，13,445,475 bytes，SHA-256 `be01deeed8cfd8118fdf2f9fdff29cb73d3edfc9d68ee276c8d2c4c221661a29`；v1/v2 签名均为 true，debug 证书 SHA-256 `60d2e7…a3713`。
+- AndroidTest APK：1,138,237 bytes，SHA-256 `589d43549f6d292742384f141273cfb48734d08fda46758797f78132208e5f93`。
+- Release APK（unsigned）：9,661,523 bytes，SHA-256 `f5027ae1658b4d26440a50caa21b5b2443157674e7de6a64ecb8c4aa516221b1`。
 - 合并 Manifest：minSdk 23、targetSdk 36；仅有包内 `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`，无 `INTERNET`／相机／定位／存储权限；`allowBackup`、`fullBackupContent`、`cleartextTraffic` 均为 false，并声明 `dataExtractionRules`。
 
-最后更新：2026-08-22
+最后更新：2026-08-23

@@ -48,11 +48,11 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
    - **品牌**：当天优先显示品牌 Logo。
    - **咖啡**：当天优先显示产品实拍图。
 2. 同一天多杯咖啡会显示数量。没有产品图时，图片会按“产品实拍图 → 品牌 Logo → 通用占位图”回退。
-3. 点新增记录，选择已有的连锁产品或个人豆子，填写饮用日期时间、价格、评分、冲煮方式和备注。日期可改为过去任一天，用于补记。
+3. 点新增记录，选择已有的连锁产品或个人豆子，填写饮用日期、价格、评分、冲煮方式和备注。记录是 date-only（本地中午保存），可改为过去任一天补记；不提供旧式时间输入。
 4. 点已有记录可编辑或删除；删除前会再次确认。未完成的记录表单会保存为本机草稿，离开页面或重启后仍可继续填写。
 5. 若当天喝到的新产品还不在豆库，可在记录流程中快捷新增；保存后新产品会自动选中，已经填写的记录草稿不会丢失。
 
-导入的品牌 Logo、产品实拍图和个人豆子包装图都保留原始文件，不要求预先裁剪；界面只是在显示时进行居中裁切。历史记录会保存当时的品牌、产品和图片快照，后来编辑或删除豆库项目不会改写过去的日历。
+导入的品牌 Logo、产品实拍图和个人豆子包装图都保留原始文件，不要求预先裁剪；界面以 Fit 显示，历史记录会保存当时的品牌、产品和图片快照，后来编辑或删除豆库项目不会改写过去的日历。内置品牌优先使用随 App 打包的 Logo，因此不依赖外部图片文件。
 
 ### 豆库：连锁品牌、产品与个人豆子
 
@@ -107,3 +107,13 @@ export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 ```bash
 ./.local-tools/gradle-8.13/bin/gradle connectedDebugAndroidTest --no-daemon
 ```
+
+使用一张真实产品照片生成品牌／咖啡日历评审图（输出到 `app/build/reports/calendar-previews/`）：
+
+```bash
+COFFEE_PREVIEW_PRODUCT_IMAGE=/absolute/path/to/product.png \
+  ./.local-tools/gradle-8.13/bin/gradle testDebugUnitTest -PcalendarPreview \
+  --tests com.niumi.coffeejournal.CalendarPreviewRenderTest --no-daemon
+```
+
+照片参数是必需的；预览任务不会用纯色测试图冒充真实产品照片。

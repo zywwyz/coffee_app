@@ -14,6 +14,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
 import com.niumi.coffeejournal.core.image.CalendarThumbnailLoader
 
 internal val CompleteImageContentScale = ContentScale.Fit
@@ -21,16 +24,37 @@ internal val CompleteImageContentScale = ContentScale.Fit
 @Composable
 fun LocalAssetImage(primaryPath: String?, fallbackPath: String?, contentDescription: String, contentScale: ContentScale = ContentScale.Crop, modifier: Modifier = Modifier, fallbackPainter: Painter? = null) {
     val loader = androidx.compose.runtime.remember { CalendarThumbnailLoader() }
-    val bitmap by produceState<ImageBitmap?>(null, primaryPath, fallbackPath, fallbackPainter) {
-        value = loader.load(primaryPath) ?: loader.load(fallbackPath)
+    val loadState by produceState<LocalImageLoadState>(LocalImageLoadState.Loading, primaryPath, fallbackPath) {
+        value = loader.load(primaryPath)?.let { LocalImageLoadState.Loaded(it, LocalImageSource.PRIMARY) }
+            ?: loader.load(fallbackPath)?.let { LocalImageLoadState.Loaded(it, LocalImageSource.FALLBACK) }
+            ?: LocalImageLoadState.Missing
+    }
+    val currentLoadState = loadState
+    val imageModifier = modifier.semantics {
+        this.contentDescription = contentDescription
+        stateDescription = when {
+            currentLoadState is LocalImageLoadState.Loaded && currentLoadState.source == LocalImageSource.PRIMARY -> "主图片已加载"
+            currentLoadState is LocalImageLoadState.Loaded -> "备用图片已加载"
+            fallbackPainter != null -> "品牌图片"
+            currentLoadState is LocalImageLoadState.Missing -> "图片占位"
+            else -> "图片加载中"
+        }
     }
     when {
-        bitmap != null -> Image(bitmap!!, contentDescription, modifier = modifier, contentScale = contentScale)
-        fallbackPainter != null -> Image(fallbackPainter, contentDescription, modifier = modifier, contentScale = contentScale)
+        currentLoadState is LocalImageLoadState.Loaded -> Image(currentLoadState.bitmap, null, modifier = imageModifier, contentScale = contentScale)
+        fallbackPainter != null -> Image(fallbackPainter, null, modifier = imageModifier, contentScale = contentScale)
         else -> Box(
-            modifier.fillMaxSize().background(MaterialTheme.colorScheme.secondaryContainer), contentAlignment = Alignment.Center,
+            imageModifier.fillMaxSize().background(MaterialTheme.colorScheme.secondaryContainer), contentAlignment = Alignment.Center,
         ) { Text("☕") }
     }
+}
+
+private enum class LocalImageSource { PRIMARY, FALLBACK }
+
+private sealed interface LocalImageLoadState {
+    data object Loading : LocalImageLoadState
+    data object Missing : LocalImageLoadState
+    data class Loaded(val bitmap: ImageBitmap, val source: LocalImageSource) : LocalImageLoadState
 }
 
 @Composable
