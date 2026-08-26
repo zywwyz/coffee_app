@@ -56,9 +56,47 @@ class BundledBrandLogoTest {
         assertEquals(12, BUNDLED_CHAIN_BRANDS.map { decodedPixelSha256(resources, it.logoRes) }.toSet().size)
     }
 
+    @Test fun `bundled logos use the calendar safe transparent canvas`() {
+        val resources = RuntimeEnvironment.getApplication().resources
+        val targetArtworkEdge = mapOf(
+            "seed-chain-cotti" to 430,
+            "seed-chain-kcoffee" to 430,
+        )
+
+        BUNDLED_CHAIN_BRANDS.forEach { definition ->
+            val bitmap = requireNotNull(
+                BitmapFactory.decodeResource(resources, definition.logoRes, BitmapFactory.Options().apply {
+                    inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+                }),
+            )
+            val opaqueBounds = opaqueBounds(bitmap)
+            val expectedEdge = targetArtworkEdge[definition.brand.id] ?: 400
+
+            org.junit.Assert.assertTrue(
+                "${definition.brand.name} logo must be centered",
+                kotlin.math.abs((bitmap.width - opaqueBounds.right) - opaqueBounds.left) <= 1,
+            )
+            org.junit.Assert.assertTrue(
+                "${definition.brand.name} logo must be centered",
+                kotlin.math.abs((bitmap.height - opaqueBounds.bottom) - opaqueBounds.top) <= 1,
+            )
+            org.junit.Assert.assertTrue("${definition.brand.name} needs a 6% transparent safety edge", opaqueBounds.left >= 31)
+            org.junit.Assert.assertTrue("${definition.brand.name} needs a 6% transparent safety edge", opaqueBounds.top >= 31)
+            org.junit.Assert.assertTrue("${definition.brand.name} exceeds its calendar artwork box", opaqueBounds.width() <= expectedEdge)
+            org.junit.Assert.assertTrue("${definition.brand.name} exceeds its calendar artwork box", opaqueBounds.height() <= expectedEdge)
+            org.junit.Assert.assertTrue(
+                "${definition.brand.name} should use its full calendar artwork box",
+                maxOf(opaqueBounds.width(), opaqueBounds.height()) >= expectedEdge - 2,
+            )
+        }
+    }
+
     @Test fun `kcoffee and hucoffee preserve a bounded mark on transparent canvas`() {
         val resources = RuntimeEnvironment.getApplication().resources
-        listOf(R.drawable.brand_logo_kcoffee, R.drawable.brand_logo_hucoffee).forEach { resource ->
+        mapOf(
+            R.drawable.brand_logo_kcoffee to 430,
+            R.drawable.brand_logo_hucoffee to 400,
+        ).forEach { (resource, maximumEdge) ->
             val bitmap = requireNotNull(
                 BitmapFactory.decodeResource(resources, resource, BitmapFactory.Options().apply {
                     inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
@@ -80,8 +118,8 @@ class BundledBrandLogoTest {
                 for (y in 0 until bitmap.height) for (x in 0 until bitmap.width) if ((bitmap.getPixel(x, y) ushr 24) != 0) add(x to y)
             }
             org.junit.Assert.assertTrue(opaque.isNotEmpty())
-            org.junit.Assert.assertTrue(opaque.maxOf { it.first } - opaque.minOf { it.first } + 1 <= 420)
-            org.junit.Assert.assertTrue(opaque.maxOf { it.second } - opaque.minOf { it.second } + 1 <= 420)
+            org.junit.Assert.assertTrue(opaque.maxOf { it.first } - opaque.minOf { it.first } + 1 <= maximumEdge)
+            org.junit.Assert.assertTrue(opaque.maxOf { it.second } - opaque.minOf { it.second } + 1 <= maximumEdge)
         }
     }
 
@@ -92,5 +130,22 @@ class BundledBrandLogoTest {
         return MessageDigest.getInstance("SHA-256")
             .digest(pixels.flatMap { pixel -> listOf((pixel ushr 24).toByte(), (pixel ushr 16).toByte(), (pixel ushr 8).toByte(), pixel.toByte()) }.toByteArray())
             .joinToString("") { "%02x".format(it) }
+    }
+
+    private fun opaqueBounds(bitmap: android.graphics.Bitmap): android.graphics.Rect {
+        var left = bitmap.width
+        var top = bitmap.height
+        var right = -1
+        var bottom = -1
+        for (y in 0 until bitmap.height) for (x in 0 until bitmap.width) {
+            if ((bitmap.getPixel(x, y) ushr 24) != 0) {
+                left = minOf(left, x)
+                top = minOf(top, y)
+                right = maxOf(right, x)
+                bottom = maxOf(bottom, y)
+            }
+        }
+        check(right >= left && bottom >= top)
+        return android.graphics.Rect(left, top, right + 1, bottom + 1)
     }
 }
