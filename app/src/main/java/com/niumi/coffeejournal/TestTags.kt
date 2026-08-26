@@ -8,6 +8,7 @@ object TestTags {
     const val PreviousMonth = "previous-month"
     const val NextMonth = "next-month"
     const val MonthSummaryCard = "month-summary-card"
+    const val MonthSummaryMetric = "month-summary-metric"
     const val CalendarDayPrefix = "calendar-day-"
     const val CalendarDayNumberPrefix = "calendar-day-number-"
     const val CalendarCountBadgePrefix = "calendar-count-badge-"

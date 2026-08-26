@@ -25,6 +25,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalDensity
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
+import com.niumi.coffeejournal.ui.CoffeeVisuals
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.CatalogItem
@@ -78,7 +79,7 @@ class JournalScreenRobolectricTest {
         }
 
         compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.RecordButton)
-            .assert(SemanticsMatcher.expectValue(RecordButtonContainerColor, Color(0xFF1F4D3A)))
+            .assert(SemanticsMatcher.expectValue(RecordButtonContainerColor, CoffeeVisuals.forest))
             .assert(SemanticsMatcher.expectValue(RecordButtonContentColor, Color.White))
     }
 
@@ -121,6 +122,32 @@ class JournalScreenRobolectricTest {
         compose.onAllNodesWithText("咖啡", substring = false).assertCountEquals(1)
         compose.onAllNodesWithText("✓", substring = false).assertCountEquals(0)
         compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CalendarModeIndicator).assertIsDisplayed()
+    }
+
+    @Test
+    fun `calendar uses youthful mode and summary component semantics`() {
+        compose.setContent {
+            CoffeeTheme {
+                JournalScreen(
+                    state = JournalUiState.empty(2026, 8).copy(calendarDisplayMode = CalendarDisplayMode.BRAND),
+                    onPreviousMonth = {}, onNextMonth = {}, onDayClick = {}, onRecordDrink = {},
+                )
+            }
+        }
+
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CalendarModeIndicator).assertIsDisplayed()
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CalendarBrandDisplayMode).assertIsSelected()
+        compose.onNodeWithContentDescription("上一月").assertIsDisplayed()
+        compose.onNodeWithContentDescription("下一月").assertIsDisplayed()
+        compose.onAllNodesWithTag("month-summary-metric", useUnmergedTree = true).assertCountEquals(3)
+    }
+
+    @Test
+    fun `recorded calendar day retains a distinct media node while empty day remains numbered`() {
+        compose.setContent { CoffeeTheme { JournalScreen(calendarState("2026-08-05", drinkCount = 1), {}, {}, {}, {}) } }
+
+        compose.onNodeWithTag("calendar-image-2026-08-05", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("calendar-day-number-2026-08-04", useUnmergedTree = true).assertIsDisplayed()
     }
 
     @Test
@@ -168,6 +195,26 @@ class JournalScreenRobolectricTest {
     }
 
     @Test
+    fun `month navigation controls provide 48dp touch targets`() {
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                CoffeeTheme { JournalScreen(JournalUiState.empty(2026, 8), {}, {}, {}, {}) }
+            }
+        }
+
+        compose.runOnIdle {
+            listOf(
+                com.niumi.coffeejournal.TestTags.PreviousMonth,
+                com.niumi.coffeejournal.TestTags.NextMonth,
+            ).forEach { tag ->
+                val bounds = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
+                assertTrue(bounds.width >= 48f)
+                assertTrue(bounds.height >= 48f)
+            }
+        }
+    }
+
+    @Test
     @Config(qualifiers = "w360dp-h800dp")
     fun `calendar controls remain visible in a 360dp viewport and core actions stay reachable`() {
         compose.setContent {
@@ -203,9 +250,9 @@ class JournalScreenRobolectricTest {
             }
         }
 
-        compose.onNodeWithText("上一月", substring = false).assertIsDisplayed()
+        compose.onNodeWithContentDescription("上一月").assertIsDisplayed()
         compose.onNodeWithText("2026年8月", substring = false).assertIsDisplayed()
-        compose.onNodeWithText("下一月", substring = false).assertIsDisplayed()
+        compose.onNodeWithContentDescription("下一月").assertIsDisplayed()
     }
 
     @Test
