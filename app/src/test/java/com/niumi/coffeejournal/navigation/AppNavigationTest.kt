@@ -15,7 +15,6 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithTag
 import com.niumi.coffeejournal.TestTags
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
@@ -29,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import com.niumi.coffeejournal.ui.theme.Caramel
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
 import com.niumi.coffeejournal.ui.theme.Espresso
+import com.niumi.coffeejournal.ui.CoffeeVisuals
 import com.niumi.coffeejournal.catalog.CatalogRepository
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
@@ -71,7 +71,7 @@ class AppNavigationTest {
 
         compose.runOnIdle {
             val colors = requireNotNull(captured)
-            assertEquals(Color(0xFFF0E8DC), colors.surfaceContainer)
+            assertEquals(CoffeeVisuals.cream, colors.surfaceContainer)
             assertEquals(Espresso, colors.onSurface)
             assertEquals(Caramel, colors.secondaryContainer)
             assertEquals(Espresso, colors.onSecondaryContainer)

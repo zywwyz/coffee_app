@@ -4,44 +4,40 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-
-val Cream = Color(0xFFFAF7F1)
-val Espresso = Color(0xFF2E241A)
-val Evergreen = Color(0xFF2F5D50)
-val Caramel = Color(0xFFC78956)
+import com.niumi.coffeejournal.ui.CoffeeVisuals
 
 private val CoffeeColorScheme = lightColorScheme(
     primary = Evergreen,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFD9E8E2),
+    primaryContainer = CoffeeVisuals.mint,
     onPrimaryContainer = Espresso,
     secondary = Caramel,
     onSecondary = Espresso,
     secondaryContainer = Caramel,
     onSecondaryContainer = Espresso,
-    tertiary = Color(0xFF725A42),
-    onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFF1DFC9),
+    tertiary = CoffeeVisuals.mint,
+    onTertiary = Espresso,
+    tertiaryContainer = CoffeeVisuals.mint,
     onTertiaryContainer = Espresso,
     background = Cream,
     onBackground = Espresso,
-    surface = Cream,
+    surface = CoffeeVisuals.white,
     onSurface = Espresso,
-    surfaceVariant = Color(0xFFF0E8DC),
-    onSurfaceVariant = Espresso,
+    surfaceVariant = CoffeeVisuals.mint,
+    onSurfaceVariant = CoffeeVisuals.secondaryText,
     surfaceTint = Evergreen,
     inverseSurface = Espresso,
     inverseOnSurface = Cream,
-    inversePrimary = Color(0xFF9FCFC0),
-    outline = Color(0xFF817568),
-    outlineVariant = Color(0xFFD5C8B8),
-    surfaceBright = Cream,
-    surfaceDim = Color(0xFFDED4C8),
-    surfaceContainerLowest = Color(0xFFFFFCF7),
-    surfaceContainerLow = Color(0xFFF7F1E8),
-    surfaceContainer = Color(0xFFF0E8DC),
-    surfaceContainerHigh = Color(0xFFE9DED0),
-    surfaceContainerHighest = Color(0xFFE2D3C2),
+    inversePrimary = CoffeeVisuals.mint,
+    outline = CoffeeVisuals.warmOutline,
+    outlineVariant = CoffeeVisuals.warmOutline,
+    surfaceBright = CoffeeVisuals.white,
+    surfaceDim = Color(0xFFF0ECE5),
+    surfaceContainerLowest = CoffeeVisuals.white,
+    surfaceContainerLow = Color(0xFFFFFCF8),
+    surfaceContainer = Cream,
+    surfaceContainerHigh = Color(0xFFF3EEE7),
+    surfaceContainerHighest = Color(0xFFECE6DE),
 )
 
 @Composable
