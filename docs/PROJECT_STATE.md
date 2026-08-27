@@ -66,20 +66,20 @@ export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 ./.local-tools/gradle-8.13/bin/gradle clean testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease --no-daemon
 ```
 
-发布矩阵（2026-08-23）：
+当前发布矩阵（2026-08-28）：
 
-- `clean testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease`：PASS，137 tasks。
-- 单元／Robolectric：341 tests，0 fail／error／skip；lint：0 errors、7 warnings。Native Graphics 预览测试因图形运行时隔离，使用 `COFFEE_PREVIEW_PRODUCT_IMAGE=<真实照片> -PcalendarPreview --tests com.niumi.coffeejournal.CalendarPreviewRenderTest` 单独执行；真实照片参数缺失或不可解码时任务会失败。
+- `clean testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease --offline --no-daemon`：PASS，137 tasks；随后完整 `testDebugUnitTest` 复验 353 tests，0 fail／error／skip；lint 0 errors、7 warnings。
+- Native Graphics 预览使用仓库内用户实拍图 fixture；运行 `-PcalendarPreview --rerun-tasks --tests com.niumi.coffeejournal.CalendarPreviewRenderTest`，不需要环境变量或运行机器绝对图片路径。
 - Room schema：v3 已导出；12 个内置品牌 Logo 已打包。
-- Debug APK：`app/build/outputs/apk/debug/app-debug.apk`，13,445,475 bytes，SHA-256 `be01deeed8cfd8118fdf2f9fdff29cb73d3edfc9d68ee276c8d2c4c221661a29`；v1/v2 签名均为 true，debug 证书 SHA-256 `60d2e7…a3713`。
-- AndroidTest APK：1,138,237 bytes，SHA-256 `589d43549f6d292742384f141273cfb48734d08fda46758797f78132208e5f93`。
-- Release APK（unsigned）：9,661,523 bytes，SHA-256 `f5027ae1658b4d26440a50caa21b5b2443157674e7de6a64ecb8c4aa516221b1`。
+- Debug APK：`app/build/outputs/apk/debug/app-debug.apk`，14,355,034 bytes，SHA-256 `8e0b9552ebdcf150a7b8c7613b379f306a74deb93f502f5b550692a4f7513a50`。
+- AndroidTest APK：1,138,253 bytes，SHA-256 `99f40321016e6025de942dc1c040ad0c1cca9d1442b9c88bad3dd12b6ea675e2`。
+- Release APK（unsigned）：10,670,671 bytes，SHA-256 `a09ea22d0dc8f0a372cc9d840e57522f160def3970942d00b29f2da5e148dab3`。
 - 合并 Manifest：minSdk 23、targetSdk 36；仅有包内 `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`，无 `INTERNET`／相机／定位／存储权限；`allowBackup`、`fullBackupContent`、`cleartextTraffic` 均为 false，并声明 `dataExtractionRules`。
 
-预览与发布复验（2026-08-27）：
+预览与发布复验（2026-08-28）：
 
 - `CalendarPreviewRenderTest` 不再依赖运行机器绝对路径；测试资源 `fixtures/IMG_20260815_193103.png` 是用户提供的真实产品照片。以真实 `CoffeeTheme`、`JournalScreen` 和底栏渲染 `app/build/reports/previews/calendar-brand-cream-forest.png`、`calendar-coffee-cream-forest.png`；预览固定 2026-08，31 个当月日期都有记录，覆盖 12 个内置品牌，断言图片不使用占位、记录日不显示日期号、8 月 20 日保留 ×2。
 - latest Logo commit `7cf3634` 后，强制 `-PcalendarPreview --rerun-tasks` 复跑 `CalendarPreviewRenderTest` + `ReleaseAcceptanceRobolectricTest`：PASS（3 tests）。真实 Compose 预览完整 SHA-256：品牌 `d531d031267a3bd70a1d17841aff8deaefbc22280ccfc2114f1b3591908e81ae`（565,234 bytes）；咖啡 `5c9ee5e0b821db58843abd1910f5d545712b0c87c5ef8c56f5715fd8033717e9`（531,213 bytes）。
-- 全量 `clean testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease --offline --no-daemon`：PASS，350 tests，0 failures / errors / skips；lint 0 errors、7 warnings。当前 APK：debug 14,355,034 bytes / `8e0b9552ebdcf150a7b8c7613b379f306a74deb93f502f5b550692a4f7513a50`，androidTest 1,138,253 bytes / `99f40321016e6025de942dc1c040ad0c1cca9d1442b9c88bad3dd12b6ea675e2`，unsigned release 10,670,671 bytes / `a09ea22d0dc8f0a372cc9d840e57522f160def3970942d00b29f2da5e148dab3`。导航验收检查生产层实际存在的 `bottom-selected-label-*` 标签；实际选中胶囊仍由唯一的 `bottom-selected-capsule` 标签覆盖。
+- 全量矩阵与随后完整单测复验均通过；最终计数 353 tests，0 failures / errors / skips，lint 0 errors、7 warnings。预览测试同时断言标题、月份导航、摘要和三个底栏入口均处于首屏可见状态。
 
-最后更新：2026-08-27
+最后更新：2026-08-28
