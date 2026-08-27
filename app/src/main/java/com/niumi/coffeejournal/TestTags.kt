@@ -12,6 +12,7 @@ object TestTags {
     const val CalendarDayPrefix = "calendar-day-"
     const val CalendarDayNumberPrefix = "calendar-day-number-"
     const val CalendarCountBadgePrefix = "calendar-count-badge-"
+    const val CalendarMediaFramePrefix = "calendar-media-frame-"
     const val CalendarImagePrefix = "calendar-image-"
     const val RecordButton = "record-drink"
     const val MissingImagePrompt = "missing-image-prompt"

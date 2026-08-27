@@ -56,11 +56,38 @@ class BundledBrandLogoTest {
         assertEquals(12, BUNDLED_CHAIN_BRANDS.map { decodedPixelSha256(resources, it.logoRes) }.toSet().size)
     }
 
+    @Test fun `bundled logo pixels match the reviewed brand-specific display assets`() {
+        val resources = RuntimeEnvironment.getApplication().resources
+        val reviewedPixels = mapOf(
+            "seed-chain-luckin" to "3e60e171e3d17c8ded7decdaca90e3c7ad770384696ed2a29b8452cdd878af42",
+            "seed-chain-cotti" to "f8d3986120efdc9c2de8a61e7c1394a129af5041191bc88db04604f9b585946d",
+            "seed-chain-nowwa" to "b43aa74583ae4056d34b3b9d4d4fdc73bb337dea9dae62827a21af9f70c2f68b",
+            "seed-chain-lucky-cup" to "ad21987c3104fa81395ffffe077ca1013f652b49197f47d2d4b25370cb5be5e0",
+            "seed-chain-starbucks" to "b390417c47778e611c1562dde83bd20ef6ec2a84d999c0c093e27f44bc02e304",
+            "seed-chain-kcoffee" to "e2b82809a099e6ffcfe6f1e644d9b0711a06dbd8e269940484002d85262a860b",
+            "seed-chain-manner" to "4c767cafe2f174425577ce0a02178d31c8e8ff1d4e41f972405952bba279edff",
+            "seed-chain-hucoffee" to "afd92ff22fd46cb571f182e52cb693e741a4af209b243c3b09adb2812ba37ebb",
+            "seed-chain-tims" to "657f671dcb778ece6cdbfbeb2c2a75f03bb2adefd6073975ff7ee6c0c5da9334",
+            "seed-chain-mstand" to "52be31423e7be8b5f5bef22c8e08b531910468e136f5c1fb0a12a8c81fa5c0a4",
+            "seed-chain-peets" to "5da95d466a5aa79326254782ea9bd79cc0503a69a0e17a264507262aa20cf81d",
+            "seed-chain-arabica" to "485a3c334bf7a18fecaf95d476526d538efe353a02d705f00e1ef2d0590d37b0",
+        )
+
+        assertEquals(BUNDLED_CHAIN_BRANDS.map { it.brand.id }.toSet(), reviewedPixels.keys)
+        BUNDLED_CHAIN_BRANDS.forEach { definition ->
+            assertEquals(
+                "${definition.brand.name} display pixels changed; re-review the asset before updating its fingerprint",
+                reviewedPixels.getValue(definition.brand.id),
+                decodedPixelSha256(resources, definition.logoRes),
+            )
+        }
+    }
+
     @Test fun `bundled logos use the calendar safe transparent canvas`() {
         val resources = RuntimeEnvironment.getApplication().resources
         val targetArtworkEdge = mapOf(
-            "seed-chain-cotti" to 430,
-            "seed-chain-kcoffee" to 430,
+            "seed-chain-cotti" to 450,
+            "seed-chain-kcoffee" to 450,
         )
 
         BUNDLED_CHAIN_BRANDS.forEach { definition ->
@@ -70,7 +97,7 @@ class BundledBrandLogoTest {
                 }),
             )
             val opaqueBounds = opaqueBounds(bitmap)
-            val expectedEdge = targetArtworkEdge[definition.brand.id] ?: 400
+            val expectedEdge = targetArtworkEdge[definition.brand.id] ?: 430
 
             org.junit.Assert.assertTrue(
                 "${definition.brand.name} logo must be centered",
@@ -91,11 +118,31 @@ class BundledBrandLogoTest {
         }
     }
 
+    @Test fun `bundled logos keep visible artwork substantial after excluding edge connected pale backgrounds`() {
+        val resources = RuntimeEnvironment.getApplication().resources
+        val minimumVisibleShortEdge = mapOf(
+            "seed-chain-luckin" to 190,
+            "seed-chain-cotti" to 115,
+            "seed-chain-kcoffee" to 105,
+            "seed-chain-hucoffee" to 140,
+        )
+
+        BUNDLED_CHAIN_BRANDS.forEach { definition ->
+            val bitmap = requireNotNull(BitmapFactory.decodeResource(resources, definition.logoRes))
+            val foreground = foregroundBounds(bitmap)
+            val minimum = minimumVisibleShortEdge[definition.brand.id] ?: 180
+            org.junit.Assert.assertTrue(
+                "${definition.brand.name} foreground is too small for a calendar card: $foreground",
+                minOf(foreground.width(), foreground.height()) >= minimum,
+            )
+        }
+    }
+
     @Test fun `kcoffee and hucoffee preserve a bounded mark on transparent canvas`() {
         val resources = RuntimeEnvironment.getApplication().resources
         mapOf(
-            R.drawable.brand_logo_kcoffee to 430,
-            R.drawable.brand_logo_hucoffee to 400,
+            R.drawable.brand_logo_kcoffee to 450,
+            R.drawable.brand_logo_hucoffee to 430,
         ).forEach { (resource, maximumEdge) ->
             val bitmap = requireNotNull(
                 BitmapFactory.decodeResource(resources, resource, BitmapFactory.Options().apply {
@@ -143,6 +190,52 @@ class BundledBrandLogoTest {
                 top = minOf(top, y)
                 right = maxOf(right, x)
                 bottom = maxOf(bottom, y)
+            }
+        }
+        check(right >= left && bottom >= top)
+        return android.graphics.Rect(left, top, right + 1, bottom + 1)
+    }
+
+    /** Ignores transparent padding and pale pixels connected to a canvas edge (photo/sign backgrounds). */
+    private fun foregroundBounds(bitmap: android.graphics.Bitmap): android.graphics.Rect {
+        val width = bitmap.width
+        val height = bitmap.height
+        val background = BooleanArray(width * height)
+        val queue = java.util.ArrayDeque<Int>()
+        fun isPale(pixel: Int): Boolean {
+            val alpha = pixel ushr 24
+            val red = pixel ushr 16 and 0xff
+            val green = pixel ushr 8 and 0xff
+            val blue = pixel and 0xff
+            return alpha < 24 || (alpha > 0 && red >= 230 && green >= 230 && blue >= 225)
+        }
+        fun visit(x: Int, y: Int) {
+            val index = y * width + x
+            if (!background[index] && isPale(bitmap.getPixel(x, y))) {
+                background[index] = true
+                queue.add(index)
+            }
+        }
+        for (x in 0 until width) { visit(x, 0); visit(x, height - 1) }
+        for (y in 1 until height - 1) { visit(0, y); visit(width - 1, y) }
+        while (queue.isNotEmpty()) {
+            val index = queue.removeFirst()
+            val x = index % width
+            val y = index / width
+            if (x > 0) visit(x - 1, y)
+            if (x < width - 1) visit(x + 1, y)
+            if (y > 0) visit(x, y - 1)
+            if (y < height - 1) visit(x, y + 1)
+        }
+        var left = width
+        var top = height
+        var right = -1
+        var bottom = -1
+        for (y in 0 until height) for (x in 0 until width) {
+            val index = y * width + x
+            if (!background[index] && (bitmap.getPixel(x, y) ushr 24) != 0) {
+                left = minOf(left, x); top = minOf(top, y)
+                right = maxOf(right, x); bottom = maxOf(bottom, y)
             }
         }
         check(right >= left && bottom >= top)

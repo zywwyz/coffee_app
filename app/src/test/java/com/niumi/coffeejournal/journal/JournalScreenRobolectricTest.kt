@@ -174,6 +174,15 @@ class JournalScreenRobolectricTest {
     }
 
     @Test
+    fun `recorded calendar day uses one observable compact media safety inset`() {
+        compose.setContent { CoffeeTheme { JournalScreen(calendarState("2026-08-05", drinkCount = 1), {}, {}, {}, {}) } }
+
+        compose.onNodeWithTag("calendar-media-frame-2026-08-05", useUnmergedTree = true)
+            .assert(SemanticsMatcher.expectValue(CalendarMediaInsetDp, 3f))
+        compose.onNodeWithTag("calendar-image-2026-08-05", useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    @Test
     fun `each calendar mode option has a 48dp touch target`() {
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {

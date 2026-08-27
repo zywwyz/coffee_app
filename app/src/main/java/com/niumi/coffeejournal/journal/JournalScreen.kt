@@ -73,6 +73,7 @@ internal val CalendarWarmIvory = CoffeeVisuals.cream
 internal val RecordButtonContainerColor = SemanticsPropertyKey<Color>("RecordButtonContainerColor")
 internal val RecordButtonContentColor = SemanticsPropertyKey<Color>("RecordButtonContentColor")
 internal val CalendarModeTouchTargetMinHeight = SemanticsPropertyKey<Float>("CalendarModeTouchTargetMinHeight")
+internal val CalendarMediaInsetDp = SemanticsPropertyKey<Float>("CalendarMediaInsetDp")
 
 @Composable
 fun JournalFeature(
@@ -353,7 +354,6 @@ private fun CalendarDay(
             .clickable(onClick = onClick)
             .semantics { contentDescription = "日期 ${day.localDate}" }
             .testTag(TestTags.CalendarDayPrefix + day.localDate)
-            .padding(4.dp),
     ) {
         if (day.drinkCount == 0) {
             Text(
@@ -362,19 +362,26 @@ private fun CalendarDay(
             )
         } else {
             val media = selectCalendarMedia(mode, day.imagePath, day.brandLogoPath, day.brandName)
-            LocalAssetImage(
-                primaryPath = media.primaryPath,
-                fallbackPath = media.fallbackPath,
-                contentDescription = "咖啡图片",
-                contentScale = CompleteImageContentScale,
-                fallbackPainter = media.bundledLogoRes?.let { painterResource(it) },
+            Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .clip(RoundedCornerShape(CoffeeVisuals.cornerSmall))
-                    .background(CoffeeVisuals.white)
-                    .padding(7.dp)
-                    .testTag(TestTags.CalendarImagePrefix + day.localDate),
-            )
+                    .padding(3.dp)
+                    .semantics { this[CalendarMediaInsetDp] = 3f }
+                    .testTag(TestTags.CalendarMediaFramePrefix + day.localDate),
+            ) {
+                LocalAssetImage(
+                    primaryPath = media.primaryPath,
+                    fallbackPath = media.fallbackPath,
+                    contentDescription = "咖啡图片",
+                    contentScale = CompleteImageContentScale,
+                    fallbackPainter = media.bundledLogoRes?.let { painterResource(it) },
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(RoundedCornerShape(CoffeeVisuals.cornerSmall))
+                        .background(CoffeeVisuals.white)
+                        .testTag(TestTags.CalendarImagePrefix + day.localDate),
+                )
+            }
             if (day.drinkCount > 1) {
                 Text(
                     "×${day.drinkCount}",
