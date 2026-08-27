@@ -10,8 +10,10 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import com.niumi.coffeejournal.catalog.BUNDLED_CHAIN_BRANDS
 import com.niumi.coffeejournal.journal.CalendarDisplayMode
 import com.niumi.coffeejournal.journal.JournalScreen
@@ -83,7 +85,15 @@ class CalendarPreviewRenderTest {
             assertTrue("$date must render $expectedState rather than a placeholder", expectedState in imageStates)
         }
         compose.onNodeWithTag(TestTags.CalendarCountBadgePrefix + "2026-08-20", useUnmergedTree = true).assertExists()
-        compose.onNodeWithTag(TestTags.Calendar).assertExists()
+        compose.onNodeWithTag(TestTags.RootScreenTitle).assertIsDisplayed()
+        compose.onNodeWithText("2026年8月").assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.PreviousMonth).assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.NextMonth).assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.Calendar).assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.MonthSummaryCard).assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.BottomCalendarTab).assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.BottomCatalogTab).assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.BottomInsightsTab).assertIsDisplayed()
         compose.runOnIdle {
             val decorView = compose.activity.window.decorView
             require(decorView.width > 0 && decorView.height > 0) { "decor view must be laid out" }
