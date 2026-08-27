@@ -2,6 +2,7 @@ package com.niumi.coffeejournal.navigation
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,8 +33,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Color
+import com.niumi.coffeejournal.ui.CoffeeVisuals
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,11 +72,16 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
+
 import kotlinx.serialization.Serializable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.map
 import com.niumi.coffeejournal.catalog.CatalogDeleteResult
 import com.niumi.coffeejournal.core.model.BrandType
+
+internal val BottomNavigationBackgroundColor = SemanticsPropertyKey<Color>("BottomNavigationBackgroundColor")
+internal val BottomSelectedCapsuleColor = SemanticsPropertyKey<Color>("BottomSelectedCapsuleColor")
+internal val BottomSelectedContentColor = SemanticsPropertyKey<Color>("BottomSelectedContentColor")
 
 @Serializable
 data object Journal : NavKey
@@ -229,7 +238,10 @@ internal fun CoffeeBottomNavigation(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .testTag(TestTags.BottomNavigationSurface)
+            .background(CoffeeVisuals.white)
+            .border(1.dp, CoffeeVisuals.warmOutline)
+            .semantics { this[BottomNavigationBackgroundColor] = CoffeeVisuals.white }
             .windowInsetsPadding(navigationInsets)
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
@@ -256,24 +268,31 @@ internal fun CoffeeBottomNavigation(
                     modifier = Modifier.then(
                         if (selected) Modifier.testTag(TestTags.BottomSelectedCapsule)
                             .clip(RoundedCornerShape(50))
-                            .background(MaterialTheme.colorScheme.secondaryContainer)
+                            .background(CoffeeVisuals.peach)
+                            .semantics { this[BottomSelectedCapsuleColor] = CoffeeVisuals.peach }
                             .padding(horizontal = 12.dp, vertical = 4.dp)
                         else Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                     ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (selected) {
-                        Box(Modifier.matchParentSize().testTag(TestTags.BottomSelectedCapsulePrefix + destination.label))
-                    }
                     Image(
                         painter = painterResource(destination.iconRes), contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface),
+                        modifier = Modifier.size(24.dp).then(
+                            if (selected) Modifier
+                                .testTag(TestTags.BottomSelectedIconPrefix + destination.label)
+                                .semantics { this[BottomSelectedContentColor] = CoffeeVisuals.forest }
+                            else Modifier,
+                        ),
+                        colorFilter = ColorFilter.tint(if (selected) CoffeeVisuals.forest else CoffeeVisuals.secondaryText),
                     )
                 }
                 Text(
                     text = destination.label,
-                    color = if (selected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurface,
+                    color = if (selected) CoffeeVisuals.forest else CoffeeVisuals.secondaryText,
+                    modifier = if (selected) Modifier
+                        .testTag(TestTags.BottomSelectedLabelPrefix + destination.label)
+                        .semantics { this[BottomSelectedContentColor] = CoffeeVisuals.forest }
+                    else Modifier,
                     style = MaterialTheme.typography.labelMedium,
                     textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Clip,
                 )

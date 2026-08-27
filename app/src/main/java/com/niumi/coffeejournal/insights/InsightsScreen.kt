@@ -1,6 +1,7 @@
 package com.niumi.coffeejournal.insights
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -37,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -46,9 +48,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.niumi.coffeejournal.journal.JournalRepository
 import com.niumi.coffeejournal.TestTags
+import com.niumi.coffeejournal.ui.CoffeeVisuals
 import java.util.GregorianCalendar
 import java.util.Locale
 import java.math.BigInteger
+
+internal val InsightsSurfaceColor = SemanticsPropertyKey<Color>("InsightsSurfaceColor")
+internal val InsightsMetricCardColor = SemanticsPropertyKey<Color>("InsightsMetricCardColor")
 
 @Composable
 fun InsightsFeature(repository: JournalRepository, onOpenSettings: () -> Unit = {}) {
@@ -92,7 +98,9 @@ fun InsightsScreen(
 ) {
     var selectedRecord by remember { mutableStateOf<RatedRecordSummary?>(null) }
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 32.dp),
+        Modifier.fillMaxSize().background(CoffeeVisuals.cream).testTag(TestTags.InsightsSurface)
+            .semantics { this[InsightsSurfaceColor] = CoffeeVisuals.cream }
+            .verticalScroll(rememberScrollState()).padding(bottom = 32.dp),
     ) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -231,12 +239,14 @@ private fun MetricGrid(values: List<Pair<String, String>>) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { (label, value) ->
                     Card(
-                        Modifier.weight(1f),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                        Modifier.weight(1f)
+                            .testTag(TestTags.InsightsMetricCardPrefix + label)
+                            .semantics { this[InsightsMetricCardColor] = CoffeeVisuals.white },
+                        shape = RoundedCornerShape(CoffeeVisuals.cornerMedium),
+                        colors = CardDefaults.cardColors(containerColor = CoffeeVisuals.white),
                     ) {
                         Column(Modifier.padding(14.dp)) {
-                            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(label, color = CoffeeVisuals.secondaryText)
                             Text(
                                 value,
                                 style = MaterialTheme.typography.titleLarge,

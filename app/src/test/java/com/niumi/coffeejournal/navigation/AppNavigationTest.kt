@@ -4,6 +4,7 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -13,6 +14,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.onAllNodesWithTag
 import com.niumi.coffeejournal.TestTags
 import androidx.compose.ui.Modifier
@@ -105,6 +107,20 @@ class AppNavigationTest {
         assertEquals(calendar.width, catalog.width, 1f)
         assertEquals(insetPx.toFloat(), withInset.height - noInset.height, 1f)
         org.junit.Assert.assertTrue(calendar.height >= minTarget)
+    }
+
+    @Test
+    fun bottom_navigation_exposes_approved_cream_theme_color_contracts() {
+        compose.setContent { CoffeeTheme { CoffeeBottomNavigation(selectedRoot = Journal, onRootSelected = {}) } }
+
+        compose.onNodeWithTag(TestTags.BottomNavigationSurface, useUnmergedTree = true)
+            .assert(SemanticsMatcher.expectValue(BottomNavigationBackgroundColor, CoffeeVisuals.white))
+        compose.onNodeWithTag(TestTags.BottomSelectedCapsule, useUnmergedTree = true)
+            .assert(SemanticsMatcher.expectValue(BottomSelectedCapsuleColor, CoffeeVisuals.peach))
+        compose.onNodeWithTag(TestTags.BottomSelectedIconPrefix + "咖啡日历", useUnmergedTree = true)
+            .assert(SemanticsMatcher.expectValue(BottomSelectedContentColor, CoffeeVisuals.forest))
+        compose.onNodeWithTag(TestTags.BottomSelectedLabelPrefix + "咖啡日历", useUnmergedTree = true)
+            .assert(SemanticsMatcher.expectValue(BottomSelectedContentColor, CoffeeVisuals.forest))
     }
 
     @Test

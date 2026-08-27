@@ -1,13 +1,17 @@
 package com.niumi.coffeejournal.insights
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
+import com.niumi.coffeejournal.ui.CoffeeVisuals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -18,6 +22,16 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], qualifiers = "w320dp-h480dp")
 class InsightsScreenRobolectricTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun `insights presents its cream surface and white metric cards`() {
+        compose.setContent { CoffeeTheme { InsightsScreen(state(), {}, {}) } }
+
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.InsightsSurface).assertIsDisplayed()
+            .assert(SemanticsMatcher.expectValue(InsightsSurfaceColor, CoffeeVisuals.cream))
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.InsightsMetricCardPrefix + "喝了几杯").assertIsDisplayed()
+            .assert(SemanticsMatcher.expectValue(InsightsMetricCardColor, CoffeeVisuals.white))
+    }
 
     @Test
     fun `tabs expose monthly yearly and switch callbacks`() {

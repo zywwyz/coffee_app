@@ -1,6 +1,7 @@
 package com.niumi.coffeejournal.catalog
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +38,7 @@ import com.niumi.coffeejournal.core.image.CalendarThumbnailLoader
 import androidx.compose.runtime.remember
 import com.niumi.coffeejournal.core.model.ChainProductKind
 import com.niumi.coffeejournal.core.image.AssetImportRequester
+import com.niumi.coffeejournal.ui.CoffeeVisuals
 
 @Composable
 fun ManualProductEditorDialog(
@@ -63,7 +65,7 @@ fun ManualProductEditorDialog(
                 ) {
                     value = loadManualProductPreview(state.imageAssetId, state.brand?.logoAssetId, imagePathResolver, thumbnailLoader)
                 }
-                Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant).semantics { contentDescription = TestTags.ManualProductPreview }.padding(12.dp)) {
+                Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(CoffeeVisuals.cornerMedium)).background(CoffeeVisuals.white).border(1.dp, CoffeeVisuals.warmOutline, RoundedCornerShape(CoffeeVisuals.cornerMedium)).semantics { contentDescription = TestTags.ManualProductPreview }.padding(12.dp)) {
                     if (preview.bitmap != null) Image(bitmap = preview.bitmap!!, contentDescription = if (preview.usesProductImage) "产品实拍图" else "品牌 Logo", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().aspectRatio(1f))
                     else Text(if (state.imageAssetId == null && state.brand?.logoAssetId == null) "暂无图片" else "图片无法加载")
                 }

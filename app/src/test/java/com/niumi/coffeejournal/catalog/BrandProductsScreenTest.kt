@@ -7,6 +7,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.niumi.coffeejournal.TestTags
@@ -18,6 +20,7 @@ import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
+import com.niumi.coffeejournal.ui.CoffeeVisuals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -42,6 +45,8 @@ class BrandProductsScreenTest {
         compose.onNodeWithTag(TestTags.BrandProductGrid).assertIsDisplayed()
         compose.onNodeWithTag(TestTags.BrandProductCardPrefix + "item").assertIsDisplayed()
         compose.onNodeWithTag(TestTags.BrandProductMediaFramePrefix + "item", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+            .assert(SemanticsMatcher.expectValue(CatalogMediaFrameColor, CoffeeVisuals.white))
+            .assert(SemanticsMatcher.expectValue(CatalogMediaFrameOutlineColor, CoffeeVisuals.warmOutline))
         compose.onNodeWithText("冷萃").assertIsDisplayed()
         compose.onAllNodesWithText("黑咖").assertCountEquals(2)
     }

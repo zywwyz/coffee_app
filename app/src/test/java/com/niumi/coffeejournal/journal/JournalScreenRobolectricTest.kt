@@ -26,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalDensity
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
 import com.niumi.coffeejournal.ui.CoffeeVisuals
+import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.CatalogItem
@@ -50,6 +51,28 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35])
 class JournalScreenRobolectricTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun `record editor groups date only fields on the cream surface`() {
+        compose.setContent {
+            CoffeeTheme {
+                RecordDrinkScreen(
+                    state = JournalUiState.empty(2026, 8).editor,
+                    brands = emptyList(), items = emptyList(),
+                    onSourceTypeChange = {}, onBrandSelect = {}, onItemSelect = {}, onRatingChange = {},
+                    onPriceChange = {}, onBrewMethodChange = {}, onNoteChange = {}, onSave = {}, onBack = {},
+                    onSelectImage = {}, onSkipImage = {},
+                )
+            }
+        }
+        compose.onNodeWithTag(TestTags.RecordEditorSurface).assertIsDisplayed()
+            .assert(SemanticsMatcher.expectValue(RecordEditorSurfaceColor, CoffeeVisuals.cream))
+        compose.onNodeWithTag(TestTags.RecordEditorSectionPrefix + "date").assertIsDisplayed()
+            .assert(SemanticsMatcher.expectValue(RecordEditorSectionColor, CoffeeVisuals.white))
+        compose.onNodeWithTag(TestTags.ConfirmSave)
+            .assert(SemanticsMatcher.expectValue(RecordSaveContainerColor, CoffeeVisuals.forest))
+        compose.onAllNodesWithText("饮用时间").assertCountEquals(0)
+    }
 
     @Test
     fun `record button switches from calendar to editor`() {
