@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
-import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import com.niumi.coffeejournal.catalog.BUNDLED_CHAIN_BRANDS
@@ -39,17 +39,19 @@ class CalendarPreviewRenderTest {
 
     @Test
     fun `renders brand calendar preview with bundled logos`() = renderPreview(
-        fileName = "brand-calendar.png",
+        fileName = "calendar-brand-cream-forest.png",
         state = previewState(CalendarDisplayMode.BRAND, imagePath = null),
     )
 
     @Test
     fun `renders coffee calendar preview with local product image`() = renderPreview(
-        fileName = "coffee-calendar.png",
+        fileName = "calendar-coffee-cream-forest.png",
         state = previewState(CalendarDisplayMode.COFFEE, imagePath = previewProductImage().absolutePath),
     )
 
     private fun renderPreview(fileName: String, state: JournalUiState) {
+        val recordedDates = state.days.filter { it.inDisplayedMonth && it.drinkCount > 0 }.map { it.localDate }
+        val expectedState = if (state.calendarDisplayMode == CalendarDisplayMode.BRAND) "品牌图片" else "主图片已加载"
         compose.setContent {
             CoffeeTheme {
                 // This deliberately mirrors AppNavigation: outer root Scaffold + JournalScreen + custom tabs.
@@ -63,17 +65,24 @@ class CalendarPreviewRenderTest {
             }
         }
 
-        // LocalAssetImage loads paths asynchronously; wait for it and for every preview day to compose.
+        // LocalAssetImage loads paths asynchronously; every recorded day must reach its final image state.
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithContentDescription("咖啡图片", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() &&
-                listOf("2026-08-06", "2026-08-15", "2026-08-18", "2026-08-20").all { date ->
-                    val nodes = compose.onAllNodesWithTag(TestTags.CalendarImagePrefix + date, useUnmergedTree = true)
-                        .fetchSemanticsNodes()
-                    nodes.isNotEmpty() && (state.calendarDisplayMode != CalendarDisplayMode.COFFEE || nodes.any {
-                        runCatching { it.config[SemanticsProperties.StateDescription] }.getOrNull() == "主图片已加载"
-                    })
-                }
+            recordedDates.all { date ->
+                compose.onAllNodesWithTag(TestTags.CalendarImagePrefix + date, useUnmergedTree = true)
+                    .fetchSemanticsNodes()
+                    .any { runCatching { it.config[SemanticsProperties.StateDescription] }.getOrNull() == expectedState }
+            }
         }
+        assertTrue("brand preview must cover all 12 bundled brands", BUNDLED_CHAIN_BRANDS.size == 12)
+        assertTrue("preview must populate every August date", recordedDates.size == 31)
+        recordedDates.forEach { date ->
+            compose.onAllNodesWithTag(TestTags.CalendarDayNumberPrefix + date, useUnmergedTree = true).assertCountEquals(0)
+            val imageStates = compose.onAllNodesWithTag(TestTags.CalendarImagePrefix + date, useUnmergedTree = true)
+                .fetchSemanticsNodes()
+                .mapNotNull { runCatching { it.config[SemanticsProperties.StateDescription] }.getOrNull() }
+            assertTrue("$date must render $expectedState rather than a placeholder", expectedState in imageStates)
+        }
+        compose.onNodeWithTag(TestTags.CalendarCountBadgePrefix + "2026-08-20", useUnmergedTree = true).assertExists()
         compose.onNodeWithTag(TestTags.Calendar).assertExists()
         compose.runOnIdle {
             val decorView = compose.activity.window.decorView
@@ -81,7 +90,7 @@ class CalendarPreviewRenderTest {
             decorView.invalidate()
             val bitmap = Bitmap.createBitmap(decorView.width, decorView.height, Bitmap.Config.ARGB_8888)
             decorView.draw(Canvas(bitmap))
-            val output = File("build/reports/calendar-previews", fileName)
+            val output = File("build/reports/previews", fileName)
             output.parentFile?.mkdirs()
             FileOutputStream(output).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
             val decoded = BitmapFactory.decodeFile(output.absolutePath)
@@ -96,7 +105,6 @@ class CalendarPreviewRenderTest {
     }
 
     private fun previewState(mode: CalendarDisplayMode, imagePath: String?): JournalUiState {
-        val displayDates = setOf("2026-08-06", "2026-08-15", "2026-08-18", "2026-08-20")
         val brandNames = BUNDLED_CHAIN_BRANDS.map { it.brand.name }
         val empty = JournalUiState.empty(2026, 8)
         return empty.copy(
@@ -106,20 +114,22 @@ class CalendarPreviewRenderTest {
                     brandName = brandNames[index % brandNames.size],
                     drinkCount = when (mode) {
                         CalendarDisplayMode.BRAND -> if (day.localDate == "2026-08-20") 2 else 1
-                        CalendarDisplayMode.COFFEE -> if (day.localDate == "2026-08-20") 2 else if (day.localDate in displayDates) 1 else 0
+                        CalendarDisplayMode.COFFEE -> if (day.localDate == "2026-08-20") 2 else 1
                     },
-                    imagePath = if (day.localDate in displayDates) imagePath else null,
+                    imagePath = imagePath,
                 )
             },
         )
     }
 
     private fun previewProductImage(): File {
-        val supplied = System.getenv("COFFEE_PREVIEW_PRODUCT_IMAGE")?.let(::File)
-            ?: error("COFFEE_PREVIEW_PRODUCT_IMAGE must point to the real product photo used for review")
-        require(supplied.isFile && BitmapFactory.decodeFile(supplied.absolutePath) != null) {
-            "COFFEE_PREVIEW_PRODUCT_IMAGE must be a decodable image file"
+        val supplied = checkNotNull(javaClass.classLoader?.getResource("fixtures/IMG_20260815_193103.png")) {
+            "Bundled real product photo fixture is required for the release preview"
         }
-        return supplied
+        return File(supplied.toURI()).also {
+            require(it.isFile && BitmapFactory.decodeFile(it.absolutePath) != null) {
+                "Bundled real product photo fixture must be decodable"
+            }
+        }
     }
 }

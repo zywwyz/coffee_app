@@ -108,12 +108,14 @@ export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 ./.local-tools/gradle-8.13/bin/gradle connectedDebugAndroidTest --no-daemon
 ```
 
-使用一张真实产品照片生成品牌／咖啡日历评审图（输出到 `app/build/reports/calendar-previews/`）：
+使用内置的真实产品照片 fixture 生成品牌／咖啡日历评审图：
 
 ```bash
-COFFEE_PREVIEW_PRODUCT_IMAGE=/absolute/path/to/product.png \
-  ./.local-tools/gradle-8.13/bin/gradle testDebugUnitTest -PcalendarPreview \
-  --tests com.niumi.coffeejournal.CalendarPreviewRenderTest --no-daemon
+./.local-tools/gradle-8.13/bin/gradle --offline --no-daemon -PcalendarPreview --rerun-tasks \
+  testDebugUnitTest --tests com.niumi.coffeejournal.CalendarPreviewRenderTest
 ```
 
-照片参数是必需的；预览任务不会用纯色测试图冒充真实产品照片。
+照片来自 `app/src/test/resources/fixtures/IMG_20260815_193103.png`，不会依赖运行机器绝对路径。输出为：
+
+- `app/build/reports/previews/calendar-brand-cream-forest.png`
+- `app/build/reports/previews/calendar-coffee-cream-forest.png`
