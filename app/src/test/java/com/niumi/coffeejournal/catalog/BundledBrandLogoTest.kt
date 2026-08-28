@@ -59,18 +59,18 @@ class BundledBrandLogoTest {
     @Test fun `bundled logo pixels match the reviewed brand-specific display assets`() {
         val resources = RuntimeEnvironment.getApplication().resources
         val reviewedPixels = mapOf(
-            "seed-chain-luckin" to "3e60e171e3d17c8ded7decdaca90e3c7ad770384696ed2a29b8452cdd878af42",
-            "seed-chain-cotti" to "f8d3986120efdc9c2de8a61e7c1394a129af5041191bc88db04604f9b585946d",
+            "seed-chain-luckin" to "2ba8c1c1359786d4980303489ee4b329554521533ff75c3e2e0731e62a3b03e4",
+            "seed-chain-cotti" to "799063832440069842204c8aed10f7fee620f22e1b70d115df72f09303642f29",
             "seed-chain-nowwa" to "b43aa74583ae4056d34b3b9d4d4fdc73bb337dea9dae62827a21af9f70c2f68b",
             "seed-chain-lucky-cup" to "ad21987c3104fa81395ffffe077ca1013f652b49197f47d2d4b25370cb5be5e0",
             "seed-chain-starbucks" to "b390417c47778e611c1562dde83bd20ef6ec2a84d999c0c093e27f44bc02e304",
             "seed-chain-kcoffee" to "e2b82809a099e6ffcfe6f1e644d9b0711a06dbd8e269940484002d85262a860b",
-            "seed-chain-manner" to "4c767cafe2f174425577ce0a02178d31c8e8ff1d4e41f972405952bba279edff",
-            "seed-chain-hucoffee" to "afd92ff22fd46cb571f182e52cb693e741a4af209b243c3b09adb2812ba37ebb",
+            "seed-chain-manner" to "07e2f7c918683b99fb0f5b2cfef1fa5e2a77e316d915c9d694aac242dab494eb",
+            "seed-chain-hucoffee" to "b31f4fc6a8f9360b4c92f0ddd8d4afbb59116fe263dedc8d5e8b6b24c2a33592",
             "seed-chain-tims" to "657f671dcb778ece6cdbfbeb2c2a75f03bb2adefd6073975ff7ee6c0c5da9334",
             "seed-chain-mstand" to "52be31423e7be8b5f5bef22c8e08b531910468e136f5c1fb0a12a8c81fa5c0a4",
-            "seed-chain-peets" to "5da95d466a5aa79326254782ea9bd79cc0503a69a0e17a264507262aa20cf81d",
-            "seed-chain-arabica" to "485a3c334bf7a18fecaf95d476526d538efe353a02d705f00e1ef2d0590d37b0",
+            "seed-chain-peets" to "b3cb9f934438991497a94ba8ced6324cc5d2ce95a33880ed2bd44b0b01b773e4",
+            "seed-chain-arabica" to "9d0bc11393b269e7c69ea131cea3b0774a4396554e8124a3e9e973bb6208a2d0",
         )
 
         assertEquals(BUNDLED_CHAIN_BRANDS.map { it.brand.id }.toSet(), reviewedPixels.keys)
