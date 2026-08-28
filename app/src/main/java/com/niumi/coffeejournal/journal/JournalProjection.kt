@@ -17,6 +17,7 @@ data class CalendarDayUi(
     val inDisplayedMonth: Boolean,
     val imagePath: String?,
     val brandLogoPath: String?,
+    val brandName: String?,
     val drinkCount: Int,
 )
 
@@ -135,6 +136,7 @@ fun projectMonth(
             inDisplayedMonth = date.get(Calendar.YEAR) == year && date.get(Calendar.MONTH) == month - 1,
             imagePath = productImage,
             brandLogoPath = brandLogo,
+            brandName = latest?.snapshot?.brandName,
             drinkCount = dayRecords.size,
         )
     }

@@ -1,6 +1,7 @@
 package com.niumi.coffeejournal.catalog
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +27,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.core.image.ImageKind
@@ -35,6 +38,7 @@ import com.niumi.coffeejournal.core.image.CalendarThumbnailLoader
 import androidx.compose.runtime.remember
 import com.niumi.coffeejournal.core.model.ChainProductKind
 import com.niumi.coffeejournal.core.image.AssetImportRequester
+import com.niumi.coffeejournal.ui.CoffeeVisuals
 
 @Composable
 fun ManualProductEditorDialog(
@@ -56,13 +60,14 @@ fun ManualProductEditorDialog(
                         FilterChip(selected = state.kind == kind, onClick = { viewModel.setKind(kind) }, label = { Text(label) }, enabled = !state.saving)
                     }
                 }
-                val previewAssetId = state.imageAssetId ?: state.brand?.logoAssetId
-                val bitmap by produceState<ImageBitmap?>(null, previewAssetId, thumbnailLoader) {
-                    value = loadManualProductPreview(previewAssetId, imagePathResolver, thumbnailLoader)
+                val preview by produceState(
+                    ManualProductPreview(null, false), state.imageAssetId, state.brand?.logoAssetId, imagePathResolver, thumbnailLoader,
+                ) {
+                    value = loadManualProductPreview(state.imageAssetId, state.brand?.logoAssetId, imagePathResolver, thumbnailLoader)
                 }
-                Box(Modifier.fillMaxWidth().aspectRatio(1f).background(MaterialTheme.colorScheme.surfaceVariant).semantics { contentDescription = TestTags.ManualProductPreview }.padding(12.dp)) {
-                    if (bitmap != null) Image(bitmap = bitmap!!, contentDescription = if (state.imageAssetId != null) "产品实拍图" else "品牌 Logo", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth())
-                    else Text(if (previewAssetId == null) "暂无图片" else "图片无法加载")
+                Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(CoffeeVisuals.cornerMedium)).background(CoffeeVisuals.white).border(1.dp, CoffeeVisuals.warmOutline, RoundedCornerShape(CoffeeVisuals.cornerMedium)).semantics { contentDescription = TestTags.ManualProductPreview }.padding(12.dp)) {
+                    if (preview.bitmap != null) Image(bitmap = preview.bitmap!!, contentDescription = if (preview.usesProductImage) "产品实拍图" else "品牌 Logo", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().aspectRatio(1f))
+                    else Text(if (state.imageAssetId == null && state.brand?.logoAssetId == null) "暂无图片" else "图片无法加载")
                 }
                 OutlinedButton(onClick = {
                     val sessionToken = state.sessionToken ?: return@OutlinedButton
@@ -80,11 +85,18 @@ fun ManualProductEditorDialog(
     )
 }
 
+internal data class ManualProductPreview(val bitmap: ImageBitmap?, val usesProductImage: Boolean)
+
 internal suspend fun loadManualProductPreview(
-    assetId: String?,
+    productAssetId: String?,
+    brandLogoAssetId: String?,
     imagePathResolver: ImagePathResolver,
     thumbnailLoader: ThumbnailLoader,
-) = thumbnailLoader.load(imagePathResolver.resolve(assetId))
+): ManualProductPreview {
+    val product = thumbnailLoader.load(imagePathResolver.resolve(productAssetId))
+    if (product != null) return ManualProductPreview(product, true)
+    return ManualProductPreview(thumbnailLoader.load(imagePathResolver.resolve(brandLogoAssetId)), false)
+}
 
 internal fun publicKindLabel(kind: ChainProductKind): String = when (kind) {
     ChainProductKind.BLACK -> "黑咖"

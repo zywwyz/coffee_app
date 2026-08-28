@@ -6,6 +6,7 @@ import java.io.File
 import java.io.FileOutputStream
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertNotNull
 import org.junit.Test
@@ -16,6 +17,44 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class ThumbnailLoaderTest {
+    @Test
+    fun `thumbnail decoding keeps large landscape images clear while preserving aspect ratio`() {
+        val source = bitmap("large-landscape", "png", Bitmap.CompressFormat.PNG, 1600, 1200)
+
+        val thumbnail = decodeThumbnailBitmap(source.absolutePath)
+
+        assertNotNull(thumbnail)
+        thumbnail!!
+        assertTrue(thumbnail.width in 256..512)
+        assertTrue(thumbnail.width * thumbnail.height <= THUMBNAIL_TARGET_EDGE_PX * THUMBNAIL_TARGET_EDGE_PX)
+        assertEquals(4, thumbnail.width * 3 / thumbnail.height)
+    }
+
+    @Test
+    fun `thumbnail decoding keeps large portrait images clear while preserving aspect ratio`() {
+        val source = bitmap("large-portrait", "png", Bitmap.CompressFormat.PNG, 1200, 1600)
+
+        val thumbnail = decodeThumbnailBitmap(source.absolutePath)
+
+        assertNotNull(thumbnail)
+        thumbnail!!
+        assertTrue(thumbnail.height in 256..512)
+        assertTrue(thumbnail.width * thumbnail.height <= THUMBNAIL_TARGET_EDGE_PX * THUMBNAIL_TARGET_EDGE_PX)
+        assertEquals(3, thumbnail.width * 4 / thumbnail.height)
+    }
+
+    @Test
+    fun `thumbnail decoding caps near target square images at target edge`() {
+        val source = bitmap("near-target-square", "png", Bitmap.CompressFormat.PNG, 1023, 1023)
+
+        val thumbnail = decodeThumbnailBitmap(source.absolutePath)
+
+        assertNotNull(thumbnail)
+        thumbnail!!
+        assertTrue(maxOf(thumbnail.width, thumbnail.height) <= THUMBNAIL_TARGET_EDGE_PX)
+        assertTrue(thumbnail.width * thumbnail.height <= THUMBNAIL_TARGET_EDGE_PX * THUMBNAIL_TARGET_EDGE_PX)
+    }
+
     @Test
     fun `jpeg thumbnail applies exif rotation and mirror orientation`() = runBlocking {
         val rotated = jpeg("rotated", ExifInterface.ORIENTATION_ROTATE_90)
@@ -59,9 +98,17 @@ class ThumbnailLoaderTest {
         ExifInterface(it).apply { setAttribute(ExifInterface.TAG_ORIENTATION, orientation.toString()); saveAttributes() }
     }
 
-    private fun bitmap(name: String, extension: String, format: Bitmap.CompressFormat): File =
+    private fun bitmap(
+        name: String,
+        extension: String,
+        format: Bitmap.CompressFormat,
+        width: Int = 30,
+        height: Int = 20,
+    ): File =
         File.createTempFile(name, ".$extension").also { file ->
-            val bitmap = markerBitmap()
+            val bitmap = if (width == 30 && height == 20) markerBitmap() else {
+                Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            }
             FileOutputStream(file).use { bitmap.compress(format, 100, it) }
         }
 

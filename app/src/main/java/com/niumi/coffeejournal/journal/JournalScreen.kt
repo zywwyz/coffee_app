@@ -1,7 +1,9 @@
 package com.niumi.coffeejournal.journal
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,17 +11,22 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -32,26 +39,41 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
+import androidx.annotation.DrawableRes
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.niumi.coffeejournal.catalog.CatalogRepository
+import com.niumi.coffeejournal.catalog.bundledBrandLogoRes
 import com.niumi.coffeejournal.catalog.ManualProductEditorDialog
 import com.niumi.coffeejournal.catalog.ManualProductEditorEvent
 import com.niumi.coffeejournal.catalog.ManualProductEditorViewModel
 import com.niumi.coffeejournal.core.image.ImagePathResolver
 import com.niumi.coffeejournal.core.image.ImageStore
 import com.niumi.coffeejournal.core.image.LocalAssetImage
+import com.niumi.coffeejournal.core.image.CompleteImageContentScale
 import com.niumi.coffeejournal.core.model.DrinkRecord
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.core.image.AssetImportRequester
 import com.niumi.coffeejournal.TestTags
+import com.niumi.coffeejournal.ui.CoffeeVisuals
 import java.util.Calendar
+
+internal val CalendarForestGreen = CoffeeVisuals.forest
+internal val CalendarWarmIvory = CoffeeVisuals.cream
+internal val RecordButtonContainerColor = SemanticsPropertyKey<Color>("RecordButtonContainerColor")
+internal val RecordButtonContentColor = SemanticsPropertyKey<Color>("RecordButtonContentColor")
+internal val CalendarModeTouchTargetMinHeight = SemanticsPropertyKey<Float>("CalendarModeTouchTargetMinHeight")
+internal val CalendarMediaInsetDp = SemanticsPropertyKey<Float>("CalendarMediaInsetDp")
 
 @Composable
 fun JournalFeature(
@@ -153,6 +175,7 @@ fun JournalScreen(
     onCalendarDisplayModeChange: (CalendarDisplayMode) -> Unit = {},
 ) {
     Scaffold(
+        containerColor = CoffeeVisuals.cream,
         topBar = {
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("咖啡日历", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.testTag(TestTags.RootScreenTitle))
@@ -160,7 +183,18 @@ fun JournalScreen(
             }
         },
         floatingActionButton = {
-            Button(onClick = onRecordDrink, modifier = Modifier.testTag(TestTags.RecordButton)) {
+            Button(
+                onClick = onRecordDrink,
+                modifier = Modifier
+                    .testTag(TestTags.RecordButton)
+                    .semantics {
+                        this[RecordButtonContainerColor] = CalendarForestGreen
+                        this[RecordButtonContentColor] = Color.White
+                    },
+                shape = RoundedCornerShape(CoffeeVisuals.cornerMedium),
+                colors = ButtonDefaults.buttonColors(containerColor = CalendarForestGreen, contentColor = Color.White),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp, vertical = 10.dp),
+            ) {
                 Text("记录一杯")
             }
         },
@@ -210,17 +244,34 @@ private fun CalendarDisplayModeControl(
     selectedMode: CalendarDisplayMode,
     onModeChange: (CalendarDisplayMode) -> Unit,
 ) {
-    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-        listOf(CalendarDisplayMode.BRAND to "品牌", CalendarDisplayMode.COFFEE to "咖啡").forEachIndexed { index, (mode, label) ->
-            SegmentedButton(
-                selected = selectedMode == mode,
-                onClick = { onModeChange(mode) },
-                shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(index, 2),
-                modifier = Modifier.testTag(
-                    if (mode == CalendarDisplayMode.BRAND) TestTags.CalendarBrandDisplayMode
-                    else TestTags.CalendarCoffeeDisplayMode,
-                ),
-            ) { Text(label) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(CoffeeVisuals.white)
+            .border(BorderStroke(1.dp, CoffeeVisuals.warmOutline), RoundedCornerShape(CoffeeVisuals.cornerMedium))
+            .selectableGroup()
+            .testTag(TestTags.CalendarModeIndicator),
+    ) {
+        listOf(CalendarDisplayMode.BRAND to "品牌", CalendarDisplayMode.COFFEE to "咖啡").forEach { (mode, label) ->
+            val selected = selectedMode == mode
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .defaultMinSize(minHeight = 48.dp)
+                    .clip(RoundedCornerShape(CoffeeVisuals.cornerSmall))
+                    .background(if (selected) CoffeeVisuals.forest else CoffeeVisuals.white)
+                    .selectable(selected = selected, onClick = { onModeChange(mode) }, role = Role.RadioButton)
+                    .semantics { this[CalendarModeTouchTargetMinHeight] = 48f }
+                    .testTag(
+                        if (mode == CalendarDisplayMode.BRAND) TestTags.CalendarBrandDisplayMode
+                        else TestTags.CalendarCoffeeDisplayMode,
+                    )
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(label, color = if (selected) Color.White else CoffeeVisuals.darkCoffee, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
@@ -232,9 +283,41 @@ private fun MonthHeader(year: Int, month: Int, previous: () -> Unit, next: () ->
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TextButton(onClick = previous) { Text("上月") }
-        Text("${year}年${month}月", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        TextButton(onClick = next) { Text("下月") }
+        IconButton(
+            onClick = previous,
+            modifier = Modifier
+                .size(48.dp)
+                .semantics { contentDescription = "上一月" }
+                .testTag(TestTags.PreviousMonth),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(CoffeeVisuals.cornerMedium))
+                    .background(CoffeeVisuals.white)
+                    .border(BorderStroke(1.dp, CoffeeVisuals.warmOutline), RoundedCornerShape(CoffeeVisuals.cornerMedium)),
+                contentAlignment = Alignment.Center,
+            ) { Text("‹", style = MaterialTheme.typography.headlineSmall, color = CoffeeVisuals.forest) }
+        }
+        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+            Text("${year}年${month}月", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 2)
+        }
+        IconButton(
+            onClick = next,
+            modifier = Modifier
+                .size(48.dp)
+                .semantics { contentDescription = "下一月" }
+                .testTag(TestTags.NextMonth),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(CoffeeVisuals.cornerMedium))
+                    .background(CoffeeVisuals.white)
+                    .border(BorderStroke(1.dp, CoffeeVisuals.warmOutline), RoundedCornerShape(CoffeeVisuals.cornerMedium)),
+                contentAlignment = Alignment.Center,
+            ) { Text("›", style = MaterialTheme.typography.headlineSmall, color = CoffeeVisuals.forest) }
+        }
     }
 }
 
@@ -254,49 +337,141 @@ private fun CalendarDay(
     modifier: Modifier = Modifier,
     mode: CalendarDisplayMode,
 ) {
+    val dayCardModifier = if (day.drinkCount > 0) {
+        Modifier
+            .background(CoffeeVisuals.white, RoundedCornerShape(CoffeeVisuals.cornerSmall))
+            .border(BorderStroke(1.dp, CoffeeVisuals.warmOutline), RoundedCornerShape(CoffeeVisuals.cornerSmall))
+    } else {
+        Modifier
+            .background(Color(0xFFF7F3EC), RoundedCornerShape(CoffeeVisuals.cornerSmall))
+    }
     Box(
         modifier = modifier
             .aspectRatio(0.82f)
             .padding(2.dp)
             .alpha(if (day.inDisplayedMonth) 1f else 0.38f)
-            .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(10.dp))
+            .then(dayCardModifier)
             .clickable(onClick = onClick)
             .semantics { contentDescription = "日期 ${day.localDate}" }
-            .padding(4.dp),
+            .testTag(TestTags.CalendarDayPrefix + day.localDate)
     ) {
         if (day.drinkCount == 0) {
-            Text(day.dayNumber.toString(), modifier = Modifier.align(Alignment.Center))
-        } else {
-            LocalAssetImage(
-                primaryPath = if (mode == CalendarDisplayMode.BRAND) day.brandLogoPath else day.imagePath,
-                fallbackPath = if (mode == CalendarDisplayMode.COFFEE) day.brandLogoPath else null,
-                contentDescription = "咖啡图片",
-                modifier = Modifier.matchParentSize().clip(RoundedCornerShape(8.dp)),
+            Text(
+                day.dayNumber.toString(),
+                modifier = Modifier.align(Alignment.Center).testTag(TestTags.CalendarDayNumberPrefix + day.localDate),
             )
-            Text(day.dayNumber.toString(), style = MaterialTheme.typography.labelSmall)
+        } else {
+            val media = selectCalendarMedia(mode, day.imagePath, day.brandLogoPath, day.brandName)
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .padding(3.dp)
+                    .semantics { this[CalendarMediaInsetDp] = 3f }
+                    .testTag(TestTags.CalendarMediaFramePrefix + day.localDate),
+            ) {
+                LocalAssetImage(
+                    primaryPath = media.primaryPath,
+                    fallbackPath = media.fallbackPath,
+                    contentDescription = "咖啡图片",
+                    contentScale = CompleteImageContentScale,
+                    fallbackPainter = media.bundledLogoRes?.let { painterResource(it) },
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(RoundedCornerShape(CoffeeVisuals.cornerSmall))
+                        .background(CoffeeVisuals.white)
+                        .testTag(TestTags.CalendarImagePrefix + day.localDate),
+                )
+            }
             if (day.drinkCount > 1) {
                 Text(
                     "×${day.drinkCount}",
-                    modifier = Modifier.align(Alignment.BottomEnd),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .background(CoffeeVisuals.peach, RoundedCornerShape(CoffeeVisuals.cornerSmall))
+                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                        .testTag(TestTags.CalendarCountBadgePrefix + day.localDate),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
+                    color = CoffeeVisuals.darkCoffee,
                 )
             }
         }
     }
 }
 
+internal enum class CalendarMediaFallback {
+    BUNDLED_LOGO,
+    CUSTOM_LOGO,
+    PLACEHOLDER,
+}
+
+internal data class CalendarMedia(
+    val primaryPath: String?,
+    val fallbackPath: String?,
+    @DrawableRes val bundledLogoRes: Int?,
+    val fallback: CalendarMediaFallback,
+)
+
+internal fun selectCalendarMedia(
+    mode: CalendarDisplayMode,
+    imagePath: String?,
+    brandLogoPath: String?,
+    brandName: String?,
+): CalendarMedia {
+    val bundledLogo = bundledBrandLogoRes(brandName)
+    val fallback = when {
+        bundledLogo != null -> CalendarMediaFallback.BUNDLED_LOGO
+        brandLogoPath != null -> CalendarMediaFallback.CUSTOM_LOGO
+        else -> CalendarMediaFallback.PLACEHOLDER
+    }
+    return when (mode) {
+        CalendarDisplayMode.BRAND -> CalendarMedia(
+            primaryPath = brandLogoPath.takeIf { bundledLogo == null },
+            fallbackPath = null,
+            bundledLogoRes = bundledLogo,
+            fallback = fallback,
+        )
+        CalendarDisplayMode.COFFEE -> CalendarMedia(
+            primaryPath = imagePath,
+            fallbackPath = brandLogoPath.takeIf { bundledLogo == null },
+            bundledLogoRes = bundledLogo,
+            fallback = fallback,
+        )
+    }
+}
+
 @Composable
 private fun MonthSummary(summary: MonthSummaryUi) {
     val rating = summary.averageRatingStars?.let { "%.2f 星".format(it) } ?: "暂无评分"
-    Card(Modifier.fillMaxWidth().padding(bottom = 76.dp)) {
-        Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("${summary.cupCount} 杯")
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 76.dp).testTag(TestTags.MonthSummaryCard),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        SummaryMetric("${summary.cupCount} 杯", Modifier.weight(1f))
+        SummaryMetric(
+            "¥${summary.totalSpendFen / 100}.${(summary.totalSpendFen % 100).toString().padStart(2, '0')}",
+            Modifier.weight(1f).testTag(TestTags.MonthlySpend),
+        )
+        SummaryMetric(rating, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun SummaryMetric(value: String, modifier: Modifier = Modifier) {
+    Box(modifier) {
+        Card(
+            modifier = Modifier.fillMaxWidth().testTag(TestTags.MonthSummaryMetric),
+            shape = RoundedCornerShape(CoffeeVisuals.cornerSmall),
+            colors = CardDefaults.cardColors(containerColor = CoffeeVisuals.white),
+            border = BorderStroke(1.dp, CoffeeVisuals.warmOutline),
+        ) {
             Text(
-                "¥${summary.totalSpendFen / 100}.${(summary.totalSpendFen % 100).toString().padStart(2, '0')}",
-                modifier = Modifier.testTag(TestTags.MonthlySpend),
+                value,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp, horizontal = 8.dp),
+                color = CoffeeVisuals.darkCoffee,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
             )
-            Text(rating)
         }
     }
 }

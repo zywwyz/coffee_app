@@ -71,3 +71,11 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.runner)
 }
+
+// Robolectric Native Graphics is process-global and crashes when mixed into the complete
+// legacy-graphics unit suite. Keep the release suite deterministic; opt in only for PNG review.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    if (!project.hasProperty("calendarPreview")) {
+        exclude("**/CalendarPreviewRenderTest*")
+    }
+}

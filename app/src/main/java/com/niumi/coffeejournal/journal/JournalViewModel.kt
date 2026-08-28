@@ -207,8 +207,9 @@ class JournalViewModel(
     fun setBrewMethod(value: String) = editDraft { it.copy(brewMethod = value.takeUnless(String::isBlank)) }
     fun setNote(value: String) = editDraft { it.copy(note = value) }
     fun setConsumedAt(epochMillis: Long) {
-        if (epochMillis <= 0 || epochMillis > clock.read().epochMillis + MAX_EDITOR_FUTURE_SKEW) {
-            setEditorError("饮用时间不能晚于当前时间")
+        val reading = clock.read()
+        if (epochMillis <= 0 || localDateForEpoch(epochMillis) > reading.localDate) {
+            setEditorError("饮用日期不能晚于今天")
             return
         }
         editDraft { it.copy(consumedAtEpochMillis = epochMillis) }
@@ -379,9 +380,10 @@ class JournalViewModel(
 
     private fun clearCurrentDraft(saveCompleted: Boolean = false) {
         val sourceType = mutableState.value.editor.sourceType
+        val reading = clock.read()
         currentDraft = null
         mutableState.value = mutableState.value.copy(
-            editor = RecordEditorUi(sourceType = sourceType, consumedAtEpochMillis = clock.read().epochMillis),
+            editor = RecordEditorUi(sourceType = sourceType, consumedAtEpochMillis = localNoonEpoch(reading.localDate)),
             saveCompletedToken = mutableState.value.saveCompletedToken + if (saveCompleted) 1 else 0,
         )
     }
@@ -517,7 +519,6 @@ class JournalViewModel(
 
     companion object {
         private const val AUTOSAVE_ERROR = "草稿自动保存失败，请继续编辑重试"
-        private const val MAX_EDITOR_FUTURE_SKEW = 5 * 60 * 1000L
         fun factory(
             journalRepository: JournalRepository,
             catalogRepository: CatalogRepository,

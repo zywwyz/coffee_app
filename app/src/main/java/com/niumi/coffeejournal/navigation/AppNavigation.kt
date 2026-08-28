@@ -1,12 +1,20 @@
 package com.niumi.coffeejournal.navigation
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
@@ -23,8 +31,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Color
+import com.niumi.coffeejournal.ui.CoffeeVisuals
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.catalog.CatalogRepository
 import com.niumi.coffeejournal.catalog.CatalogFeature
@@ -52,11 +72,16 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
+
 import kotlinx.serialization.Serializable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.map
 import com.niumi.coffeejournal.catalog.CatalogDeleteResult
 import com.niumi.coffeejournal.core.model.BrandType
+
+internal val BottomNavigationBackgroundColor = SemanticsPropertyKey<Color>("BottomNavigationBackgroundColor")
+internal val BottomSelectedCapsuleColor = SemanticsPropertyKey<Color>("BottomSelectedCapsuleColor")
+internal val BottomSelectedContentColor = SemanticsPropertyKey<Color>("BottomSelectedContentColor")
 
 @Serializable
 data object Journal : NavKey
@@ -76,13 +101,13 @@ data class ChainBrandProducts(val brandId: String) : NavKey
 private data class RootDestination(
     val key: NavKey,
     val label: String,
-    val iconLabel: String,
+    val iconRes: Int,
 )
 
 private val RootDestinations = listOf(
-    RootDestination(Journal, "咖啡日历", "咖啡"),
-    RootDestination(Catalog, "豆库", "豆"),
-    RootDestination(Insights, "总结", "图"),
+    RootDestination(Journal, "咖啡日历", com.niumi.coffeejournal.R.drawable.ic_calendar_outline),
+    RootDestination(Catalog, "豆库", com.niumi.coffeejournal.R.drawable.ic_catalog_outline),
+    RootDestination(Insights, "总结", com.niumi.coffeejournal.R.drawable.ic_insights_outline),
 )
 
 @Composable
@@ -138,28 +163,13 @@ private fun AppNavigationContent(
 
     Scaffold(
         bottomBar = {
-            if (showRootNavigation)
-            NavigationBar {
-                RootDestinations.forEach { destination ->
-                    NavigationBarItem(
-                        modifier = Modifier.testTag(
-                            when (destination.key) {
-                                Journal -> TestTags.BottomCalendarTab
-                                Catalog -> TestTags.BottomCatalogTab
-                                else -> TestTags.BottomInsightsTab
-                            },
-                        ),
-                        selected = selectedRoot == destination.key,
-                        onClick = {
-                            if (backStack.last() != destination.key) {
-                                backStack.clear()
-                                backStack.add(destination.key)
-                            }
-                        },
-                        icon = { Text(destination.iconLabel) },
-                        label = { Text(destination.label) },
-                    )
-                }
+            if (showRootNavigation) {
+                CoffeeBottomNavigation(selectedRoot = selectedRoot, onRootSelected = { destination ->
+                    if (backStack.last() != destination) {
+                        backStack.clear()
+                        backStack.add(destination)
+                    }
+                })
             }
         },
     ) { contentPadding ->
@@ -215,6 +225,79 @@ private fun AppNavigationContent(
                 }
             },
         )
+    }
+}
+
+@Composable
+internal fun CoffeeBottomNavigation(
+    selectedRoot: NavKey,
+    onRootSelected: (NavKey) -> Unit,
+    navigationInsets: WindowInsets = WindowInsets.navigationBars,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag(TestTags.BottomNavigationSurface)
+            .background(CoffeeVisuals.white)
+            .border(1.dp, CoffeeVisuals.warmOutline)
+            .semantics { this[BottomNavigationBackgroundColor] = CoffeeVisuals.white }
+            .windowInsetsPadding(navigationInsets)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        RootDestinations.forEach { destination ->
+            val selected = selectedRoot == destination.key
+            val tabTag = when (destination.key) {
+                Journal -> TestTags.BottomCalendarTab
+                Catalog -> TestTags.BottomCatalogTab
+                else -> TestTags.BottomInsightsTab
+            }
+            Column(
+                modifier = Modifier.testTag(tabTag)
+                    .weight(1f)
+                    .defaultMinSize(minHeight = 48.dp)
+                    .selectable(selected = selected, role = Role.Tab) {
+                        onRootSelected(destination.key)
+                    }
+                    .semantics(mergeDescendants = true) { }
+                    .padding(horizontal = 2.dp, vertical = 2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Box(
+                    modifier = Modifier.then(
+                        if (selected) Modifier.testTag(TestTags.BottomSelectedCapsule)
+                            .clip(RoundedCornerShape(50))
+                            .background(CoffeeVisuals.peach)
+                            .semantics { this[BottomSelectedCapsuleColor] = CoffeeVisuals.peach }
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                        else Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        painter = painterResource(destination.iconRes), contentDescription = null,
+                        modifier = Modifier.size(24.dp).then(
+                            if (selected) Modifier
+                                .testTag(TestTags.BottomSelectedIconPrefix + destination.label)
+                                .semantics { this[BottomSelectedContentColor] = CoffeeVisuals.forest }
+                            else Modifier,
+                        ),
+                        colorFilter = ColorFilter.tint(if (selected) CoffeeVisuals.forest else CoffeeVisuals.secondaryText),
+                    )
+                }
+                Text(
+                    text = destination.label,
+                    color = if (selected) CoffeeVisuals.forest else CoffeeVisuals.secondaryText,
+                    modifier = if (selected) Modifier
+                        .testTag(TestTags.BottomSelectedLabelPrefix + destination.label)
+                        .semantics { this[BottomSelectedContentColor] = CoffeeVisuals.forest }
+                    else Modifier,
+                    style = MaterialTheme.typography.labelMedium,
+                    textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Clip,
+                )
+            }
+        }
     }
 }
 

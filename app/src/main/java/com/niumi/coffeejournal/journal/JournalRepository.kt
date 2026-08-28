@@ -10,8 +10,6 @@ import com.niumi.coffeejournal.core.model.DrinkDraft
 import com.niumi.coffeejournal.core.model.DrinkRecord
 import com.niumi.coffeejournal.core.model.DrinkSnapshot
 import com.niumi.coffeejournal.core.model.ItemType
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.GregorianCalendar
 import java.util.Locale
 import java.util.TimeZone
@@ -43,11 +41,7 @@ interface Clock {
 object SystemClock : Clock {
     override fun read(): ClockReading {
         val epochMillis = System.currentTimeMillis()
-        val timeZone = TimeZone.getDefault()
-        val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply {
-            this.timeZone = timeZone
-        }
-        return ClockReading(epochMillis, formatter.format(Date(epochMillis)))
+        return ClockReading(epochMillis, localDateForEpoch(epochMillis))
     }
 }
 
@@ -226,7 +220,7 @@ class DefaultJournalRepository(
             ratingHalfStars = null,
             actualPriceFen = catalogRepository.lastPriceFen(item.id),
             note = "",
-            consumedAtEpochMillis = clock.read().epochMillis,
+            consumedAtEpochMillis = clock.read().let { reading -> localNoonEpoch(reading.localDate) },
         )
         drinkStore.startDraft(draft)
         return draft
@@ -255,9 +249,11 @@ class DefaultJournalRepository(
 
     override suspend fun save(draft: DrinkDraft): String {
         val reading = clock.read()
-        val consumedAt = draft.consumedAtEpochMillis.takeIf { it > 0 } ?: reading.epochMillis
-        require(consumedAt <= reading.epochMillis + MAX_FUTURE_SKEW_MILLIS) {
-            "Drink time cannot be in the future"
+        val consumedAt = draft.consumedAtEpochMillis.takeIf { it > 0 }
+            ?: localNoonEpoch(reading.localDate)
+        val consumedLocalDate = localDateForEpoch(consumedAt)
+        require(consumedLocalDate <= reading.localDate) {
+            "Drink date cannot be after today"
         }
         val existing = draft.editingRecordId?.let { drinkStore.get(it) ?: throw RecordNotFoundException(it) }
         val productChanged = existing != null && existing.sourceItemId != draft.sourceItemId
@@ -283,7 +279,7 @@ class DefaultJournalRepository(
         val record = DrinkRecord(
             id = id,
             occurredAtEpochMillis = consumedAt,
-            localDate = localDateForEpoch(consumedAt),
+            localDate = consumedLocalDate,
             itemType = item?.type ?: requireNotNull(existing).itemType,
             sourceItemId = item?.id ?: requireNotNull(existing).sourceItemId,
             brewMethod = draft.brewMethod,
@@ -315,14 +311,32 @@ class RecordNotFoundException(id: String) : IllegalStateException("Drink record 
 class RecordConflictException(id: String) : IllegalStateException("Drink record '$id' was changed elsewhere")
 class DraftConflictException : IllegalStateException("Draft was changed elsewhere")
 
-private const val MAX_FUTURE_SKEW_MILLIS = 5 * 60 * 1000L
-
 private fun Long.saturatingIncrement(): Long = if (this == Long.MAX_VALUE) this else this + 1
 
 internal fun localDateForEpoch(epochMillis: Long, timeZone: TimeZone = TimeZone.getDefault()): String {
     require(epochMillis >= 0)
-    return SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply { this.timeZone = timeZone }
-        .format(Date(epochMillis))
+    val calendar = GregorianCalendar(timeZone, Locale.ROOT).apply { timeInMillis = epochMillis }
+    return "%04d-%02d-%02d".format(
+        Locale.ROOT,
+        calendar.get(GregorianCalendar.YEAR),
+        calendar.get(GregorianCalendar.MONTH) + 1,
+        calendar.get(GregorianCalendar.DAY_OF_MONTH),
+    )
+}
+
+internal fun localNoonEpoch(localDate: String, timeZone: TimeZone = TimeZone.getDefault()): Long {
+    require(localDate.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) { "Date must be yyyy-MM-dd" }
+    val year = localDate.substring(0, 4).toInt()
+    val month = localDate.substring(5, 7).toInt() - 1
+    val day = localDate.substring(8, 10).toInt()
+    val calendar = GregorianCalendar(timeZone, Locale.ROOT).apply {
+        isLenient = false
+        clear()
+        set(year, month, day, 12, 0, 0)
+    }
+    val epochMillis = calendar.timeInMillis
+    require(localDateForEpoch(epochMillis, timeZone) == localDate) { "Date must be yyyy-MM-dd" }
+    return epochMillis
 }
 
 internal fun monthRange(year: Int, month: Int): Pair<String, String> {

@@ -5,6 +5,8 @@ import com.niumi.coffeejournal.R
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
+import java.text.Normalizer
+import java.util.Locale
 
 data class BundledBrandDefinition(
     val brand: Brand,
@@ -27,6 +29,39 @@ val BUNDLED_CHAIN_BRANDS = listOf(
     bundled("seed-chain-peets", "Peet's", R.drawable.brand_logo_peets, 10),
     bundled("seed-chain-arabica", "%Arabica", R.drawable.brand_logo_arabica, 11),
 )
+
+internal fun BundledBrandDefinition.catalogNames(): Set<String> =
+    (aliases + brand.name).mapTo(linkedSetOf(), ::normalizeCatalogName)
+
+fun bundledBrandLogoRes(brandName: String?): Int? {
+    val rawName = brandName ?: return null
+    val normalizedName = try {
+        normalizeCatalogName(rawName)
+    } catch (_: InvalidCatalogNameException) {
+        return null
+    }
+    return BUNDLED_CHAIN_BRANDS.firstOrNull { normalizedName in it.catalogNames() }?.logoRes
+}
+
+internal fun normalizeCatalogName(raw: String): String {
+    val compatible = Normalizer.normalize(raw, Normalizer.Form.NFKC).lowercase(Locale.ROOT)
+    val normalized = StringBuilder()
+    var pendingSpace = false
+    var index = 0
+    while (index < compatible.length) {
+        val codePoint = compatible.codePointAt(index)
+        if (Character.isWhitespace(codePoint) || Character.isSpaceChar(codePoint)) {
+            pendingSpace = normalized.isNotEmpty()
+        } else {
+            if (pendingSpace) normalized.append(' ')
+            normalized.appendCodePoint(codePoint)
+            pendingSpace = false
+        }
+        index += Character.charCount(codePoint)
+    }
+    if (normalized.isEmpty()) throw InvalidCatalogNameException(raw)
+    return normalized.toString()
+}
 
 private fun bundled(id: String, name: String, @DrawableRes logoRes: Int, order: Int, vararg aliases: String) = BundledBrandDefinition(
     brand = Brand(id, BrandType.CHAIN, name, null, MaintenanceMode.MANUAL_ONLY, null),

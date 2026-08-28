@@ -32,6 +32,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.util.TimeZone
 
 class JournalRepositoryTest {
     @Test
@@ -49,7 +50,96 @@ class JournalRepositoryTest {
         assertNull(draft.ratingHalfStars)
         assertEquals("", draft.note)
         assertTrue(draft.revisionId.isNotBlank())
+        assertEquals(localNoonEpoch("2025-08-01"), draft.consumedAtEpochMillis)
         assertEquals(listOf(draft), store.startedDrafts)
+    }
+
+    @Test
+    fun `local noon uses strict canonical date in Shanghai`() {
+        val zone = TimeZone.getTimeZone("Asia/Shanghai")
+
+        val epoch = localNoonEpoch("2025-08-01", zone)
+
+        assertEquals("2025-08-01", localDateForEpoch(epoch, zone))
+        assertEquals(12, java.util.Calendar.getInstance(zone).apply { timeInMillis = epoch }
+            .get(java.util.Calendar.HOUR_OF_DAY))
+        try {
+            localNoonEpoch("2025-8-1", zone)
+            fail("Expected non-canonical date to fail")
+        } catch (_: IllegalArgumentException) { }
+        try {
+            localNoonEpoch("2025-02-29", zone)
+            fail("Expected invalid calendar date to fail")
+        } catch (_: IllegalArgumentException) { }
+    }
+
+    @Test
+    fun `local noon is valid on New York DST transition day`() {
+        val zone = TimeZone.getTimeZone("America/New_York")
+
+        val epoch = localNoonEpoch("2025-03-09", zone)
+
+        assertEquals("2025-03-09", localDateForEpoch(epoch, zone))
+        assertEquals(12, java.util.Calendar.getInstance(zone).apply { timeInMillis = epoch }
+            .get(java.util.Calendar.HOUR_OF_DAY))
+    }
+
+    @Test
+    fun `save accepts today noon when clock reads eight in the morning`() = runBlocking {
+        val zone = TimeZone.getTimeZone("Asia/Shanghai")
+        val previous = TimeZone.getDefault()
+        TimeZone.setDefault(zone)
+        try {
+            val clock = ClockReading(localNoonEpoch("2025-08-01", zone) - 4 * 60 * 60 * 1000, "2025-08-01")
+            val store = FakeDrinkStore()
+            val repository = DefaultJournalRepository(FakeCatalogRepository(item(), 990), store, object : Clock { override fun read() = clock })
+
+            repository.save(draft("today").copy(consumedAtEpochMillis = localNoonEpoch("2025-08-01", zone)))
+
+            assertEquals("2025-08-01", store.saved.single().localDate)
+        } finally {
+            TimeZone.setDefault(previous)
+        }
+    }
+
+    @Test
+    fun `save rejects tomorrow date`() = runBlocking {
+        val zone = TimeZone.getTimeZone("Asia/Shanghai")
+        val previous = TimeZone.getDefault()
+        TimeZone.setDefault(zone)
+        try {
+            val clock = ClockReading(localNoonEpoch("2025-08-01", zone), "2025-08-01")
+            val repository = DefaultJournalRepository(FakeCatalogRepository(item(), 990), FakeDrinkStore(), object : Clock { override fun read() = clock })
+
+            try {
+                repository.save(draft("tomorrow").copy(consumedAtEpochMillis = localNoonEpoch("2025-08-02", zone)))
+                fail("Expected tomorrow to be rejected")
+            } catch (error: IllegalArgumentException) {
+                assertEquals("Drink date cannot be after today", error.message)
+            }
+        } finally {
+            TimeZone.setDefault(previous)
+        }
+    }
+
+    @Test
+    fun `save rejects tomorrow date in Los Angeles default timezone`() = runBlocking {
+        val zone = TimeZone.getTimeZone("America/Los_Angeles")
+        val previous = TimeZone.getDefault()
+        TimeZone.setDefault(zone)
+        try {
+            val clock = ClockReading(localNoonEpoch("2025-08-01", zone), "2025-08-01")
+            val repository = DefaultJournalRepository(FakeCatalogRepository(item(), 990), FakeDrinkStore(), object : Clock { override fun read() = clock })
+
+            try {
+                repository.save(draft("tomorrow-la").copy(consumedAtEpochMillis = localNoonEpoch("2025-08-02", zone)))
+                fail("Expected tomorrow to be rejected")
+            } catch (error: IllegalArgumentException) {
+                assertEquals("Drink date cannot be after today", error.message)
+            }
+        } finally {
+            TimeZone.setDefault(previous)
+        }
     }
 
     @Test
@@ -72,7 +162,7 @@ class JournalRepositoryTest {
 
         val saved = store.saved.single()
         assertEquals(recordId, saved.id)
-        assertEquals(1_754_044_800_123, saved.occurredAtEpochMillis)
+        assertEquals(localNoonEpoch("2025-08-01"), saved.occurredAtEpochMillis)
         assertEquals("2025-08-01", saved.localDate)
         assertEquals(ITEM_ID, saved.sourceItemId)
         assertEquals("生椰拿铁·夏日版", saved.snapshot.itemName)
@@ -177,7 +267,7 @@ class JournalRepositoryTest {
             ),
         )
 
-        assertEquals(0L, store.saved.single().occurredAtEpochMillis)
+        assertEquals(localNoonEpoch("1970-01-01"), store.saved.single().occurredAtEpochMillis)
         assertEquals("1970-01-01", store.saved.single().localDate)
     }
 
@@ -257,6 +347,16 @@ class JournalRepositoryTest {
         flavorNotes = "椰香",
         brewMethod = "冰手冲",
         status = ItemStatus.ACTIVE,
+    )
+
+    private fun draft(revisionId: String) = DrinkDraft(
+        revisionId = revisionId,
+        itemType = ItemType.CHAIN_PRODUCT,
+        sourceItemId = ITEM_ID,
+        brewMethod = null,
+        ratingHalfStars = null,
+        actualPriceFen = null,
+        note = "",
     )
 
     private class FixedClock : Clock {

@@ -10,6 +10,8 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.runtime.mutableStateOf
 import com.niumi.coffeejournal.core.model.Brand
@@ -17,6 +19,7 @@ import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.MaintenanceMode
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
+import com.niumi.coffeejournal.ui.CoffeeVisuals
 import com.niumi.coffeejournal.core.image.ImportedAssetSelection
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
@@ -29,6 +32,23 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], qualifiers = "w320dp-h480dp")
 class CatalogScreenRobolectricTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun `chain brand card provides a white outlined media frame`() {
+        compose.setContent { CoffeeTheme {
+            CatalogScreen(
+                state = state(), onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {},
+                onSaveBrand = {}, onSaveItem = {}, onSetItemStatus = { _, _ -> }, onClearError = {},
+            )
+        } }
+
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.ChainBrandMediaFramePrefix + "brand", useUnmergedTree = true)
+            .assertIsDisplayed()
+            .assert(SemanticsMatcher.expectValue(CatalogMediaFrameColor, CoffeeVisuals.white))
+            .assert(SemanticsMatcher.expectValue(CatalogMediaFrameOutlineColor, CoffeeVisuals.warmOutline))
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CatalogSurface, useUnmergedTree = true)
+            .assert(SemanticsMatcher.expectValue(CatalogSurfaceColor, CoffeeVisuals.cream))
+    }
 
     @Test
     fun `chain catalog shows compact brand grid without legacy metadata`() {
@@ -45,6 +65,7 @@ class CatalogScreenRobolectricTest {
         compose.onNodeWithText("我的豆子").assertIsDisplayed()
         compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.ChainBrandGrid).assertIsDisplayed()
         compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.ChainBrandCardPrefix + "brand").assertIsDisplayed()
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.ChainBrandMediaFramePrefix + "brand", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("新增品牌").assertIsDisplayed()
     }
 

@@ -34,10 +34,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -50,8 +57,13 @@ import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.image.ImportedAssetSelection
 import com.niumi.coffeejournal.core.image.ImagePathResolver
 import com.niumi.coffeejournal.core.image.ResolvedLocalAssetImage
+import com.niumi.coffeejournal.ui.CoffeeVisuals
 
 enum class CatalogAssetKind { BRAND_LOGO, CHAIN_PRODUCT_IMAGE, BEAN_PACKAGE }
+
+internal val CatalogSurfaceColor = SemanticsPropertyKey<Color>("CatalogSurfaceColor")
+internal val CatalogMediaFrameColor = SemanticsPropertyKey<Color>("CatalogMediaFrameColor")
+internal val CatalogMediaFrameOutlineColor = SemanticsPropertyKey<Color>("CatalogMediaFrameOutlineColor")
 
 typealias CatalogAssetPicker = (
     String?,
@@ -117,9 +129,15 @@ fun CatalogScreen(
 ) {
     val selectedBrand = state.brandOverviews.firstOrNull { it.brand.id == state.selectedBrandId }?.brand
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier.fillMaxSize()
+            .testTag(com.niumi.coffeejournal.TestTags.CatalogSurface)
+            .background(CoffeeVisuals.cream)
+            .semantics { this[CatalogSurfaceColor] = CoffeeVisuals.cream },
+    ) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("我的咖啡豆库", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(vertical = 16.dp).testTag(com.niumi.coffeejournal.TestTags.RootScreenTitle))
+            Text("我的咖啡豆库", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(vertical = 16.dp)
+                .testTag(com.niumi.coffeejournal.TestTags.RootScreenTitle))
             TextButton(onClick = onOpenSettings, modifier = Modifier.testTag(com.niumi.coffeejournal.TestTags.RootScreenSettings)) { Text("设置") }
         }
         PrimaryTabRow(selectedTabIndex = state.tab.ordinal) {
@@ -214,13 +232,28 @@ private fun ChainBrandRoot(brands: List<Brand>, imagePathResolver: ImagePathReso
         items(brands, key = { it.id }) { brand ->
             Column(Modifier.testTag(com.niumi.coffeejournal.TestTags.ChainBrandCardPrefix + brand.id).clickable { onOpen(brand.id) }) {
                 val bundled = BUNDLED_CHAIN_BRANDS.firstOrNull { it.brand.id == brand.id }
-                if (bundled != null) Image(painterResource(bundled.logoRes), "品牌 ${brand.name}", modifier = Modifier.fillMaxWidth().aspectRatio(1f), contentScale = ContentScale.Crop)
-                else ResolvedLocalAssetImage(brand.logoAssetId, null, imagePathResolver, "品牌 ${brand.name}", ContentScale.Crop, Modifier.fillMaxWidth().aspectRatio(1f))
+                CatalogMediaFrame(Modifier.testTag(com.niumi.coffeejournal.TestTags.ChainBrandMediaFramePrefix + brand.id)) {
+                    if (bundled != null) Image(painterResource(bundled.logoRes), "品牌 ${brand.name}", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                    else ResolvedLocalAssetImage(brand.logoAssetId, null, imagePathResolver, "品牌 ${brand.name}", ContentScale.Fit, Modifier.fillMaxSize())
+                }
                 Text(brand.name, maxLines = 1)
             }
         }
-        item { Button(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text("新增品牌") } }
+        item {
+            OutlinedButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text("新增品牌") }
+        }
     }
+}
+
+@Composable
+internal fun CatalogMediaFrame(modifier: Modifier = Modifier, image: @Composable () -> Unit) {
+    Box(
+        modifier = modifier.fillMaxWidth().aspectRatio(1f).semantics {
+            this[CatalogMediaFrameColor] = CoffeeVisuals.white
+            this[CatalogMediaFrameOutlineColor] = CoffeeVisuals.warmOutline
+        }.clip(RoundedCornerShape(CoffeeVisuals.cornerMedium))
+            .background(CoffeeVisuals.white).border(1.dp, CoffeeVisuals.warmOutline, RoundedCornerShape(CoffeeVisuals.cornerMedium)).padding(12.dp),
+    ) { image() }
 }
 
 @Composable
@@ -231,14 +264,15 @@ private fun BrandCard(
     Card(
         modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onOpen)
             .semantics { contentDescription = "品牌 ${overview.brand.name}" },
+        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = CoffeeVisuals.white),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(overview.brand.name, style = MaterialTheme.typography.titleMedium)
                 TextButton(onClick = onEdit, enabled = enabled) { Text("编辑") }
             }
-            Text("${overview.itemCount} 个产品")
-            if (selected) Text("已展开", color = MaterialTheme.colorScheme.primary)
+            Text("${overview.itemCount} 个产品", color = CoffeeVisuals.secondaryText)
+            if (selected) Text("已展开", color = CoffeeVisuals.forest)
         }
     }
 }
@@ -250,12 +284,16 @@ private fun ItemCard(
     onStatus: (ItemStatus) -> Unit,
     enabled: Boolean,
 ) {
-    Card(Modifier.fillMaxWidth()) {
+    Card(Modifier.fillMaxWidth(), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = CoffeeVisuals.white)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(item.name, style = MaterialTheme.typography.titleMedium)
             listOfNotNull(item.origin, item.processing, item.roastLevel, item.flavorNotes).takeIf { it.isNotEmpty() }
                 ?.let { Text(it.joinToString(" · ")) }
-            Text(if (item.type == ItemType.PERSONAL_BEAN) item.status.beanStatusLabel() else statusLabel(item.status))
+            Text(
+                if (item.type == ItemType.PERSONAL_BEAN) item.status.beanStatusLabel() else statusLabel(item.status),
+                color = CoffeeVisuals.forest,
+                modifier = Modifier.background(CoffeeVisuals.mint, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 3.dp),
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onEdit, enabled = enabled) { Text("编辑") }
                 if (item.status != ItemStatus.ARCHIVED) {

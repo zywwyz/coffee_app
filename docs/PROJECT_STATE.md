@@ -8,12 +8,12 @@
 
 ## 当前开发阶段
 
-纯手动连锁豆库改版已实现并完成发布矩阵验证；规格状态为 implemented。Release APK 尚未签名，仅供后续配置个人签名后发布。
+日历视觉一致性、纯手动连锁豆库与 date-only 记录均已实现并完成发布矩阵验证；规格状态为 implemented。Release APK 尚未签名，仅供后续配置个人签名后发布。
 
 ## 技术栈与架构
 
-- Kotlin、Jetpack Compose、Material 3；ViewModel + StateFlow；Room / SQLite；Coil。
-- Room 数据库为 v3，包含 v1→v2、v2→v3 迁移。
+- Kotlin、Jetpack Compose、Material 3；ViewModel + StateFlow；Room / SQLite；本地 Bitmap 缩略图加载。
+- Room 数据库为 v3，包含 v1→v2、v2→v3 迁移；本次日历视觉验收未变更 schema。
 - `journal`：记录、草稿、日历显示模式、详情与不可变快照。
 - `catalog`：12 个内置 Logo、连锁品牌/产品的手动 CRUD、个人豆库。
 - `core/image`：本地原始图片字节、引用、产品图→Logo→占位图回退及变更协调。
@@ -23,7 +23,8 @@
 ## 已实现范围
 
 - App 与首 Tab 改名“咖啡日历”，无全局顶栏；底部根 Tab 为咖啡日历、豆库、总结。
-- 月历“品牌／咖啡”显示模式持久化；图片原字节保存、CenterCrop 显示并按三级回退。
+- 月历“品牌／咖啡”显示模式持久化；记录以本地中午的 date-only 语义保存，图片导入缩略图上限为 512px，并按三级回退。
+- 根导航使用自定义底部 Tab；12 个内置 Logo 随包提供。Robolectric 预览测试从真实 CoffeeTheme、根 Scaffold、JournalScreen 和 CoffeeBottomNavigation 生成日历 PNG，instrumentation 验收镜像关键路径（仍需设备执行）。
 - 12 个预置连锁品牌 Logo，三列品牌网格与双列产品网格。
 - 手动新增/编辑/删除自定义连锁品牌与 Logo；手动新增/编辑/删除产品名称、黑咖/果咖/奶咖分类和可选实拍图。内置品牌不可删，自定义品牌需先删除产品。
 - 个人豆库、记录补记/编辑/删除、草稿保留与快捷新增产品后自动选中。
@@ -52,6 +53,7 @@
 - `app/src/main/java/com/niumi/coffeejournal/backup` — 备份校验、兼容与恢复。
 - `README.md` — 安装、使用、离线/隐私说明。
 - `docs/superpowers/specs/2026-08-16-manual-chain-catalog-redesign-design.md` — 已实施规格。
+- `docs/superpowers/specs/2026-08-23-calendar-visual-parity-design.md` — 已实施的日历、Logo、日期和底栏视觉规格。
 
 ## 构建与验证
 
@@ -64,14 +66,20 @@ export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 ./.local-tools/gradle-8.13/bin/gradle clean testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease --no-daemon
 ```
 
-发布矩阵（2026-08-22）：
+当前发布矩阵（2026-08-28）：
 
-- `clean testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease`：PASS，137 tasks。
-- 单元／Robolectric：305 tests，0 fail／error／skip；lint：0 errors、11 warnings。
+- `clean testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease --offline --no-daemon`：PASS，137 tasks；随后完整 `testDebugUnitTest` 复验 353 tests，0 fail／error／skip；lint 0 errors、7 warnings。
+- Native Graphics 预览使用仓库内用户实拍图 fixture；运行 `-PcalendarPreview --rerun-tasks --tests com.niumi.coffeejournal.CalendarPreviewRenderTest`，不需要环境变量或运行机器绝对图片路径。
 - Room schema：v3 已导出；12 个内置品牌 Logo 已打包。
-- Debug APK：`app/build/outputs/apk/debug/app-debug.apk`，13,399,186 bytes，SHA-256 `c77034ede25b9bcfc86d7b18b688a6a8a3793b288aca60a8b545ee546bdcd41c`；v1/v2 签名均为 true，debug 证书 SHA-256 `60d2e7…a3713`。
-- AndroidTest APK：1,143,024 bytes，SHA-256 `ab118…932f`。
-- Release APK（unsigned）：9,578,339 bytes，SHA-256 `080c…84bd`。
+- Debug APK：`app/build/outputs/apk/debug/app-debug.apk`，14,355,034 bytes，SHA-256 `8e0b9552ebdcf150a7b8c7613b379f306a74deb93f502f5b550692a4f7513a50`。
+- AndroidTest APK：1,138,253 bytes，SHA-256 `99f40321016e6025de942dc1c040ad0c1cca9d1442b9c88bad3dd12b6ea675e2`。
+- Release APK（unsigned）：10,670,671 bytes，SHA-256 `a09ea22d0dc8f0a372cc9d840e57522f160def3970942d00b29f2da5e148dab3`。
 - 合并 Manifest：minSdk 23、targetSdk 36；仅有包内 `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`，无 `INTERNET`／相机／定位／存储权限；`allowBackup`、`fullBackupContent`、`cleartextTraffic` 均为 false，并声明 `dataExtractionRules`。
 
-最后更新：2026-08-22
+预览与发布复验（2026-08-28）：
+
+- `CalendarPreviewRenderTest` 不再依赖运行机器绝对路径；测试资源 `fixtures/IMG_20260815_193103.png` 是用户提供的真实产品照片。以真实 `CoffeeTheme`、`JournalScreen` 和底栏渲染 `app/build/reports/previews/calendar-brand-cream-forest.png`、`calendar-coffee-cream-forest.png`；预览固定 2026-08，31 个当月日期都有记录，覆盖 12 个内置品牌，断言图片不使用占位、记录日不显示日期号、8 月 20 日保留 ×2。
+- latest Logo commit `7cf3634` 后，强制 `-PcalendarPreview --rerun-tasks` 复跑 `CalendarPreviewRenderTest` + `ReleaseAcceptanceRobolectricTest`：PASS（3 tests）。真实 Compose 预览完整 SHA-256：品牌 `d531d031267a3bd70a1d17841aff8deaefbc22280ccfc2114f1b3591908e81ae`（565,234 bytes）；咖啡 `5c9ee5e0b821db58843abd1910f5d545712b0c87c5ef8c56f5715fd8033717e9`（531,213 bytes）。
+- 全量矩阵与随后完整单测复验均通过；最终计数 353 tests，0 failures / errors / skips，lint 0 errors、7 warnings。预览测试同时断言标题、月份导航、摘要和三个底栏入口均处于首屏可见状态。
+
+最后更新：2026-08-28

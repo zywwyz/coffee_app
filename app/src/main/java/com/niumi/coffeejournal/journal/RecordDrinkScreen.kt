@@ -1,11 +1,12 @@
 package com.niumi.coffeejournal.journal
 
 import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.background
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,6 +15,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -28,17 +32,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.CatalogItem
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.TestTags
-import java.text.SimpleDateFormat
+import com.niumi.coffeejournal.ui.CoffeeVisuals
 import java.util.Calendar
-import java.util.Date
 import java.util.Locale
+
+internal val RecordEditorSurfaceColor = SemanticsPropertyKey<Color>("RecordEditorSurfaceColor")
+internal val RecordEditorSectionColor = SemanticsPropertyKey<Color>("RecordEditorSectionColor")
+internal val RecordSaveContainerColor = SemanticsPropertyKey<Color>("RecordSaveContainerColor")
 
 @Composable
 fun RecordDrinkScreen(
@@ -66,7 +76,8 @@ fun RecordDrinkScreen(
     var confirmDiscard by remember { mutableStateOf(false) }
     val selectedTime = Calendar.getInstance().apply { timeInMillis = state.consumedAtEpochMillis }
     Column(
-        modifier = Modifier.fillMaxSize().testTag(TestTags.RecordEditorScroll)
+        modifier = Modifier.fillMaxSize().background(CoffeeVisuals.cream).testTag(TestTags.RecordEditorScroll)
+            .semantics { this[RecordEditorSurfaceColor] = CoffeeVisuals.cream }
             .verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -97,50 +108,28 @@ fun RecordDrinkScreen(
         if (state.sourceType == ItemType.CHAIN_PRODUCT && state.selectedBrandId != null) {
             OutlinedButton(onClick = onAddProduct, enabled = !editorBusy) { Text("添加新产品") }
         }
-        Text("饮用日期与时间", style = MaterialTheme.typography.titleMedium)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        EditorSection("date") {
+            Text("饮用日期", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
                 enabled = !editorBusy && hasDraft,
                 onClick = {
                     DatePickerDialog(
                         context,
                         { _, year, month, day ->
-                            val changed = Calendar.getInstance().apply {
-                                timeInMillis = state.consumedAtEpochMillis
-                                set(year, month, day)
-                            }
-                            onConsumedAtChange(changed.timeInMillis)
+                            onConsumedAtChange(localNoonEpoch("%04d-%02d-%02d".format(Locale.ROOT, year, month + 1, day)))
                         },
                         selectedTime.get(Calendar.YEAR),
                         selectedTime.get(Calendar.MONTH),
                         selectedTime.get(Calendar.DAY_OF_MONTH),
                     ).show()
                 },
-            ) { Text(SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Date(state.consumedAtEpochMillis))) }
-            OutlinedButton(
-                enabled = !editorBusy && hasDraft,
-                onClick = {
-                    TimePickerDialog(
-                        context,
-                        { _, hour, minute ->
-                            val changed = Calendar.getInstance().apply {
-                                timeInMillis = state.consumedAtEpochMillis
-                                set(Calendar.HOUR_OF_DAY, hour)
-                                set(Calendar.MINUTE, minute)
-                                set(Calendar.SECOND, 0)
-                                set(Calendar.MILLISECOND, 0)
-                            }
-                            onConsumedAtChange(changed.timeInMillis)
-                        },
-                        selectedTime.get(Calendar.HOUR_OF_DAY),
-                        selectedTime.get(Calendar.MINUTE),
-                        true,
-                    ).show()
-                },
-            ) { Text(SimpleDateFormat("HH:mm", Locale.ROOT).format(Date(state.consumedAtEpochMillis))) }
+            ) { Text(localDateForEpoch(state.consumedAtEpochMillis)) }
+            }
         }
-        Text("评分（支持半星）", style = MaterialTheme.typography.titleMedium)
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        EditorSection("rating") {
+            Text("评分（支持半星）", style = MaterialTheme.typography.titleMedium)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             FilterChip(
                 selected = state.ratingHalfStars == null,
                 enabled = !editorBusy,
@@ -154,6 +143,7 @@ fun RecordDrinkScreen(
                     onClick = { onRatingChange(halfStars) },
                     label = { Text("${halfStars / 2.0}") },
                 )
+            }
             }
         }
         OutlinedTextField(
@@ -192,7 +182,9 @@ fun RecordDrinkScreen(
         Button(
             onClick = onSave,
             enabled = state.selectedItemId != null && state.priceValid && !editorBusy,
-            modifier = Modifier.fillMaxWidth().testTag(TestTags.ConfirmSave),
+            modifier = Modifier.fillMaxWidth().testTag(TestTags.ConfirmSave)
+                .semantics { this[RecordSaveContainerColor] = CoffeeVisuals.forest },
+            colors = ButtonDefaults.buttonColors(containerColor = CoffeeVisuals.forest, contentColor = CoffeeVisuals.white),
         ) {
             Text(
                 when {
@@ -244,6 +236,18 @@ private fun <T> SelectionRow(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun EditorSection(tag: String, content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().testTag(TestTags.RecordEditorSectionPrefix + tag)
+            .semantics { this[RecordEditorSectionColor] = CoffeeVisuals.white },
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(CoffeeVisuals.cornerMedium),
+        colors = CardDefaults.cardColors(containerColor = CoffeeVisuals.white),
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
     }
 }
 

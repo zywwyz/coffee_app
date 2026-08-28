@@ -25,6 +25,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.TimeZone
 
 class JournalViewModelTest {
     @Test
@@ -53,6 +54,22 @@ class JournalViewModelTest {
 
         assertEquals("last.webp", cell.imagePath)
         assertEquals(2, cell.drinkCount)
+    }
+
+    @Test
+    fun `month projection uses representative record brand name and leaves empty days blank`() {
+        val cell = projectMonth(
+            2026,
+            8,
+            listOf(
+                record("first", "2026-08-05", 100, null, brandName = "库迪"),
+                record("last", "2026-08-05", 200, null, brandName = "瑞幸"),
+            ),
+        ).single { it.localDate == "2026-08-05" }
+        val emptyCell = projectMonth(2026, 8, emptyList()).single { it.localDate == "2026-08-06" }
+
+        assertEquals("瑞幸", cell.brandName)
+        assertNull(emptyCell.brandName)
     }
 
     @Test
@@ -121,6 +138,34 @@ class JournalViewModelTest {
     }
 
     @Test
+    fun `today noon is accepted at eight in the morning and tomorrow is rejected`() = runBlocking {
+        val previous = TimeZone.getDefault()
+        val zone = TimeZone.getTimeZone("Asia/Shanghai")
+        TimeZone.setDefault(zone)
+        try {
+            val journal = FakeJournalRepository()
+            val todayNoon = localNoonEpoch("2025-08-01", zone)
+            val viewModel = JournalViewModel(
+                journal, FakeCatalogRepository(), 2026, 8, CoroutineScope(Job() + Dispatchers.Unconfined),
+                clock = object : Clock {
+                    override fun read() = ClockReading(todayNoon - 4 * 60 * 60 * 1000, "2025-08-01")
+                },
+            )
+            viewModel.selectItem(ItemType.CHAIN_PRODUCT, "item")
+            yield()
+
+            viewModel.setConsumedAt(todayNoon)
+            yield()
+            assertEquals(todayNoon, journal.drafts.last().consumedAtEpochMillis)
+
+            viewModel.setConsumedAt(localNoonEpoch("2025-08-02", zone))
+            assertEquals("饮用日期不能晚于今天", viewModel.uiState.value.editor.errorMessage)
+        } finally {
+            TimeZone.setDefault(previous)
+        }
+    }
+
+    @Test
     fun `duplicate save tap is rejected while save is running`() = runBlocking {
         val journal = FakeJournalRepository().apply { saveGate = CompletableDeferred() }
         val scope = CoroutineScope(Job() + Dispatchers.Unconfined)
@@ -174,6 +219,27 @@ class JournalViewModelTest {
         assertNull(viewModel.uiState.value.editor.editingRecordId)
         assertNull(viewModel.uiState.value.editor.selectedItemId)
         assertFalse(viewModel.uiState.value.editor.saving)
+    }
+
+    @Test
+    fun `saving an untouched edit preserves its original epoch`() = runBlocking {
+        val originalEpoch = 1_754_006_460_000L
+        val journal = FakeJournalRepository().apply {
+            editDraft = DrinkDraft(
+                "edit-revision", ItemType.CHAIN_PRODUCT, "item", null, null, null, "",
+                consumedAtEpochMillis = originalEpoch, editingRecordId = "record", expectedRecordRevision = 0,
+            )
+        }
+        val viewModel = JournalViewModel(
+            journal, FakeCatalogRepository(), 2026, 8, CoroutineScope(Job() + Dispatchers.Unconfined),
+        )
+
+        viewModel.editRecord("record")
+        yield()
+        viewModel.save()
+        yield()
+
+        assertEquals(originalEpoch, journal.savedDraft?.consumedAtEpochMillis)
     }
 
     @Test
@@ -331,6 +397,7 @@ class JournalViewModelTest {
         image: String?,
         price: Long? = null,
         rating: Int? = null,
+        brandName: String = "瑞幸",
     ) = DrinkRecord(
         id = id,
         occurredAtEpochMillis = timestamp,
@@ -341,7 +408,7 @@ class JournalViewModelTest {
         ratingHalfStars = rating,
         actualPriceFen = price,
         note = null,
-        snapshot = DrinkSnapshot("瑞幸", "拿铁", null, null, image),
+        snapshot = DrinkSnapshot(brandName, "拿铁", null, null, image),
     )
 
     private fun item() = CatalogItem(
@@ -362,6 +429,7 @@ class JournalViewModelTest {
         val month = MutableStateFlow<List<DrinkRecord>>(emptyList())
         val drafts = mutableListOf<DrinkDraft>()
         var saveCalls = 0
+        var savedDraft: DrinkDraft? = null
         var saveGate: CompletableDeferred<Unit>? = null
         var saveError: Exception? = null
         var editDraft: DrinkDraft? = null
@@ -381,6 +449,7 @@ class JournalViewModelTest {
 
         override suspend fun save(draft: DrinkDraft): String {
             saveCalls++
+            savedDraft = draft
             saveGate?.await()
             saveError?.let { throw it }
             return "record"
