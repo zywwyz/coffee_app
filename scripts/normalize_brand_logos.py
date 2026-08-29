@@ -26,14 +26,14 @@ OUTPUT_DIRECTORY = PROJECT_ROOT / "app/src/main/res/drawable-nodpi"
 # (left, top, right, bottom) in the 853x1843 user-approved old preview.
 # These are intentionally narrow around the four confirmed display marks, not calendar UI.
 REFERENCE_DERIVATIVES = {
-    "brand_logo_arabica.png": (26, 1390, 124, 1482),
-    "brand_logo_luckin.png": (140, 1390, 237, 1480),
-    "brand_logo_cotti.png": (488, 1035, 580, 1098),
-    "brand_logo_kcoffee.png": (712, 1400, 810, 1470),
-    "brand_logo_manner.png": (26, 1570, 124, 1640),
-    "brand_logo_hucoffee.png": (370, 1205, 468, 1290),
+    "brand_logo_arabica.png": (24, 1387, 125, 1484),
+    "brand_logo_luckin.png": (140, 1378, 237, 1480),
+    "brand_logo_cotti.png": (485, 1035, 580, 1098),
+    "brand_logo_kcoffee.png": (711, 1400, 810, 1470),
+    "brand_logo_manner.png": (26, 1556, 124, 1640),
+    "brand_logo_hucoffee.png": (370, 1205, 468, 1300),
     "brand_logo_nowwa.png": (598, 1020, 694, 1120),
-    "brand_logo_peets.png": (712, 1220, 810, 1305),
+    "brand_logo_peets.png": (712, 1212, 810, 1305),
 }
 
 
