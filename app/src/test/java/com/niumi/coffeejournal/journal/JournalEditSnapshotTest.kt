@@ -9,6 +9,7 @@ import com.niumi.coffeejournal.core.model.DrinkRecord
 import com.niumi.coffeejournal.core.model.DrinkSnapshot
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.ItemType
+import com.niumi.coffeejournal.core.model.ChainProductKind
 import com.niumi.coffeejournal.core.model.MaintenanceMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -80,6 +81,7 @@ class JournalEditSnapshotTest {
         private val item = CatalogItem(
             "new-item", "brand", ItemType.CHAIN_PRODUCT, "目录新产品", "new-image",
             "新产地", "水洗", null, null, "冰", ItemStatus.ACTIVE,
+            chainProductKind = ChainProductKind.BLACK,
         )
         override fun observeBrands(type: BrandType): Flow<List<Brand>> = flowOf(listOf(brand))
         override fun observeItems(brandId: String): Flow<List<CatalogItem>> = flowOf(listOf(item))

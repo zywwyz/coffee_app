@@ -9,6 +9,8 @@ import com.niumi.coffeejournal.core.database.CoffeeDatabase
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.CatalogItem
+import com.niumi.coffeejournal.core.model.ChainProductKind
+import com.niumi.coffeejournal.core.model.CoffeeType
 import com.niumi.coffeejournal.core.model.DrinkDraft
 import com.niumi.coffeejournal.core.model.DrinkRecord
 import com.niumi.coffeejournal.core.model.ItemStatus
@@ -35,6 +37,66 @@ import org.robolectric.annotation.Config
 import java.util.TimeZone
 
 class JournalRepositoryTest {
+    @Test
+    fun `save snapshots personal beans as hand brew and chain products by catalog kind`() = runBlocking {
+        val cases = listOf(
+            ItemType.PERSONAL_BEAN to null to CoffeeType.HAND_BREW,
+            ItemType.CHAIN_PRODUCT to ChainProductKind.BLACK to CoffeeType.BLACK,
+            ItemType.CHAIN_PRODUCT to ChainProductKind.FRUIT to CoffeeType.FRUIT,
+            ItemType.CHAIN_PRODUCT to ChainProductKind.MILK to CoffeeType.MILK,
+        )
+        cases.forEachIndexed { index, (typeAndKind, expectedType) ->
+            val (type, kind) = typeAndKind
+            val store = FakeDrinkStore()
+            val repository = DefaultJournalRepository(
+                FakeCatalogRepository(item().copy(type = type, chainProductKind = kind), null), store, FixedClock(),
+            )
+
+            repository.save(draft("save-$index").copy(itemType = type))
+
+            assertEquals(expectedType, store.saved.single().snapshot.coffeeType)
+        }
+    }
+
+    @Test
+    fun `save rejects pending chain product kind`() = runBlocking {
+        val repository = DefaultJournalRepository(
+            FakeCatalogRepository(item().copy(chainProductKind = ChainProductKind.PENDING), null), FakeDrinkStore(), FixedClock(),
+        )
+
+        try {
+            repository.save(draft("pending"))
+            fail("Expected pending product to be rejected")
+        } catch (error: IllegalArgumentException) {
+            assertTrue(error.message.orEmpty().contains("PENDING"))
+        }
+    }
+
+    @Test
+    fun `edit without changing product preserves existing snapshot coffee type`() = runBlocking {
+        val existing = savedRecord(CoffeeType.FRUIT)
+        val store = FakeDrinkStore().apply { records[existing.id] = existing }
+        val repository = DefaultJournalRepository(
+            FakeCatalogRepository(item().copy(chainProductKind = ChainProductKind.MILK), null), store, FixedClock(),
+        )
+
+        repository.save(editDraft(existing))
+
+        assertEquals(CoffeeType.FRUIT, store.updated.single().snapshot.coffeeType)
+    }
+
+    @Test
+    fun `edit with changed product refreshes snapshot coffee type`() = runBlocking {
+        val existing = savedRecord(CoffeeType.FRUIT)
+        val store = FakeDrinkStore().apply { records[existing.id] = existing }
+        val replacement = item().copy(id = "replacement", chainProductKind = ChainProductKind.MILK)
+        val repository = DefaultJournalRepository(FakeCatalogRepository(replacement, null), store, FixedClock())
+
+        repository.save(editDraft(existing).copy(sourceItemId = replacement.id))
+
+        assertEquals(CoffeeType.MILK, store.updated.single().snapshot.coffeeType)
+    }
+
     @Test
     fun `new draft carries catalog brew method and last price`() = runBlocking {
         val catalog = FakeCatalogRepository(item(), lastPriceFen = 990)
@@ -347,6 +409,7 @@ class JournalRepositoryTest {
         flavorNotes = "椰香",
         brewMethod = "冰手冲",
         status = ItemStatus.ACTIVE,
+        chainProductKind = ChainProductKind.MILK,
     )
 
     private fun draft(revisionId: String) = DrinkDraft(
@@ -357,6 +420,19 @@ class JournalRepositoryTest {
         ratingHalfStars = null,
         actualPriceFen = null,
         note = "",
+    )
+
+    private fun savedRecord(coffeeType: CoffeeType) = DrinkRecord(
+        id = "record-1", occurredAtEpochMillis = localNoonEpoch("2025-08-01"), localDate = "2025-08-01",
+        itemType = ItemType.CHAIN_PRODUCT, sourceItemId = ITEM_ID, brewMethod = null, ratingHalfStars = null,
+        actualPriceFen = null, note = null,
+        snapshot = com.niumi.coffeejournal.core.model.DrinkSnapshot("品牌", "旧产品", null, null, null, coffeeType = coffeeType),
+    )
+
+    private fun editDraft(record: DrinkRecord) = DrinkDraft(
+        revisionId = "edit", itemType = record.itemType, sourceItemId = record.sourceItemId, brewMethod = null,
+        ratingHalfStars = null, actualPriceFen = null, note = "", editingRecordId = record.id,
+        expectedRecordRevision = record.revision,
     )
 
     private class FixedClock : Clock {
@@ -410,6 +486,8 @@ class JournalRepositoryTest {
         val deletedIds = mutableListOf<String>()
         val observedRanges = mutableListOf<Pair<String, String>>()
         val startedDrafts = mutableListOf<DrinkDraft>()
+        val records = mutableMapOf<String, DrinkRecord>()
+        val updated = mutableListOf<DrinkRecord>()
 
         override suspend fun startDraft(draft: DrinkDraft) {
             startedDrafts += draft
@@ -423,6 +501,14 @@ class JournalRepositoryTest {
         override suspend fun saveRecordAndClearDraft(record: DrinkRecord, revisionId: String) {
             saved += record
             clearedBySave += record.id
+        }
+
+        override suspend fun get(recordId: String): DrinkRecord? = records[recordId]
+
+        override suspend fun update(record: DrinkRecord, expectedRevision: Int, draftRevisionId: String): Boolean {
+            updated += record
+            records[record.id] = record
+            return true
         }
 
         override suspend fun saveDraft(draft: DrinkDraft): Boolean {

@@ -243,6 +243,7 @@ class JournalRecordLifecycleTest {
         private val brand = Brand("brand", BrandType.CHAIN, "测试品牌", null, MaintenanceMode.MANUAL_ONLY, null)
         private val item = CatalogItem(
             "item", "brand", ItemType.CHAIN_PRODUCT, "测试产品", null, null, null, null, null, "热", ItemStatus.ACTIVE,
+            chainProductKind = com.niumi.coffeejournal.core.model.ChainProductKind.BLACK,
         )
         override fun observeBrands(type: BrandType): Flow<List<Brand>> = flowOf(listOf(brand))
         override fun observeItems(brandId: String): Flow<List<CatalogItem>> = flowOf(listOf(item))
@@ -259,6 +260,6 @@ class JournalRecordLifecycleTest {
             brewMethod, ratingHalfStars, actualPriceFen, note,
             snapshot.brandName, snapshot.itemName, snapshot.origin, snapshot.processing,
             snapshot.imageAssetId, snapshot.brandLogoAssetId, snapshot.roastLevel,
-            snapshot.flavorNotes, createdAtEpochMillis, updatedAtEpochMillis, revision,
+            snapshot.flavorNotes, snapshot.coffeeType.name, createdAtEpochMillis, updatedAtEpochMillis, revision,
         )
 }

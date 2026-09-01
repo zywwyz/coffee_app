@@ -13,6 +13,55 @@ import org.robolectric.RuntimeEnvironment
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class CoffeeDatabaseMigrationTest {
+    @Test fun `migration 3 to 4 snapshots coffee type from active catalog or legacy names`() {
+        val database = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(RuntimeEnvironment.getApplication())
+                .name(null).callback(object : SupportSQLiteOpenHelper.Callback(3) {
+                    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) = Unit
+                    override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                }).build(),
+        ).writableDatabase
+        database.apply {
+            execSQL("CREATE TABLE catalog_items (id TEXT PRIMARY KEY NOT NULL, type TEXT NOT NULL, name TEXT NOT NULL, category TEXT, chainProductKind TEXT)")
+            execSQL("CREATE TABLE drink_records (id TEXT PRIMARY KEY NOT NULL, itemType TEXT NOT NULL, sourceItemId TEXT NOT NULL, snapshotItemName TEXT NOT NULL)")
+            listOf(
+                arrayOf("catalog-black", "CHAIN_PRODUCT", "美式", null, "BLACK"),
+                arrayOf("catalog-fruit", "CHAIN_PRODUCT", "柠檬气泡美式", null, "FRUIT"),
+                arrayOf("catalog-milk", "CHAIN_PRODUCT", "生椰拿铁", null, "MILK"),
+                arrayOf("catalog-pending", "CHAIN_PRODUCT", "待分类", null, "PENDING"),
+            ).forEach { row -> execSQL("INSERT INTO catalog_items VALUES (?,?,?,?,?)", row) }
+            listOf(
+                arrayOf("bean", "PERSONAL_BEAN", "bean-id", "手冲豆"),
+                arrayOf("black", "CHAIN_PRODUCT", "catalog-black", "旧名"),
+                arrayOf("fruit", "CHAIN_PRODUCT", "catalog-fruit", "旧名"),
+                arrayOf("milk", "CHAIN_PRODUCT", "catalog-milk", "旧名"),
+                arrayOf("deleted-fruit", "CHAIN_PRODUCT", "deleted", "柠檬气泡美式"),
+                arrayOf("pending-milk", "CHAIN_PRODUCT", "catalog-pending", "燕麦拿铁"),
+                arrayOf("missing-milk", "CHAIN_PRODUCT", "missing-milk", "燕麦拿铁"),
+                arrayOf("unknown", "CHAIN_PRODUCT", "missing", "季节限定"),
+            ).forEach { row -> execSQL("INSERT INTO drink_records VALUES (?,?,?,?)", row) }
+        }
+
+        CoffeeDatabase.MIGRATION_3_4.migrate(database)
+
+        database.apply {
+            query("PRAGMA user_version").use { it.moveToFirst(); assertEquals(4, it.getInt(0)) }
+            query("SELECT id,snapshotCoffeeType FROM drink_records ORDER BY id").use { cursor ->
+                val types = mutableMapOf<String, String>()
+                while (cursor.moveToNext()) types[cursor.getString(0)] = cursor.getString(1)
+                assertEquals("HAND_BREW", types["bean"])
+                assertEquals("BLACK", types["black"])
+                assertEquals("FRUIT", types["fruit"])
+                assertEquals("MILK", types["milk"])
+                assertEquals("FRUIT", types["deleted-fruit"])
+                assertEquals("MILK", types["pending-milk"])
+                assertEquals("MILK", types["missing-milk"])
+                assertEquals("BLACK", types["unknown"])
+            }
+            close()
+        }
+    }
+
     @Test fun `migration 2 to 3 classifies legacy chain products and leaves personal beans unset`() {
         val database = FrameworkSQLiteOpenHelperFactory().create(
             SupportSQLiteOpenHelper.Configuration.builder(RuntimeEnvironment.getApplication())

@@ -282,6 +282,7 @@ class LocalBackupManager(
             if (exists(db, "SELECT 1 FROM draft_records WHERE consumedAtEpochMillis<=0 OR (editingRecordId IS NULL)!=(expectedRecordRevision IS NULL) OR expectedRecordRevision<0 LIMIT 1")) throw BackupValidationException("草稿时间或编辑版本无效")
         }
         if (databaseVersion(db) >= 3) validateCatalogDomains(db)
+        if (databaseVersion(db) >= 4 && exists(db, "SELECT 1 FROM drink_records WHERE snapshotCoffeeType NOT IN ('BLACK','FRUIT','MILK','HAND_BREW') LIMIT 1")) throw BackupValidationException("记录咖啡类型字段无效")
     }
 
     private fun databaseVersion(db: SQLiteDatabase): Int =
@@ -442,6 +443,7 @@ class LocalBackupManager(
                 "draft_records" to setOf("consumedAtEpochMillis", "editingRecordId", "expectedRecordRevision"),
             ),
             3 to mapOf("catalog_items" to setOf("chainProductKind")),
+            4 to mapOf("drink_records" to setOf("snapshotCoffeeType")),
         )
         private const val MAX_ARCHIVE_BYTES=512L*1024*1024; private const val MAX_IMAGE_BYTES=20L*1024*1024
     }

@@ -44,6 +44,9 @@ enum class ItemType {
 @Serializable
 enum class ChainProductKind { BLACK, FRUIT, MILK, PENDING }
 
+@Serializable
+enum class CoffeeType { BLACK, FRUIT, MILK, HAND_BREW }
+
 fun legacyChainProductKind(name: String, category: String?): ChainProductKind {
     val normalized = "$name ${category.orEmpty()}".lowercase()
     return when {
@@ -78,6 +81,7 @@ data class DrinkSnapshot(
     val brandLogoAssetId: String? = null,
     val roastLevel: String? = null,
     val flavorNotes: String? = null,
+    val coffeeType: CoffeeType = CoffeeType.BLACK,
 )
 
 @Serializable

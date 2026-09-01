@@ -9,6 +9,7 @@ import com.niumi.coffeejournal.core.database.DrinkRecordEntity
 import com.niumi.coffeejournal.core.model.DrinkDraft
 import com.niumi.coffeejournal.core.model.DrinkRecord
 import com.niumi.coffeejournal.core.model.DrinkSnapshot
+import com.niumi.coffeejournal.core.model.CoffeeType
 import com.niumi.coffeejournal.core.model.ItemType
 import java.util.GregorianCalendar
 import java.util.Locale
@@ -270,6 +271,7 @@ class DefaultJournalRepository(
                 brandLogoAssetId = brand.logoAssetId,
                 roastLevel = item.roastLevel,
                 flavorNotes = item.flavorNotes,
+                coffeeType = item.coffeeTypeForSnapshot(),
             )
         }
         val id = existing?.id ?: UUID.randomUUID().toString()
@@ -367,6 +369,7 @@ private fun DrinkRecordEntity.toDomain() = DrinkRecord(
         brandLogoAssetId = snapshotBrandLogoAssetId,
         roastLevel = snapshotRoastLevel,
         flavorNotes = snapshotFlavorNotes,
+        coffeeType = enumValue("DrinkRecordEntity.snapshotCoffeeType", snapshotCoffeeType),
     ),
     createdAtEpochMillis = createdAtEpochMillis,
     updatedAtEpochMillis = updatedAtEpochMillis,
@@ -391,6 +394,7 @@ private fun DrinkRecord.toEntity() = DrinkRecordEntity(
     snapshotBrandLogoAssetId = snapshot.brandLogoAssetId,
     snapshotRoastLevel = snapshot.roastLevel,
     snapshotFlavorNotes = snapshot.flavorNotes,
+    snapshotCoffeeType = snapshot.coffeeType.name,
     createdAtEpochMillis = createdAtEpochMillis,
     updatedAtEpochMillis = updatedAtEpochMillis,
     revision = revision,
@@ -402,3 +406,14 @@ private inline fun <reified T : Enum<T>> enumValue(field: String, value: String)
     } catch (_: IllegalArgumentException) {
         throw DataIntegrityException(field, value)
     }
+
+private fun com.niumi.coffeejournal.core.model.CatalogItem.coffeeTypeForSnapshot(): CoffeeType = when (type) {
+    ItemType.PERSONAL_BEAN -> CoffeeType.HAND_BREW
+    ItemType.CHAIN_PRODUCT -> when (chainProductKind) {
+        com.niumi.coffeejournal.core.model.ChainProductKind.BLACK -> CoffeeType.BLACK
+        com.niumi.coffeejournal.core.model.ChainProductKind.FRUIT -> CoffeeType.FRUIT
+        com.niumi.coffeejournal.core.model.ChainProductKind.MILK -> CoffeeType.MILK
+        com.niumi.coffeejournal.core.model.ChainProductKind.PENDING, null ->
+            throw IllegalArgumentException("Cannot save CHAIN_PRODUCT with PENDING coffee type")
+    }
+}

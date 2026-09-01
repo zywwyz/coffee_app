@@ -133,7 +133,7 @@ class BackupManagerTest {
         assertRejectedWithoutWrites("manifest version", manifestVersion = 1, mutate = { })
     }
 
-    @Test fun `v3 domain-invalid catalog kinds are rejected before active writes`() = runBlocking {
+    @Test fun `v4 domain-invalid catalog kinds are rejected before active writes`() = runBlocking {
         listOf(
             "other" to "INSERT INTO catalog_items (id,brandId,type,name,normalizedName,status,chainProductKind) VALUES ('item-other','brand-other','CHAIN_PRODUCT','产品','产品','ACTIVE','OTHER')",
             "chain-null" to "INSERT INTO catalog_items (id,brandId,type,name,normalizedName,status,chainProductKind) VALUES ('item-null','brand-chain-null','CHAIN_PRODUCT','产品','产品','ACTIVE',NULL)",
@@ -473,7 +473,7 @@ class BackupManagerTest {
     private fun count(table:String):Int=database.openHelper.writableDatabase.query("SELECT COUNT(*) FROM $table").use{it.moveToFirst();it.getInt(0)}
     private suspend fun assertRejectedWithoutWrites(
         name: String,
-        manifestVersion: Int = 3,
+        manifestVersion: Int = 4,
         manifestCounts: BackupCounts? = null,
         expectedMessage: String? = null,
         mutate: SQLiteDatabase.() -> Unit,
@@ -523,6 +523,7 @@ class BackupManagerTest {
     }
     private fun SQLiteDatabase.rebuildAsSchemaV2() {
         execSQL("ALTER TABLE catalog_items DROP COLUMN chainProductKind")
+        execSQL("ALTER TABLE drink_records DROP COLUMN snapshotCoffeeType")
         execSQL("UPDATE room_master_table SET identity_hash='e34586f75354c95386a2ba92f7121b27' WHERE id=42")
         execSQL("PRAGMA user_version=2")
     }

@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CatalogUpdateEntity::class,
         DraftRecordEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class CoffeeDatabase : RoomDatabase() {
@@ -40,7 +40,7 @@ abstract class CoffeeDatabase : RoomDatabase() {
                 context.applicationContext,
                 CoffeeDatabase::class.java,
                 DATABASE_NAME,
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(database: SupportSQLiteDatabase) {
@@ -67,6 +67,26 @@ abstract class CoffeeDatabase : RoomDatabase() {
                       ELSE 'PENDING' END
                 """.trimIndent())
                 database.execSQL("PRAGMA user_version = 3")
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE drink_records ADD COLUMN snapshotCoffeeType TEXT NOT NULL DEFAULT 'BLACK'")
+                database.execSQL("""
+                    UPDATE drink_records SET snapshotCoffeeType = CASE
+                      WHEN itemType = 'PERSONAL_BEAN' THEN 'HAND_BREW'
+                      WHEN itemType = 'CHAIN_PRODUCT' AND (
+                        SELECT chainProductKind FROM catalog_items WHERE id = drink_records.sourceItemId
+                      ) IN ('BLACK', 'FRUIT', 'MILK') THEN (
+                        SELECT chainProductKind FROM catalog_items WHERE id = drink_records.sourceItemId
+                      )
+                      WHEN snapshotItemName LIKE '%果%' OR snapshotItemName LIKE '%柠檬%' OR snapshotItemName LIKE '%橙%' OR snapshotItemName LIKE '%葡萄%' OR snapshotItemName LIKE '%莓%' OR snapshotItemName LIKE '%桃%' OR snapshotItemName LIKE '%气泡%' THEN 'FRUIT'
+                      WHEN lower(snapshotItemName) LIKE '%拿铁%' OR lower(snapshotItemName) LIKE '%澳白%' OR lower(snapshotItemName) LIKE '%卡布%' OR lower(snapshotItemName) LIKE '%dirty%' OR lower(snapshotItemName) LIKE '%奶%' OR lower(snapshotItemName) LIKE '%乳%' THEN 'MILK'
+                      WHEN snapshotItemName LIKE '%黑咖%' OR snapshotItemName LIKE '%美式%' OR snapshotItemName LIKE '%浓缩%' OR snapshotItemName LIKE '%冷萃%' OR snapshotItemName LIKE '%手冲%' THEN 'BLACK'
+                      ELSE 'BLACK' END
+                """.trimIndent())
+                database.execSQL("PRAGMA user_version = 4")
             }
         }
     }

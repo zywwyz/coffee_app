@@ -131,6 +131,7 @@ data class DrinkRecordEntity(
     val snapshotBrandLogoAssetId: String? = null,
     val snapshotRoastLevel: String? = null,
     val snapshotFlavorNotes: String? = null,
+    @ColumnInfo(defaultValue = "'BLACK'") val snapshotCoffeeType: String = "BLACK",
     @ColumnInfo(defaultValue = "1") val createdAtEpochMillis: Long = occurredAtEpochMillis,
     @ColumnInfo(defaultValue = "1") val updatedAtEpochMillis: Long = occurredAtEpochMillis,
     @ColumnInfo(defaultValue = "0") val revision: Int = 0,
