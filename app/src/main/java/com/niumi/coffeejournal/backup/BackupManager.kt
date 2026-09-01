@@ -399,9 +399,7 @@ class LocalBackupManager(
     }
     /** Copy every current record column explicitly; v1-v3 derive the v4 snapshot field. */
     private fun copyDrinkRecords(source: SQLiteDatabase, destination: SupportSQLiteDatabase, sourceVersion: Int, check: () -> Unit, onCopied: () -> Unit) {
-        val catalogKinds = if (sourceVersion >= 3) source.rawQuery("SELECT id, chainProductKind FROM catalog_items", null).use { cursor ->
-            buildMap { while (cursor.moveToNext()) cursor.getString(1)?.takeIf { it in setOf("BLACK", "FRUIT", "MILK") }?.let { put(cursor.getString(0), it) } }
-        } else emptyMap()
+        val catalogKinds = sourceCatalogCoffeeTypes(source, sourceVersion, check)
         source.rawQuery("SELECT * FROM drink_records", null).use { cursor ->
             while (cursor.moveToNext()) {
                 check()
@@ -419,6 +417,12 @@ class LocalBackupManager(
             }
         }
     }
+    private fun sourceCatalogCoffeeTypes(source: SQLiteDatabase, sourceVersion: Int, check: () -> Unit): Map<String, String> =
+        if (sourceVersion >= 3) source.rawQuery("SELECT id, type, chainProductKind FROM catalog_items", null).use { cursor ->
+            buildMap { while (cursor.moveToNext()) { check(); if (cursor.getString(1) == "CHAIN_PRODUCT") cursor.getString(2)?.takeIf { it in setOf("BLACK", "FRUIT", "MILK") }?.let { put(cursor.getString(0), it) } } }
+        } else source.rawQuery("SELECT id, type, name, category FROM catalog_items", null).use { cursor ->
+            buildMap { while (cursor.moveToNext()) { check(); if (cursor.getString(1) == "CHAIN_PRODUCT") legacyChainProductKind(cursor.getString(2), cursor.getString(3)).name.takeIf { it in setOf("BLACK", "FRUIT", "MILK") }?.let { put(cursor.getString(0), it) } } }
+        }
     private fun legacySnapshotCoffeeType(cursor: Cursor, catalogKinds: Map<String, String>): String {
         if (cursor.getString(cursor.getColumnIndexOrThrow("itemType")) == "PERSONAL_BEAN") return "HAND_BREW"
         catalogKinds[cursor.getString(cursor.getColumnIndexOrThrow("sourceItemId"))]?.let { return it }

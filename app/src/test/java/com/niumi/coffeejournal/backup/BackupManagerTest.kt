@@ -257,7 +257,7 @@ class BackupManagerTest {
             source.catalogItemDao().upsert(CatalogItemEntity("v1-item", "v1-brand", "CHAIN_PRODUCT", "旧版拿铁", "旧版拿铁", "v1-snapshot", status = "ACTIVE", chainProductKind = "MILK"))
             source.drinkDao().insert(DrinkRecordEntity(
                 id = "v1-record", occurredAtEpochMillis = occurredAt, localDate = "2023-11-14", itemType = "CHAIN_PRODUCT", sourceItemId = "v1-item",
-                note = "来自 v1", snapshotBrandName = "旧版品牌", snapshotItemName = "旧版拿铁",
+                note = "来自 v1", snapshotBrandName = "旧版品牌", snapshotItemName = "冰美式",
                 snapshotImageAssetId = "v1-snapshot", snapshotBrandLogoAssetId = "v1-logo",
                 createdAtEpochMillis = occurredAt - 99, updatedAtEpochMillis = occurredAt - 1, revision = 8,
             ))
@@ -333,7 +333,7 @@ class BackupManagerTest {
             source.brandDao().upsert(BrandEntity("v2-brand", "CHAIN", "旧品牌", "旧品牌", "v2-image", "MANUAL_ONLY", null))
             listOf("fruit" to "柠檬气泡美式", "milk" to "生椰拿铁", "black" to "冰美式", "pending" to "季节限定").forEach { (id, name) ->
                 source.catalogItemDao().upsert(CatalogItemEntity(id, "v2-brand", "CHAIN_PRODUCT", name, name, "v2-image", status = "ACTIVE", chainProductKind = "PENDING"))
-                source.drinkDao().insert(DrinkRecordEntity("v2-record-$id", 2, "2026-08-01", "CHAIN_PRODUCT", id, snapshotBrandName = "旧品牌", snapshotItemName = name))
+                source.drinkDao().insert(DrinkRecordEntity("v2-record-$id", 2, "2026-08-01", "CHAIN_PRODUCT", id, snapshotBrandName = "旧品牌", snapshotItemName = if (id == "fruit") "冰美式" else name))
             }
             source.catalogUpdateDao().insert(CatalogUpdateEntity("v2-update", "v2-brand", 3, "CONFIRMED", null, null))
             source.draftDao().upsert(DraftRecordEntity("v2-draft", "v2-revision", "CHAIN_PRODUCT", "fruit", null, null, null, "草稿", 4))
