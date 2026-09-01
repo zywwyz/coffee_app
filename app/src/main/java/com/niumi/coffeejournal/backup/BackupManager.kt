@@ -164,6 +164,7 @@ class LocalBackupManager(
                     clearAll(active)
                     openBackupDatabase(backup.decoded.databaseFile).use { copyAll(it, active, backup.manifest.schemaVersion, localPaths, check, onRestoreRowCopied) }
                     validateCatalogDomains(active)
+                    validateRestoredDrinkCoffeeTypes(active)
                     checkForeignKeys(active)
                     withContext(operationContext) { beforeRestoreCommit() }
                     check()
@@ -282,7 +283,7 @@ class LocalBackupManager(
             if (exists(db, "SELECT 1 FROM draft_records WHERE consumedAtEpochMillis<=0 OR (editingRecordId IS NULL)!=(expectedRecordRevision IS NULL) OR expectedRecordRevision<0 LIMIT 1")) throw BackupValidationException("草稿时间或编辑版本无效")
         }
         if (databaseVersion(db) >= 3) validateCatalogDomains(db)
-        if (databaseVersion(db) >= 4 && exists(db, "SELECT 1 FROM drink_records WHERE snapshotCoffeeType NOT IN ('BLACK','FRUIT','MILK','HAND_BREW') LIMIT 1")) throw BackupValidationException("记录咖啡类型字段无效")
+        if (databaseVersion(db) >= 4 && exists(db, "SELECT 1 FROM drink_records WHERE snapshotCoffeeType NOT IN ('BLACK','FRUIT','MILK','HAND_BREW') OR (itemType='PERSONAL_BEAN' AND snapshotCoffeeType!='HAND_BREW') OR (itemType='CHAIN_PRODUCT' AND snapshotCoffeeType='HAND_BREW') LIMIT 1")) throw BackupValidationException("记录咖啡类型字段无效")
     }
 
     private fun databaseVersion(db: SQLiteDatabase): Int =
@@ -294,6 +295,11 @@ class LocalBackupManager(
     private fun validateCatalogDomains(db: SupportSQLiteDatabase) {
         db.query("SELECT 1 FROM catalog_items WHERE (type='CHAIN_PRODUCT' AND (chainProductKind IS NULL OR chainProductKind NOT IN ('BLACK','FRUIT','MILK','PENDING'))) OR (type='PERSONAL_BEAN' AND chainProductKind IS NOT NULL) LIMIT 1").use {
             if (it.moveToFirst()) throw BackupValidationException("产品分类字段无效")
+        }
+    }
+    private fun validateRestoredDrinkCoffeeTypes(db: SupportSQLiteDatabase) {
+        db.query("SELECT 1 FROM drink_records WHERE snapshotCoffeeType NOT IN ('BLACK','FRUIT','MILK','HAND_BREW') OR (itemType='PERSONAL_BEAN' AND snapshotCoffeeType!='HAND_BREW') OR (itemType='CHAIN_PRODUCT' AND snapshotCoffeeType='HAND_BREW') LIMIT 1").use {
+            if (it.moveToFirst()) throw BackupValidationException("记录咖啡类型字段无效")
         }
     }
 
@@ -346,7 +352,8 @@ class LocalBackupManager(
         source.rawQuery("SELECT * FROM image_assets", null).use { copyCursor(it, destination, "image_assets", localPaths, check, onCopied) }
         source.rawQuery("SELECT * FROM brands", null).use { copyCursor(it, destination, "brands", emptyMap(), check, onCopied) }
         copyCatalogItems(source, destination, sourceVersion, check, onCopied)
-        listOf("drink_records", "catalog_updates", "draft_records").forEach { table -> check(); source.rawQuery("SELECT * FROM $table", null).use { copyCursor(it,destination,table,emptyMap(),check,onCopied) } }
+        copyDrinkRecords(source, destination, sourceVersion, check, onCopied)
+        listOf("catalog_updates", "draft_records").forEach { table -> check(); source.rawQuery("SELECT * FROM $table", null).use { copyCursor(it,destination,table,emptyMap(),check,onCopied) } }
     }
     private fun copyTable(source: SupportSQLiteDatabase, destination: SupportSQLiteDatabase, table: String, check: () -> Unit) { source.query("SELECT * FROM $table").use { copyCursor(it,destination,table,emptyMap(),check) } }
     private fun copyCursor(cursor: Cursor, destination: SupportSQLiteDatabase, table: String, localPaths: Map<String,String>, check: () -> Unit, onCopied: () -> Unit = {}) {
@@ -389,6 +396,37 @@ class LocalBackupManager(
                 onCopied()
             }
         }
+    }
+    /** Copy every current record column explicitly; v1-v3 derive the v4 snapshot field. */
+    private fun copyDrinkRecords(source: SQLiteDatabase, destination: SupportSQLiteDatabase, sourceVersion: Int, check: () -> Unit, onCopied: () -> Unit) {
+        val catalogKinds = if (sourceVersion >= 3) source.rawQuery("SELECT id, chainProductKind FROM catalog_items", null).use { cursor ->
+            buildMap { while (cursor.moveToNext()) cursor.getString(1)?.takeIf { it in setOf("BLACK", "FRUIT", "MILK") }?.let { put(cursor.getString(0), it) } }
+        } else emptyMap()
+        source.rawQuery("SELECT * FROM drink_records", null).use { cursor ->
+            while (cursor.moveToNext()) {
+                check()
+                val values = ContentValues(DRINK_RECORD_COLUMNS.size)
+                DRINK_RECORD_COLUMNS.forEach { column ->
+                    when (column) {
+                        "snapshotCoffeeType" -> values.put(column, if (sourceVersion >= 4) cursor.getString(cursor.getColumnIndexOrThrow(column)) else legacySnapshotCoffeeType(cursor, catalogKinds))
+                        "createdAtEpochMillis", "updatedAtEpochMillis" -> values.put(column, if (sourceVersion >= 2) cursor.getLong(cursor.getColumnIndexOrThrow(column)) else cursor.getLong(cursor.getColumnIndexOrThrow("occurredAtEpochMillis")))
+                        "revision" -> values.put(column, if (sourceVersion >= 2) cursor.getLong(cursor.getColumnIndexOrThrow(column)) else 0L)
+                        else -> putCursorValue(values, column, cursor, cursor.getColumnIndexOrThrow(column))
+                    }
+                }
+                if (destination.insert("drink_records", SQLiteDatabase.CONFLICT_ABORT, values) < 0) throw BackupValidationException("写入 drink_records 失败")
+                onCopied()
+            }
+        }
+    }
+    private fun legacySnapshotCoffeeType(cursor: Cursor, catalogKinds: Map<String, String>): String {
+        if (cursor.getString(cursor.getColumnIndexOrThrow("itemType")) == "PERSONAL_BEAN") return "HAND_BREW"
+        catalogKinds[cursor.getString(cursor.getColumnIndexOrThrow("sourceItemId"))]?.let { return it }
+        return legacyChainProductKind(cursor.getString(cursor.getColumnIndexOrThrow("snapshotItemName")), null)
+            .name.takeIf { it != "PENDING" } ?: "BLACK"
+    }
+    private fun putCursorValue(values: ContentValues, name: String, cursor: Cursor, index: Int) {
+        when (cursor.getType(index)) { Cursor.FIELD_TYPE_NULL -> values.putNull(name); Cursor.FIELD_TYPE_INTEGER -> values.put(name, cursor.getLong(index)); Cursor.FIELD_TYPE_FLOAT -> values.put(name, cursor.getDouble(index)); Cursor.FIELD_TYPE_STRING -> values.put(name, cursor.getString(index)); Cursor.FIELD_TYPE_BLOB -> values.put(name, cursor.getBlob(index)) }
     }
     private fun cursorValue(cursor: Cursor, index: Int): Any? = when (cursor.getType(index)) {
         Cursor.FIELD_TYPE_NULL -> null
@@ -437,6 +475,7 @@ class LocalBackupManager(
         private const val ROOM_MASTER_TABLE = "room_master_table"
         private const val ANDROID_METADATA_TABLE = "android_metadata"
         private val CATALOG_ITEM_COLUMNS = listOf("id", "brandId", "type", "name", "normalizedName", "imageAssetId", "origin", "processing", "roastLevel", "flavorNotes", "brewMethod", "status", "caffeineMg", "officialDescription", "purchaseDate", "roastDate", "sourceUrl", "sourceFetchedAt", "informationCompleteness", "category", "specificationDescription", "imageSourceUrl", "chainProductKind")
+        private val DRINK_RECORD_COLUMNS = listOf("id", "occurredAtEpochMillis", "localDate", "itemType", "sourceItemId", "brewMethod", "ratingHalfStars", "actualPriceFen", "note", "snapshotBrandName", "snapshotItemName", "snapshotOrigin", "snapshotProcessing", "snapshotImageAssetId", "snapshotBrandLogoAssetId", "snapshotRoastLevel", "snapshotFlavorNotes", "snapshotCoffeeType", "createdAtEpochMillis", "updatedAtEpochMillis", "revision")
         private val ADDED_COLUMNS = mapOf(
             2 to mapOf(
                 "drink_records" to setOf("createdAtEpochMillis", "updatedAtEpochMillis", "revision"),

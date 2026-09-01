@@ -61,7 +61,7 @@ class BackupManagerTest {
         database.brandDao().upsert(brand)
         val item = CatalogItemEntity("item", "brand", "CHAIN_PRODUCT", "拿铁", "拿铁", "logo", status = "ACTIVE", chainProductKind = "MILK")
         database.catalogItemDao().upsert(item)
-        database.drinkDao().insert(DrinkRecordEntity("record", 2, "2026-08-01", "CHAIN_PRODUCT", "item", snapshotBrandName="瑞幸", snapshotItemName="拿铁", snapshotImageAssetId="logo", snapshotBrandLogoAssetId="logo"))
+        database.drinkDao().insert(DrinkRecordEntity("record", 2, "2026-08-01", "CHAIN_PRODUCT", "item", snapshotBrandName="瑞幸", snapshotItemName="拿铁", snapshotImageAssetId="logo", snapshotBrandLogoAssetId="logo", snapshotCoffeeType="MILK"))
         database.catalogUpdateDao().insert(CatalogUpdateEntity("update", "brand", 3, "CONFIRMED", null, null))
         database.draftDao().upsert(DraftRecordEntity("current", "rev", "CHAIN_PRODUCT", "item", null, null, null, "note", 4))
         val archive = File(context.cacheDir, "roundtrip-${System.nanoTime()}.zip")
@@ -81,7 +81,7 @@ class BackupManagerTest {
 
         assertNotNull(database.brandDao().get("brand"))
         assertNotNull(database.catalogItemDao().get("item"))
-        assertNotNull(database.drinkDao().get("record"))
+        assertEquals("MILK", database.drinkDao().get("record")?.snapshotCoffeeType)
         assertNotNull(database.draftDao().get("current"))
         val restored = database.imageAssetDao().get("logo")!!
         assertTrue(File(restored.localPath).isFile)
@@ -184,6 +184,23 @@ class BackupManagerTest {
         }
     }
 
+    @Test fun `v4 invalid drink snapshot coffee types are rejected before active writes`() = runBlocking {
+        listOf(
+            "other" to "OTHER",
+            "personal-milk" to "MILK",
+            "chain-hand-brew" to "HAND_BREW",
+        ).forEach { (name, coffeeType) ->
+            assertRejectedWithoutWrites(
+                name = "snapshot-$name",
+                manifestCounts = BackupCounts(0, 0, 1, 0, 0, 0),
+                expectedMessage = "记录咖啡类型字段无效",
+            ) {
+                val itemType = if (name == "personal-milk") "PERSONAL_BEAN" else "CHAIN_PRODUCT"
+                execSQL("INSERT INTO drink_records (id,occurredAtEpochMillis,localDate,itemType,sourceItemId,snapshotBrandName,snapshotItemName,snapshotCoffeeType) VALUES ('record-$name',1,'2026-08-01','$itemType','source-$name','品牌','产品','$coffeeType')")
+            }
+        }
+    }
+
     @Test fun `v3 catalog column cannot be smuggled through a declared v2 backup`() = runBlocking {
         listOf("OTHER", null, "BLACK").forEachIndexed { index, kind ->
             val name = "v2-smuggle-$index"
@@ -264,6 +281,7 @@ class BackupManagerTest {
                 assertEquals(occurredAt, record.createdAtEpochMillis)
                 assertEquals(occurredAt, record.updatedAtEpochMillis)
                 assertEquals(0, record.revision)
+                assertEquals("MILK", record.snapshotCoffeeType)
                 assertEquals("v1-snapshot", record.snapshotImageAssetId)
                 assertEquals("v1-logo", record.snapshotBrandLogoAssetId)
             }
@@ -292,12 +310,13 @@ class BackupManagerTest {
             source.brandDao().upsert(BrandEntity("v2-brand", "CHAIN", "旧品牌", "旧品牌", null, "MANUAL_ONLY", null))
             listOf("fruit" to "柠檬气泡美式", "milk" to "生椰拿铁", "black" to "冰美式", "pending" to "季节限定").forEach { (id, name) ->
                 source.catalogItemDao().upsert(CatalogItemEntity(id, "v2-brand", "CHAIN_PRODUCT", name, name, status = "ACTIVE", chainProductKind = "PENDING"))
+                source.drinkDao().insert(DrinkRecordEntity("v2-record-$id", 2, "2026-08-01", "CHAIN_PRODUCT", id, snapshotBrandName = "旧品牌", snapshotItemName = name))
             }
             source.close()
             val sourceFile = context.getDatabasePath(sourceName)
             SQLiteDatabase.openDatabase(sourceFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { it.rebuildAsSchemaV2() }
             val archive = File(context.cacheDir, "schema-v2-${System.nanoTime()}.zip")
-            SafeBackupArchiveCodec().encode(archive, sourceFile, emptyList(), BackupCounts(1, 4, 0, 0, 0, 0), 2, 1)
+            SafeBackupArchiveCodec().encode(archive, sourceFile, emptyList(), BackupCounts(1, 4, 4, 0, 0, 0), 2, 1)
 
             manager.restore(manager.validate(Uri.fromFile(archive)))
 
@@ -305,6 +324,36 @@ class BackupManagerTest {
             assertEquals("MILK", database.catalogItemDao().get("milk")!!.chainProductKind)
             assertEquals("BLACK", database.catalogItemDao().get("black")!!.chainProductKind)
             assertEquals("PENDING", database.catalogItemDao().get("pending")!!.chainProductKind)
+            assertEquals("FRUIT", database.drinkDao().get("v2-record-fruit")!!.snapshotCoffeeType)
+            assertEquals("MILK", database.drinkDao().get("v2-record-milk")!!.snapshotCoffeeType)
+            assertEquals("BLACK", database.drinkDao().get("v2-record-black")!!.snapshotCoffeeType)
+            assertEquals("BLACK", database.drinkDao().get("v2-record-pending")!!.snapshotCoffeeType)
+        } finally {
+            if (source.isOpen) source.close()
+            context.deleteDatabase(sourceName)
+        }
+    }
+
+    @Test fun `v3 record restore prefers its catalog coffee kind over the legacy name`() = runBlocking {
+        val sourceName = "v3-source-${System.nanoTime()}.db"
+        val source = Room.databaseBuilder(context, CoffeeDatabase::class.java, sourceName).allowMainThreadQueries().build()
+        try {
+            source.brandDao().upsert(BrandEntity("v3-brand", "CHAIN", "旧品牌", "旧品牌", null, "MANUAL_ONLY", null))
+            source.catalogItemDao().upsert(CatalogItemEntity("v3-item", "v3-brand", "CHAIN_PRODUCT", "果味特调", "果味特调", status = "ACTIVE", chainProductKind = "FRUIT"))
+            source.drinkDao().insert(DrinkRecordEntity("v3-record", 2, "2026-08-01", "CHAIN_PRODUCT", "v3-item", snapshotBrandName = "旧品牌", snapshotItemName = "冰美式"))
+            source.close()
+            val sourceFile = context.getDatabasePath(sourceName)
+            SQLiteDatabase.openDatabase(sourceFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use {
+                it.execSQL("ALTER TABLE drink_records DROP COLUMN snapshotCoffeeType")
+                it.execSQL("UPDATE room_master_table SET identity_hash='f93d8a13b1b47c68acba071ab2cf88cf' WHERE id=42")
+                it.execSQL("PRAGMA user_version=3")
+            }
+            val archive = File(context.cacheDir, "schema-v3-${System.nanoTime()}.zip")
+            SafeBackupArchiveCodec().encode(archive, sourceFile, emptyList(), BackupCounts(1, 1, 1, 0, 0, 0), 3, 1)
+
+            manager.restore(manager.validate(Uri.fromFile(archive)))
+
+            assertEquals("FRUIT", database.drinkDao().get("v3-record")!!.snapshotCoffeeType)
         } finally {
             if (source.isOpen) source.close()
             context.deleteDatabase(sourceName)
