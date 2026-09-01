@@ -37,6 +37,10 @@ class ReleaseAcceptanceRobolectricTest {
     fun `calendar renders bundled brand fallbacks and usable controls for August 2026`() = runBlocking {
         val app = compose.activity.application as InMemoryCoffeeJournalApp
         appToClose = app
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("2026年", substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("2026年8月").assertIsDisplayed()
         seedAugust(app)
 
         compose.waitUntil(10_000) {
@@ -63,6 +67,10 @@ class ReleaseAcceptanceRobolectricTest {
         compose.onNodeWithTag(TestTags.NextMonth).performClick()
         compose.onNodeWithText("2026年8月").assertIsDisplayed()
         compose.onNodeWithText("总结").performClick()
+        compose.onNodeWithText("2026年 8月").assertIsDisplayed()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag(TestTags.MonthlySpend).fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithTag(TestTags.MonthlySpend).assertIsDisplayed()
         compose.onNodeWithText("咖啡日历").performClick()
         compose.onNodeWithTag(TestTags.RecordButton).performClick()

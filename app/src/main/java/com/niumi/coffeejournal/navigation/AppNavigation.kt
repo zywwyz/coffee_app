@@ -65,6 +65,8 @@ import com.niumi.coffeejournal.journal.JournalFeature
 import com.niumi.coffeejournal.journal.JournalRepository
 import com.niumi.coffeejournal.journal.CalendarDisplayPreference
 import com.niumi.coffeejournal.journal.DefaultCalendarDisplayPreference
+import com.niumi.coffeejournal.journal.Clock
+import com.niumi.coffeejournal.journal.SystemClock
 import com.niumi.coffeejournal.insights.InsightsFeature
 import com.niumi.coffeejournal.backup.BackupManager
 import com.niumi.coffeejournal.settings.SettingsScreen
@@ -114,6 +116,7 @@ private val RootDestinations = listOf(
 fun AppNavigation(
     journalRepository: JournalRepository? = null,
     catalogRepository: CatalogRepository? = null,
+    journalClock: Clock = SystemClock,
     calendarDisplayPreference: CalendarDisplayPreference = DefaultCalendarDisplayPreference,
     imagePathResolver: ImagePathResolver = ImagePathResolver { null },
     imageStore: ImageStore? = null,
@@ -123,6 +126,7 @@ fun AppNavigation(
     if (assetImportRequester != null) {
         AppNavigationContent(
             journalRepository, catalogRepository, imagePathResolver,
+            journalClock = journalClock,
             calendarDisplayPreference = calendarDisplayPreference,
             imageStore = imageStore,
             assetImportRequester = assetImportRequester,
@@ -132,6 +136,7 @@ fun AppNavigation(
         WholeImageImportHost(imageStore) { requester ->
             AppNavigationContent(
                 journalRepository, catalogRepository, imagePathResolver,
+                journalClock = journalClock,
                 calendarDisplayPreference = calendarDisplayPreference,
                 imageStore = imageStore,
                 assetImportRequester = requester,
@@ -141,6 +146,7 @@ fun AppNavigation(
     } else {
         AppNavigationContent(
             journalRepository, catalogRepository, imagePathResolver,
+            journalClock = journalClock,
             calendarDisplayPreference = calendarDisplayPreference,
             backupManager = backupManager,
         )
@@ -152,6 +158,7 @@ private fun AppNavigationContent(
     journalRepository: JournalRepository?,
     catalogRepository: CatalogRepository?,
     imagePathResolver: ImagePathResolver,
+    journalClock: Clock,
     calendarDisplayPreference: CalendarDisplayPreference,
     imageStore: ImageStore? = null,
     assetImportRequester: AssetImportRequester = { _, _, _ -> },
@@ -182,7 +189,7 @@ private fun AppNavigationContent(
                     if (journalRepository != null && catalogRepository != null) {
                         JournalFeature(
                             journalRepository, catalogRepository, imagePathResolver, assetImportRequester, imageStore,
-                            calendarDisplayPreference,
+                            calendarDisplayPreference, journalClock,
                         ) { backStack.add(Settings) }
                     } else {
                         RootContent("咖啡日历", "记录今天的咖啡") { backStack.add(Settings) }
@@ -216,7 +223,7 @@ private fun AppNavigationContent(
                     }
                 }
                 entry<Insights> {
-                    if (journalRepository != null) InsightsFeature(journalRepository) { backStack.add(Settings) }
+                    if (journalRepository != null) InsightsFeature(journalRepository, journalClock) { backStack.add(Settings) }
                     else RootContent("咖啡回顾", "查看饮用、评分与消费趋势") { backStack.add(Settings) }
                 }
                 entry<Settings> {

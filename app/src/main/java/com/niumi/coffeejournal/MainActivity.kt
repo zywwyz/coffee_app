@@ -16,6 +16,7 @@ class MainActivity : ComponentActivity() {
                 AppNavigation(
                     journalRepository = app.journalRepository,
                     catalogRepository = app.catalogRepository,
+                    journalClock = app.journalClock,
                     calendarDisplayPreference = app.calendarDisplayPreference,
                     imagePathResolver = app.imagePathResolver,
                     imageStore = app.imageStore,

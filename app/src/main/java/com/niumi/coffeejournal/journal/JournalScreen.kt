@@ -66,7 +66,6 @@ import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.core.image.AssetImportRequester
 import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.ui.CoffeeVisuals
-import java.util.Calendar
 
 internal val CalendarForestGreen = CoffeeVisuals.forest
 internal val CalendarWarmIvory = CoffeeVisuals.cream
@@ -83,17 +82,19 @@ fun JournalFeature(
     assetImportRequester: AssetImportRequester = { _, _, _ -> },
     imageStore: ImageStore? = null,
     calendarDisplayPreference: CalendarDisplayPreference = DefaultCalendarDisplayPreference,
+    clock: Clock = SystemClock,
     onOpenSettings: () -> Unit = {},
 ) {
-    val today = remember { Calendar.getInstance() }
+    val initialLocalDate = remember(clock) { clock.read().localDate }
     val journalViewModel: JournalViewModel = viewModel(
         factory = JournalViewModel.factory(
             journalRepository,
             catalogRepository,
-            today.get(Calendar.YEAR),
-            today.get(Calendar.MONTH) + 1,
+            initialLocalDate.substring(0, 4).toInt(),
+            initialLocalDate.substring(5, 7).toInt(),
             imagePathResolver,
             calendarDisplayPreference,
+            clock,
         ),
     )
     val state by journalViewModel.uiState.collectAsStateWithLifecycle()

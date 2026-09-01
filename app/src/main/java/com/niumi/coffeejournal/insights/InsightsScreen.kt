@@ -42,14 +42,13 @@ import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.niumi.coffeejournal.journal.JournalRepository
+import com.niumi.coffeejournal.journal.Clock
+import com.niumi.coffeejournal.journal.SystemClock
 import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.ui.CoffeeVisuals
-import java.util.GregorianCalendar
 import java.util.Locale
 import java.math.BigInteger
 
@@ -57,19 +56,13 @@ internal val InsightsSurfaceColor = SemanticsPropertyKey<Color>("InsightsSurface
 internal val InsightsMetricCardColor = SemanticsPropertyKey<Color>("InsightsMetricCardColor")
 
 @Composable
-fun InsightsFeature(repository: JournalRepository, onOpenSettings: () -> Unit = {}) {
-    val factory = remember(repository) {
-        object : ViewModelProvider.Factory {
-            @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                val now = GregorianCalendar()
-                return InsightsViewModel(
-                    JournalInsightsRepository(repository),
-                    now.get(GregorianCalendar.YEAR),
-                    now.get(GregorianCalendar.MONTH) + 1,
-                ) as T
-            }
-        }
+fun InsightsFeature(
+    repository: JournalRepository,
+    clock: Clock = SystemClock,
+    onOpenSettings: () -> Unit = {},
+) {
+    val factory = remember(repository, clock) {
+        InsightsViewModel.factory(JournalInsightsRepository(repository), clock)
     }
     val model: InsightsViewModel = viewModel(factory = factory)
     val state by model.uiState.collectAsStateWithLifecycle()

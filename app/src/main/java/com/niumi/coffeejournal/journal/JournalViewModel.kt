@@ -526,6 +526,7 @@ class JournalViewModel(
             month: Int,
             imagePathResolver: ImagePathResolver,
             calendarDisplayPreference: CalendarDisplayPreference = DefaultCalendarDisplayPreference,
+            clock: Clock = SystemClock,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
@@ -535,6 +536,7 @@ class JournalViewModel(
                     year,
                     month,
                     imagePathResolver = imagePathResolver,
+                    clock = clock,
                     calendarDisplayPreference = calendarDisplayPreference,
                 ) as T
         }

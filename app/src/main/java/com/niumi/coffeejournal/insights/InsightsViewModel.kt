@@ -1,10 +1,12 @@
 package com.niumi.coffeejournal.insights
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.niumi.coffeejournal.core.model.DrinkRecord
 import com.niumi.coffeejournal.journal.JournalRepository
-import java.util.GregorianCalendar
+import com.niumi.coffeejournal.journal.Clock
+import com.niumi.coffeejournal.journal.SystemClock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -113,6 +115,21 @@ class InsightsViewModel(
                 }
             }
         }
+    }
+
+    companion object {
+        fun factory(repository: InsightsRepository, clock: Clock = SystemClock): ViewModelProvider.Factory =
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    val localDate = clock.read().localDate
+                    return InsightsViewModel(
+                        repository,
+                        localDate.substring(0, 4).toInt(),
+                        localDate.substring(5, 7).toInt(),
+                    ) as T
+                }
+            }
     }
 
     private suspend fun observeMonthly(selected: InsightsUiState, selectedGeneration: Long) {
