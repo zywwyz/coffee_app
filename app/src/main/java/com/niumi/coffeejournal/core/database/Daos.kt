@@ -146,6 +146,7 @@ interface DrinkDao {
           snapshotImageAssetId=:snapshotImageAssetId,
           snapshotBrandLogoAssetId=:snapshotBrandLogoAssetId,
           snapshotRoastLevel=:snapshotRoastLevel, snapshotFlavorNotes=:snapshotFlavorNotes,
+          snapshotCoffeeType=:snapshotCoffeeType,
           updatedAtEpochMillis=:updatedAtEpochMillis, revision=:newRevision
         WHERE id=:id AND revision=:expectedRevision
         """,
@@ -169,6 +170,7 @@ interface DrinkDao {
         snapshotBrandLogoAssetId: String?,
         snapshotRoastLevel: String?,
         snapshotFlavorNotes: String?,
+        snapshotCoffeeType: String,
         updatedAtEpochMillis: Long,
         newRevision: Int,
     ): Int

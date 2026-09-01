@@ -558,6 +558,31 @@ class RoomDrinkStoreTest {
     }
 
     @Test
+    fun `updating an existing record persists refreshed coffee type snapshots`() = runBlocking {
+        val original = record(coffeeType = com.niumi.coffeejournal.core.model.CoffeeType.FRUIT)
+        store.saveRecordAndClearDraft(original, "missing-draft")
+        val milk = original.copy(
+            sourceItemId = "milk-item",
+            snapshot = original.snapshot.copy(coffeeType = com.niumi.coffeejournal.core.model.CoffeeType.MILK),
+            updatedAtEpochMillis = 2,
+            revision = 1,
+        )
+
+        assertTrue(store.update(milk, expectedRevision = 0, draftRevisionId = "missing-draft"))
+        assertEquals(com.niumi.coffeejournal.core.model.CoffeeType.MILK, store.get(original.id)?.snapshot?.coffeeType)
+
+        val handBrew = milk.copy(
+            itemType = ItemType.PERSONAL_BEAN,
+            sourceItemId = "bean-item",
+            snapshot = milk.snapshot.copy(coffeeType = com.niumi.coffeejournal.core.model.CoffeeType.HAND_BREW),
+            updatedAtEpochMillis = 3,
+            revision = 2,
+        )
+        assertTrue(store.update(handBrew, expectedRevision = 1, draftRevisionId = "missing-draft"))
+        assertEquals(com.niumi.coffeejournal.core.model.CoffeeType.HAND_BREW, store.get(original.id)?.snapshot?.coffeeType)
+    }
+
+    @Test
     fun `late autosave after successful save cannot recreate draft`() = runBlocking {
         val oldDraft = draft("revision-old")
         store.startDraft(oldDraft)
@@ -622,7 +647,7 @@ class RoomDrinkStoreTest {
         note = note,
     )
 
-    private fun record() = DrinkRecord(
+    private fun record(coffeeType: com.niumi.coffeejournal.core.model.CoffeeType = com.niumi.coffeejournal.core.model.CoffeeType.BLACK) = DrinkRecord(
         id = "record-1",
         occurredAtEpochMillis = 1,
         localDate = "2026-08-01",
@@ -638,6 +663,7 @@ class RoomDrinkStoreTest {
             origin = null,
             processing = null,
             imageAssetId = null,
+            coffeeType = coffeeType,
         ),
     )
 

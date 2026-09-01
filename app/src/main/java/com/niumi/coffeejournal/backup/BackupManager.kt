@@ -308,7 +308,7 @@ class LocalBackupManager(
         val actual = readSchema({ sql -> input.rawQuery(sql, null) }, version, filterFutureColumns = false)
         TABLES.forEach { table ->
             val got = actual.getValue(table); val want = expected.getValue(table)
-            if (got.columns != want.columns) throw BackupValidationException("数据库 $table columns 不匹配")
+            if (got.columns.associateBy(ColumnSchema::name) != want.columns.associateBy(ColumnSchema::name)) throw BackupValidationException("数据库 $table columns 不匹配")
             if (got.foreignKeys != want.foreignKeys) throw BackupValidationException("数据库 $table foreign keys 不匹配")
             if (got.indices != want.indices) throw BackupValidationException("数据库 $table indices 不匹配")
         }

@@ -138,6 +138,7 @@ class RoomDrinkStore(
             snapshotBrandLogoAssetId = record.snapshot.brandLogoAssetId,
             snapshotRoastLevel = record.snapshot.roastLevel,
             snapshotFlavorNotes = record.snapshot.flavorNotes,
+            snapshotCoffeeType = record.snapshot.coffeeType.name,
             updatedAtEpochMillis = record.updatedAtEpochMillis,
             newRevision = record.revision,
         ) == 1

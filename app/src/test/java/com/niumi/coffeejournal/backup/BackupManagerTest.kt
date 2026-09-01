@@ -89,6 +89,36 @@ class BackupManagerTest {
         assertEquals(1, count("catalog_updates"))
     }
 
+    @Test fun `export validates a database migrated from version 3 to 4`() = runBlocking {
+        val name = "backup-migrated-${System.nanoTime()}.db"
+        val fresh = Room.databaseBuilder(context, CoffeeDatabase::class.java, name).allowMainThreadQueries().build()
+        fresh.drinkDao().insert(
+            DrinkRecordEntity("migrated-record", 2, "2026-08-01", "CHAIN_PRODUCT", "missing", snapshotBrandName = "品牌", snapshotItemName = "美式"),
+        )
+        fresh.close()
+        val file = context.getDatabasePath(name)
+        SQLiteDatabase.openDatabase(file.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { legacy ->
+            legacy.execSQL("ALTER TABLE drink_records DROP COLUMN snapshotCoffeeType")
+            legacy.execSQL("UPDATE room_master_table SET identity_hash='f93d8a13b1b47c68acba071ab2cf88cf' WHERE id=42")
+            legacy.execSQL("PRAGMA user_version=3")
+        }
+        val migrated = Room.databaseBuilder(context, CoffeeDatabase::class.java, name)
+            .addMigrations(CoffeeDatabase.MIGRATION_3_4)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            assertEquals("BLACK", migrated.drinkDao().get("migrated-record")?.snapshotCoffeeType)
+            val archive = File(context.cacheDir, "migrated-${System.nanoTime()}.zip")
+            val migratedManager = LocalBackupManager(context, migrated, now = { 1234 })
+
+            migratedManager.validate(Uri.fromFile(archive.also { migratedManager.export(Uri.fromFile(it)) }))
+            Unit
+        } finally {
+            migrated.close()
+            context.deleteDatabase(name)
+        }
+    }
+
     @Test fun `corrupt checksum validation leaves active rows unchanged`() = runBlocking {
         database.brandDao().upsert(BrandEntity("keep", "CHAIN", "保留", "保留", null, "MANUAL_ONLY", null))
         val root = createTempDirectory("invalid-backup-").toFile()
