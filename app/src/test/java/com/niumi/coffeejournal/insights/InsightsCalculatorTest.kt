@@ -39,10 +39,26 @@ class InsightsCalculatorTest {
         val p=InsightsCalculator.period(listOf(r("z","2026-01-01",brand="B",item="same",at=1),r("a","2026-01-01",brand="A",item="same",at=2),r("c","2026-01-01",brand="C"),r("d","2026-01-01",brand="D")))
         assertEquals(listOf("A","B","C"),p.topBrands.map { it.name }); assertEquals("A\u0000same",p.topProducts.first().key)
     }
+    @Test fun `source item id keeps the latest real product display name`() {
+        val p = InsightsCalculator.period(listOf(r("a", "2026-01-01", "A", "Old", at=1, source="same"), r("b", "2026-01-02", "B", "New", at=2, source="same")))
+        assertEquals("B · New", p.topProducts.single().name)
+    }
+    @Test fun `brand share fourth place uses newest tie breaker before other`() {
+        val p=InsightsCalculator.period(listOf(r("a","2026-01-01",brand="A",at=1),r("b","2026-01-01",brand="B",at=2),r("c","2026-01-01",brand="C",at=3),r("d","2026-01-01",brand="D",at=4),r("e","2026-01-01",brand="E",at=5)))
+        assertEquals(listOf("E","D","C","B","OTHER"),p.brandShares.map{it.key})
+    }
+    @Test fun `future current period records affect neither summary nor trend`() {
+        val p=InsightsCalculator.monthly(2026,9,listOf(r("now","2026-09-01",rating=10),r("future","2026-09-20",brand="Future",rating=1)),emptyList(),today="2026-09-02")
+        assertEquals(1,p.habit.cups); assertEquals("品牌",p.topBrands.single().name); assertEquals("now",p.best!!.recordId); assertEquals(1,p.trend.last().current)
+    }
+    @Test fun `spend saturates at long maximum`() {
+        val p=InsightsCalculator.period(listOf(r("a","2026-01-01",price=Long.MAX_VALUE),r("b","2026-01-02",price=1)))
+        assertEquals(Long.MAX_VALUE,p.habit.totalSpendFen)
+    }
     @Test fun `best and worst aggregate distinct products retaining latest asset and equal ratings omit worst`() {
         val p=InsightsCalculator.period(listOf(r("old","2026-01-01",brand="A",item="X",rating=10,at=1,image="old"),r("new","2026-01-02",brand="A",item="X",rating=10,at=2,image="new"),r("low","2026-01-03",brand="B",item="Y",rating=4),r("low2","2026-01-04",brand="C",item="Z",rating=4,at=3)))
         assertEquals("new",p.best!!.recordId); assertEquals("new",p.best!!.imageAssetId); assertEquals(0,p.best!!.tiedProductCount); assertEquals("low2",p.worst!!.recordId); assertEquals(1,p.worst!!.tiedProductCount)
         assertNull(InsightsCalculator.period(listOf(r("x","2026-01-01",rating=8),r("y","2026-01-02",rating=8))).worst)
     }
-    private fun r(id:String,date:String,brand:String="品牌",item:String="产品",price:Long?=null,rating:Int?=null,type:CoffeeType=CoffeeType.BLACK,at:Long=0,image:String?=null)=DrinkRecord(id,at,date,ItemType.CHAIN_PRODUCT,"",null,rating,price,null,DrinkSnapshot(brand,item,null,null,image,brandLogoAssetId="logo",coffeeType=type))
+    private fun r(id:String,date:String,brand:String="品牌",item:String="产品",price:Long?=null,rating:Int?=null,type:CoffeeType=CoffeeType.BLACK,at:Long=0,image:String?=null,source:String="")=DrinkRecord(id,at,date,ItemType.CHAIN_PRODUCT,source,null,rating,price,null,DrinkSnapshot(brand,item,null,null,image,brandLogoAssetId="logo",coffeeType=type))
 }
