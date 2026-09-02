@@ -19,6 +19,7 @@ class InsightsCalculatorTest {
     @Test fun `year trend cuts current year and has twelve points for historical years`() {
         val current = InsightsCalculator.yearly(2026, listOf(r("jan", "2026-01-01"), r("apr", "2026-04-01"), r("old", "2025-01-01")), today = "2026-04-10")
         assertEquals(4, current.trend.size); assertEquals(listOf(1, 0, 0, 1), current.trend.map { it.current })
+        assertEquals(1, current.trend.first().previous); assertNull(current.trend[1].previous)
         assertEquals(12, InsightsCalculator.yearly(2025, emptyList(), today = "2026-04-10").trend.size)
     }
     @Test fun `legacy yearly points retain real monthly spend and rating facts`() {
@@ -51,9 +52,27 @@ class InsightsCalculatorTest {
         val p=InsightsCalculator.monthly(2026,9,listOf(r("now","2026-09-01",rating=10),r("future","2026-09-20",brand="Future",rating=1)),emptyList(),today="2026-09-02")
         assertEquals(1,p.habit.cups); assertEquals("品牌",p.topBrands.single().name); assertEquals("now",p.best!!.recordId); assertEquals(1,p.trend.last().current)
     }
+    @Test fun `future current year records affect neither aggregates nor trend`() {
+        val p=InsightsCalculator.yearly(2026,listOf(r("now","2026-01-01",price=100),r("future","2026-09-20",price=300,brand="Future")),today="2026-04-10")
+        assertEquals(1,p.habit.cups); assertEquals(100L,p.period.totalSpendFen); assertEquals(listOf(1,0,0,0),p.trend.map { it.current })
+    }
+    @Test fun `empty period has no priced metrics`() {
+        val p=InsightsCalculator.period(emptyList())
+        assertEquals(0,p.habit.cups); assertNull(p.habit.totalSpendFen); assertNull(p.habit.averagePriceFen)
+    }
     @Test fun `spend saturates at long maximum`() {
         val p=InsightsCalculator.period(listOf(r("a","2026-01-01",price=Long.MAX_VALUE),r("b","2026-01-02",price=1)))
         assertEquals(Long.MAX_VALUE,p.habit.totalSpendFen)
+    }
+    @Test fun `average price uses exact total before display saturation`() {
+        val max = InsightsCalculator.period(listOf(r("a","2026-01-01",price=Long.MAX_VALUE),r("b","2026-01-02",price=Long.MAX_VALUE)))
+        val mixed = InsightsCalculator.period(listOf(r("a","2026-01-01",price=Long.MAX_VALUE),r("b","2026-01-02",price=1)))
+        assertEquals(Long.MAX_VALUE, max.habit.averagePriceFen)
+        assertEquals(Long.MAX_VALUE / 2 + 1, mixed.habit.averagePriceFen)
+    }
+    @Test fun `yearly legacy monthly spend saturates at long maximum`() {
+        val p=InsightsCalculator.yearly(2026,listOf(r("a","2026-01-01",price=Long.MAX_VALUE),r("b","2026-01-02",price=1)),today="2026-04-10")
+        assertEquals(Long.MAX_VALUE,p.monthlyPoints.first().spendFen)
     }
     @Test fun `best and worst aggregate distinct products retaining latest asset and equal ratings omit worst`() {
         val p=InsightsCalculator.period(listOf(r("old","2026-01-01",brand="A",item="X",rating=10,at=1,image="old"),r("new","2026-01-02",brand="A",item="X",rating=10,at=2,image="new"),r("low","2026-01-03",brand="B",item="Y",rating=4),r("low2","2026-01-04",brand="C",item="Z",rating=4,at=3)))
