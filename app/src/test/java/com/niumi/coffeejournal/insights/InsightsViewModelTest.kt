@@ -9,6 +9,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
@@ -86,7 +88,7 @@ class InsightsViewModelTest {
         assertEquals(1, state.yearly?.period?.cupCount)
         assertEquals(8, state.yearly?.trend?.size)
         assertEquals(1, state.yearly?.trend?.first()?.previous)
-        assertEquals(null, state.yearly?.trend?.get(1)?.previous)
+        assertEquals(0, state.yearly?.trend?.get(1)?.previous)
         assertTrue(state.errorMessage == null)
     }
 
@@ -112,11 +114,17 @@ class InsightsViewModelTest {
         val repository = FakeInsightsRepository()
         val viewModel = viewModel(repository)
         viewModel.showYearly()
+        yield()
+        val yearlySubscriptions = repository.subscriptions.takeLast(24)
         viewModel.showMonthly()
         repository.flow(2026, 8).value = listOf(record("monthly", "2026-08-01"))
         repository.flow(2026, 1).value = List(9) { record("stale-$it", "2026-01-01") }
         yield()
 
+        assertEquals(24, yearlySubscriptions.size)
+        assertTrue(yearlySubscriptions.none { it.active })
+        assertEquals(2, repository.subscriptions.count { it.active })
+        assertEquals(setOf(2026 to 8, 2026 to 7), repository.subscriptions.filter { it.active }.map { it.month }.toSet())
         assertEquals(InsightsMode.MONTHLY, viewModel.uiState.value.mode)
         assertEquals(1, viewModel.uiState.value.monthly?.period?.cupCount)
         assertEquals(null, viewModel.uiState.value.yearly)
@@ -151,12 +159,19 @@ class InsightsViewModelTest {
     }
 
     private class FakeInsightsRepository : InsightsRepository {
+        data class Subscription(val month: Pair<Int, Int>, var active: Boolean = false)
+
         private val flows = mutableMapOf<Pair<Int, Int>, MutableStateFlow<List<DrinkRecord>>>()
         val observed = mutableListOf<Pair<Int, Int>>()
+        val subscriptions = mutableListOf<Subscription>()
         fun flow(year: Int, month: Int) = flows.getOrPut(year to month) { MutableStateFlow(emptyList()) }
         override fun observeMonth(year: Int, month: Int): Flow<List<DrinkRecord>> {
             observed += year to month
+            val subscription = Subscription(year to month)
+            subscriptions += subscription
             return flow(year, month)
+                .onStart { subscription.active = true }
+                .onCompletion { subscription.active = false }
         }
     }
 

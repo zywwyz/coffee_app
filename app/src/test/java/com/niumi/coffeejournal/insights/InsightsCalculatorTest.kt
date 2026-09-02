@@ -19,7 +19,7 @@ class InsightsCalculatorTest {
     @Test fun `year trend cuts current year and has twelve points for historical years`() {
         val current = InsightsCalculator.yearly(2026, listOf(r("jan", "2026-01-01"), r("apr", "2026-04-01"), r("old", "2025-01-01")), today = "2026-04-10")
         assertEquals(4, current.trend.size); assertEquals(listOf(1, 0, 0, 1), current.trend.map { it.current })
-        assertEquals(1, current.trend.first().previous); assertNull(current.trend[1].previous)
+        assertEquals(1, current.trend.first().previous); assertEquals(0, current.trend[1].previous)
         assertEquals(12, InsightsCalculator.yearly(2025, emptyList(), today = "2026-04-10").trend.size)
     }
     @Test fun `legacy yearly points retain real monthly spend and rating facts`() {
