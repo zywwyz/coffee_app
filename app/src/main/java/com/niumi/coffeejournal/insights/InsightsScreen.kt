@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -111,7 +112,7 @@ private data class Dashboard(val habit: HabitSummary, val trend: List<Comparison
 @Composable private fun ModeSelector(mode: InsightsMode, month: () -> Unit, year: () -> Unit) = Row(Modifier.fillMaxWidth().selectableGroup().background(CoffeeVisuals.mint, RoundedCornerShape(CoffeeVisuals.cornerMedium)).padding(4.dp)) {
     ModeButton("月度", mode == InsightsMode.MONTHLY, month); ModeButton("年度", mode == InsightsMode.YEARLY, year)
 }
-@Composable private fun RowScope.ModeButton(label: String, selected: Boolean, onClick: () -> Unit) = Box(Modifier.weight(1f).background(if (selected) CoffeeVisuals.white else Color.Transparent, RoundedCornerShape(CoffeeVisuals.cornerSmall)).selectable(selected = selected, role = Role.Tab, onClick = onClick).padding(vertical = 10.dp), contentAlignment = Alignment.Center) { Text(label, color = CoffeeVisuals.forest) }
+@Composable private fun RowScope.ModeButton(label: String, selected: Boolean, onClick: () -> Unit) = Box(Modifier.weight(1f).background(if (selected) CoffeeVisuals.white else Color.Transparent, RoundedCornerShape(CoffeeVisuals.cornerSmall)).heightIn(min = 48.dp).selectable(selected = selected, role = Role.Tab, onClick = onClick).padding(vertical = 10.dp), contentAlignment = Alignment.Center) { Text(label, color = CoffeeVisuals.forest) }
 
 @Composable private fun PeriodSelector(state: InsightsUiState, previousMonth: () -> Unit, nextMonth: () -> Unit, previousYear: () -> Unit, nextYear: () -> Unit) {
     val monthly = state.mode == InsightsMode.MONTHLY

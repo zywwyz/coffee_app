@@ -14,6 +14,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.dp
 import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.ui.CoffeeVisuals
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
@@ -51,6 +52,14 @@ class InsightsScreenRobolectricTest {
         compose.setContent { CoffeeTheme { InsightsScreen(state(), {}, {}) } }
         compose.onNodeWithText("月度").assertIsSelected()
         compose.onNodeWithText("年度").assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.Role, Role.Tab))
+    }
+
+    @Test fun `mode tabs provide 48dp selectable targets`() {
+        compose.setContent { CoffeeTheme { InsightsScreen(state(), {}, {}) } }
+        val minimumHeight = with(compose.density) { 48.dp.toPx() }
+        listOf("月度", "年度").forEach { label ->
+            org.junit.Assert.assertTrue(compose.onNodeWithText(label).fetchSemanticsNode().boundsInRoot.height >= minimumHeight)
+        }
     }
 
     @Test fun `habit hero exposes exact values and price gaps`() {
