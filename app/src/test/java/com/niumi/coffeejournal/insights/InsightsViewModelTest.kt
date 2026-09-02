@@ -18,6 +18,7 @@ import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Locale
 
 class InsightsViewModelTest {
     @Test
@@ -119,9 +120,9 @@ class InsightsViewModelTest {
         viewModel.showYearly()
         testScheduler.runCurrent()
         val yearlySubscription = repository.rangeSubscriptions.single { it.active }
+        repository.range("2025-01-01", "2026-12-31").value = List(9) { record("stale-$it", "2026-01-01") }
         viewModel.showMonthly()
         repository.flow(2026, 8).value = listOf(record("monthly", "2026-08-01"))
-        repository.range("2025-01-01", "2026-12-31").value = List(9) { record("stale-$it", "2026-01-01") }
         testScheduler.runCurrent()
 
         assertTrue(!yearlySubscription.active)
@@ -131,6 +132,24 @@ class InsightsViewModelTest {
         assertEquals(InsightsMode.MONTHLY, viewModel.uiState.value.mode)
         assertEquals(1, viewModel.uiState.value.monthly?.period?.cupCount)
         assertEquals(null, viewModel.uiState.value.yearly)
+    }
+
+    @Test
+    fun `yearly range endpoints remain ASCII under an Arabic default locale`() = runTest {
+        val originalLocale = Locale.getDefault()
+        try {
+            Locale.setDefault(Locale("ar"))
+            val repository = FakeInsightsRepository()
+            val viewModel = viewModel(repository, CoroutineScope(Job() + StandardTestDispatcher(testScheduler)))
+            testScheduler.runCurrent()
+            viewModel.showYearly()
+            testScheduler.runCurrent()
+
+            assertEquals("2025-01-01", repository.rangeSubscriptions.single().start)
+            assertEquals("2026-12-31", repository.rangeSubscriptions.single().end)
+        } finally {
+            Locale.setDefault(originalLocale)
+        }
     }
 
     @Test
@@ -162,7 +181,12 @@ class InsightsViewModelTest {
     }
 
     private class FakeInsightsRepository : InsightsRepository {
-        data class Subscription(val month: Pair<Int, Int>, var active: Boolean = false)
+        data class Subscription(
+            val month: Pair<Int, Int>,
+            var active: Boolean = false,
+            val start: String? = null,
+            val end: String? = null,
+        )
 
         private val flows = mutableMapOf<Pair<Int, Int>, MutableStateFlow<List<DrinkRecord>>>()
         private val ranges = mutableMapOf<Pair<String, String>, MutableStateFlow<List<DrinkRecord>>>()
@@ -180,7 +204,7 @@ class InsightsViewModelTest {
                 .onCompletion { subscription.active = false }
         }
         override fun observeRange(startLocalDate: String, endLocalDate: String): Flow<List<DrinkRecord>> {
-            val subscription = Subscription(0 to 0)
+            val subscription = Subscription(0 to 0, start = startLocalDate, end = endLocalDate)
             rangeSubscriptions += subscription
             return range(startLocalDate, endLocalDate)
                 .onStart { subscription.active = true }

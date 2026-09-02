@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 interface InsightsRepository {
     fun observeMonth(year: Int, month: Int): Flow<List<DrinkRecord>>
@@ -170,7 +171,8 @@ class InsightsViewModel(
     private suspend fun observeYearly(selected: InsightsUiState, selectedGeneration: Long) {
         val startYear = if (selected.year == 1) 1 else selected.year - 1
         repository.observeRange(
-            "%04d-01-01".format(startYear), "%04d-12-31".format(selected.year),
+            String.format(Locale.ROOT, "%04d-01-01", startYear),
+            String.format(Locale.ROOT, "%04d-12-31", selected.year),
         ).collect { records ->
             if (generation != selectedGeneration) return@collect
             mutableState.value = mutableState.value.copy(
