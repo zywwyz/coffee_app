@@ -21,6 +21,12 @@ class InsightsCalculatorTest {
         assertEquals(4, current.trend.size); assertEquals(listOf(1, 0, 0, 1), current.trend.map { it.current })
         assertEquals(12, InsightsCalculator.yearly(2025, emptyList(), today = "2026-04-10").trend.size)
     }
+    @Test fun `legacy yearly points retain real monthly spend and rating facts`() {
+        val report = InsightsCalculator.yearly(2025, listOf(r("jan", "2025-01-01", price = 300, rating = 8)))
+        assertEquals(300L, report.monthlyPoints.first().spendFen)
+        assertEquals(1, report.monthlyPoints.first().pricedCupCount)
+        assertEquals(4.0, report.monthlyPoints.first().averageRating!!, 0.0)
+    }
     @Test fun `habit uses unique local dates consecutive streak and price denominators`() {
         val habit = InsightsCalculator.period(listOf(r("a", "2026-01-01", price=100, rating=8), r("b", "2026-01-01", price=null), r("c", "2026-01-02", price=300, rating=null), r("d", "2026-01-04", price=null, rating=10))).habit
         assertEquals(3, habit.drinkingDays); assertEquals(2, habit.longestStreak); assertEquals(400L, habit.totalSpendFen); assertEquals(200L, habit.averagePriceFen); assertEquals(4.5, habit.averageRating!!, 0.0)
