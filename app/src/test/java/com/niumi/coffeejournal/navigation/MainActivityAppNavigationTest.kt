@@ -33,7 +33,7 @@ class MainActivityAppNavigationTest {
         val roots = listOf(
             Triple(TestTags.BottomCalendarTab, "咖啡日历", "咖啡日历"),
             Triple(TestTags.BottomCatalogTab, "豆库", "我的咖啡豆库"),
-            Triple(TestTags.BottomInsightsTab, "总结", "咖啡回顾"),
+            Triple(TestTags.BottomInsightsTab, "总结", "总结"),
         )
 
         roots.forEach { (tabTag, label, title) ->

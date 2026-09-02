@@ -67,11 +67,11 @@ class ReleaseAcceptanceRobolectricTest {
         compose.onNodeWithTag(TestTags.NextMonth).performClick()
         compose.onNodeWithText("2026年8月").assertIsDisplayed()
         compose.onNodeWithText("总结").performClick()
-        compose.onNodeWithText("2026年 8月").assertIsDisplayed()
+        compose.onNodeWithText("2026年8月").assertIsDisplayed()
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithTag(TestTags.MonthlySpend).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithTag(TestTags.InsightsHabitHero).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithTag(TestTags.MonthlySpend).assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.InsightsHabitHero).assertIsDisplayed()
         compose.onNodeWithText("咖啡日历").performClick()
         compose.onNodeWithTag(TestTags.RecordButton).performClick()
         compose.onNodeWithText("饮用日期").assertIsDisplayed()

@@ -2,55 +2,61 @@ package com.niumi.coffeejournal.insights
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.SemanticsPropertyKey
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.niumi.coffeejournal.journal.JournalRepository
-import com.niumi.coffeejournal.journal.Clock
-import com.niumi.coffeejournal.journal.SystemClock
 import com.niumi.coffeejournal.TestTags
+import com.niumi.coffeejournal.catalog.bundledBrandLogoRes
+import com.niumi.coffeejournal.core.image.ImagePathResolver
+import com.niumi.coffeejournal.core.image.ResolvedLocalAssetImage
+import com.niumi.coffeejournal.journal.Clock
+import com.niumi.coffeejournal.journal.JournalRepository
+import com.niumi.coffeejournal.journal.SystemClock
 import com.niumi.coffeejournal.ui.CoffeeVisuals
-import java.util.Locale
 import java.math.BigInteger
+import java.util.Locale
 
 internal val InsightsSurfaceColor = SemanticsPropertyKey<Color>("InsightsSurfaceColor")
 internal val InsightsMetricCardColor = SemanticsPropertyKey<Color>("InsightsMetricCardColor")
@@ -59,368 +65,107 @@ internal val InsightsMetricCardColor = SemanticsPropertyKey<Color>("InsightsMetr
 fun InsightsFeature(
     repository: JournalRepository,
     clock: Clock = SystemClock,
+    imagePathResolver: ImagePathResolver = ImagePathResolver { null },
+    onOpenRecord: (String) -> Unit = {},
     onOpenSettings: () -> Unit = {},
 ) {
-    val factory = remember(repository, clock) {
-        InsightsViewModel.factory(JournalInsightsRepository(repository), clock)
-    }
+    val factory = remember(repository, clock) { InsightsViewModel.factory(JournalInsightsRepository(repository), clock) }
     val model: InsightsViewModel = viewModel(factory = factory)
     val state by model.uiState.collectAsStateWithLifecycle()
-    InsightsScreen(
-        state = state,
-        onShowMonthly = model::showMonthly,
-        onShowYearly = model::showYearly,
-        onPreviousMonth = model::previousMonth,
-        onNextMonth = model::nextMonth,
-        onPreviousYear = model::previousYear,
-        onNextYear = model::nextYear,
-        onOpenSettings = onOpenSettings,
-    )
+    InsightsScreen(state, model::showMonthly, model::showYearly, model::previousMonth, model::nextMonth,
+        model::previousYear, model::nextYear, onOpenSettings, imagePathResolver, onOpenRecord)
 }
 
 @Composable
 fun InsightsScreen(
-    state: InsightsUiState,
-    onShowMonthly: () -> Unit,
-    onShowYearly: () -> Unit,
-    onPreviousMonth: () -> Unit = {},
-    onNextMonth: () -> Unit = {},
-    onPreviousYear: () -> Unit = {},
-    onNextYear: () -> Unit = {},
-    onOpenSettings: () -> Unit = {},
+    state: InsightsUiState, onShowMonthly: () -> Unit, onShowYearly: () -> Unit,
+    onPreviousMonth: () -> Unit = {}, onNextMonth: () -> Unit = {}, onPreviousYear: () -> Unit = {}, onNextYear: () -> Unit = {},
+    onOpenSettings: () -> Unit = {}, imagePathResolver: ImagePathResolver = ImagePathResolver { null }, onOpenRecord: (String) -> Unit = {},
 ) {
-    var selectedRecord by remember { mutableStateOf<RatedRecordSummary?>(null) }
-    Column(
-        Modifier.fillMaxSize().background(CoffeeVisuals.cream).testTag(TestTags.InsightsSurface)
-            .semantics { this[InsightsSurfaceColor] = CoffeeVisuals.cream }
-            .verticalScroll(rememberScrollState()).padding(bottom = 32.dp),
-    ) {
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("咖啡回顾", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.testTag(TestTags.RootScreenTitle))
-                TextButton(onClick = onOpenSettings, modifier = Modifier.testTag(TestTags.RootScreenSettings)) { Text("设置") }
-            }
-            Text("把每一杯，慢慢看清", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val report = if (state.mode == InsightsMode.MONTHLY) state.monthly?.let { it.period to Dashboard(it.habit, it.trend, it.coffeeTypeShares, it.brandShares, it.topBrands, it.topProducts, it.best, it.worst) }
+    else state.yearly?.let { it.period to Dashboard(it.habit, it.trend, it.coffeeTypeShares, it.brandShares, it.topBrands, it.topProducts, it.best, it.worst) }
+    Column(Modifier.fillMaxSize().background(CoffeeVisuals.cream).testTag(TestTags.InsightsSurface)
+        .semantics { this[InsightsSurfaceColor] = CoffeeVisuals.cream }.verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+            Text("总结", style = MaterialTheme.typography.headlineMedium, color = CoffeeVisuals.forest, modifier = Modifier.testTag(TestTags.RootScreenTitle))
+            TextButton(onClick = onOpenSettings, modifier = Modifier.testTag(TestTags.RootScreenSettings)) { Text("设置", color = CoffeeVisuals.forest) }
         }
-        PrimaryTabRow(selectedTabIndex = if (state.mode == InsightsMode.MONTHLY) 0 else 1) {
-            Tab(
-                selected = state.mode == InsightsMode.MONTHLY,
-                onClick = onShowMonthly,
-                text = { Text("月度总结") },
-            )
-            Tab(
-                selected = state.mode == InsightsMode.YEARLY,
-                onClick = onShowYearly,
-                text = { Text("年度总结") },
-            )
-        }
+        ModeSelector(state.mode, onShowMonthly, onShowYearly)
         PeriodSelector(state, onPreviousMonth, onNextMonth, onPreviousYear, onNextYear)
         when {
-            state.loading -> CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally).padding(32.dp))
-            state.errorMessage != null -> Text(
-                state.errorMessage,
-                Modifier.padding(20.dp),
-                color = MaterialTheme.colorScheme.error,
-            )
-            state.mode == InsightsMode.MONTHLY -> MonthlyContent(state.monthly, onOpenRecord = { selectedRecord = it })
-            else -> YearlyContent(state.yearly, onOpenRecord = { selectedRecord = it })
+            state.loading -> CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally).padding(32.dp), color = CoffeeVisuals.forest)
+            state.errorMessage != null -> Text(state.errorMessage, color = CoffeeVisuals.forest)
+            report == null || report.first.cupCount == 0 -> EmptyCard(if (state.mode == InsightsMode.MONTHLY) "这个月还没有咖啡记录" else "这一年还没有咖啡记录")
+            else -> DashboardContent(report.second, state.mode, imagePathResolver, onOpenRecord)
         }
-    }
-    selectedRecord?.let { record ->
-        RecordDetailDialog(record = record, onDismiss = { selectedRecord = null })
+        Spacer(Modifier.height(12.dp))
     }
 }
 
-@Composable
-private fun PeriodSelector(
-    state: InsightsUiState,
-    previousMonth: () -> Unit,
-    nextMonth: () -> Unit,
-    previousYear: () -> Unit,
-    nextYear: () -> Unit,
-) {
+private data class Dashboard(val habit: HabitSummary, val trend: List<ComparisonPoint>, val types: List<ShareValue>, val brands: List<ShareValue>, val topBrands: List<RankedValue>, val topProducts: List<RankedValue>, val best: HighlightRecord?, val worst: HighlightRecord?)
+
+@Composable private fun ModeSelector(mode: InsightsMode, month: () -> Unit, year: () -> Unit) = Row(Modifier.fillMaxWidth().background(CoffeeVisuals.mint, RoundedCornerShape(CoffeeVisuals.cornerMedium)).padding(4.dp)) {
+    ModeButton("月度", mode == InsightsMode.MONTHLY, month); ModeButton("年度", mode == InsightsMode.YEARLY, year)
+}
+@Composable private fun RowScope.ModeButton(label: String, selected: Boolean, onClick: () -> Unit) = Box(Modifier.weight(1f).background(if (selected) CoffeeVisuals.white else Color.Transparent, RoundedCornerShape(CoffeeVisuals.cornerSmall)).clickable(onClick = onClick).padding(vertical = 10.dp), contentAlignment = Alignment.Center) { Text(label, color = CoffeeVisuals.forest) }
+
+@Composable private fun PeriodSelector(state: InsightsUiState, previousMonth: () -> Unit, nextMonth: () -> Unit, previousYear: () -> Unit, nextYear: () -> Unit) {
     val monthly = state.mode == InsightsMode.MONTHLY
-    Row(
-        Modifier.fillMaxWidth().padding(16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Button(onClick = if (monthly) previousMonth else previousYear) { Text("上一${if (monthly) "月" else "年"}") }
-        Text(
-            if (monthly) "${state.year}年 ${state.month}月" else "${state.year}年",
-            style = MaterialTheme.typography.titleMedium,
-        )
-        Button(onClick = if (monthly) nextMonth else nextYear) { Text("下一${if (monthly) "月" else "年"}") }
+    Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+        TextButton(onClick = if (monthly) previousMonth else previousYear) { Text("上一周期", color = CoffeeVisuals.forest) }
+        Text(if (monthly) "${state.year}年${state.month}月" else "${state.year}年", color = CoffeeVisuals.forest, style = MaterialTheme.typography.titleMedium)
+        TextButton(onClick = if (monthly) nextMonth else nextYear) { Text("下一周期", color = CoffeeVisuals.forest) }
     }
 }
 
-@Composable
-private fun MonthlyContent(report: MonthlyInsights?, onOpenRecord: (RatedRecordSummary) -> Unit) {
-    if (report == null || report.period.cupCount == 0) {
-        EmptyCard("这个月还没有咖啡记录", "下一杯会从这里开始留下痕迹")
-        return
+@Composable private fun DashboardContent(data: Dashboard, mode: InsightsMode, resolver: ImagePathResolver, onOpenRecord: (String) -> Unit) {
+    HabitHero(data.habit)
+    TrendChart(data.trend, mode)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        DonutCard("咖啡类型", data.types, TestTags.InsightsCoffeeTypeDonut, Modifier.weight(1f))
+        DonutCard("常喝品牌", data.brands, TestTags.InsightsBrandDonut, Modifier.weight(1f))
     }
-    val period = report.period
-    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        MetricGrid(
-            listOf(
-                "喝了几杯" to "${period.cupCount} 杯",
-                "实际消费" to formatFen(period.totalSpendFen),
-                "单杯均价" to period.averagePriceFen?.let(::formatFen).orDash(),
-                "平均评分" to period.averageRating?.let { String.format(Locale.ROOT, "%.1f ★", it) }.orDash(),
-            ),
-        )
-        val delta = report.spendDelta
-        Text(
-            when (delta.baseline) {
-                SpendDeltaBaseline.AVAILABLE ->
-                    "比上月 ${signedFen(delta.amountFen)}（${String.format(Locale.ROOT, "%+.0f%%", delta.percent)}）"
-                SpendDeltaBaseline.ZERO -> "上月消费为 ¥0.00，本月 ${formatFen(period.totalSpendFen)}"
-                SpendDeltaBaseline.MISSING -> "上月没有价格记录，本月 ${formatFen(period.totalSpendFen)}"
-            },
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        SectionTitle("消费与评分趋势")
-        TrendChart(period.points)
-        report.ratingTrendText?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
-        SectionTitle("品牌消费占比")
-        BrandShareChart(report.brandSpendShares)
-        SectionTitle("偏好排行")
-        RankingGroups(period)
-        SectionTitle("最好与最差")
-        Text("最高分")
-        RatedRecordRows(period.bestRecords, onOpenRecord)
-        Text("最低分")
-        RatedRecordRows(period.worstRecords, onOpenRecord)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        RankingCard("Top3 品牌", data.topBrands, TestTags.InsightsTopBrands, Modifier.weight(1f))
+        RankingCard("Top3 产品", data.topProducts, TestTags.InsightsTopProducts, Modifier.weight(1f))
+    }
+    data.best?.let { HighlightCard("本期最好", it, TestTags.InsightsBestCard, resolver, onOpenRecord) }
+    if (data.worst != null) HighlightCard("本期最差", data.worst, TestTags.InsightsWorstCard, resolver, onOpenRecord)
+    else if (data.best != null) Text("本期评分一致", color = CoffeeVisuals.secondaryText)
+    else Text("本期暂无评分记录", color = CoffeeVisuals.secondaryText)
+}
+
+@Composable private fun HabitHero(habit: HabitSummary) = CoffeeCard(Modifier.fillMaxWidth().testTag(TestTags.InsightsHabitHero)) {
+    Text("饮用习惯", color = CoffeeVisuals.forest); Text("${habit.cups}", style = MaterialTheme.typography.displayMedium, color = CoffeeVisuals.forest)
+    Text("杯", color = CoffeeVisuals.secondaryText)
+    Text("饮用天数 ${habit.drinkingDays} · 最长连续 ${habit.longestStreak} 天", color = CoffeeVisuals.secondaryText)
+    Text("平均评分 ${habit.averageRating?.let { String.format(Locale.ROOT, "%.1f", it) } ?: "—"} · 杯数较上期 ${habit.cupDelta?.let { if (it >= 0) "+$it" else "$it" } ?: "—"}", color = CoffeeVisuals.secondaryText)
+    Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) { Text("总消费 ${habit.totalSpendFen?.let(::formatFen) ?: "—"}", color = CoffeeVisuals.secondaryText); Text("杯均 ${habit.averagePriceFen?.let(::formatFen) ?: "—"}", color = CoffeeVisuals.secondaryText) }
+}
+
+@Composable private fun TrendChart(points: List<ComparisonPoint>, mode: InsightsMode) = CoffeeCard(Modifier.fillMaxWidth().testTag(TestTags.InsightsTrendChart)) {
+    Text("饮用趋势", style = MaterialTheme.typography.titleMedium, color = CoffeeVisuals.forest)
+    Text("森林实线 本期累计杯数  ·  暖灰虚线 上期累计杯数", color = CoffeeVisuals.secondaryText)
+    val desc = "饮用趋势：本期累计杯数；上期累计杯数" + if (points.isEmpty()) "；暂无数据" else "；${if (mode == InsightsMode.MONTHLY) "每日" else "每月"}${points.joinToString { " ${it.index}:${it.current ?: 0}/${it.previous ?: 0}" }}"
+    Canvas(Modifier.fillMaxWidth().height(150.dp).semantics { contentDescription = desc }) {
+        val max = points.flatMap { listOfNotNull(it.current, it.previous) }.maxOrNull()?.coerceAtLeast(1) ?: 1
+        fun point(i: Int, n: Int) = Offset(if (points.size <= 1) size.width / 2 else i * size.width / (points.size - 1), size.height - n.toFloat() / max * (size.height - 16.dp.toPx()) - 8.dp.toPx())
+        fun drawSeries(values: List<Int?>, color: Color, dashed: Boolean) { var previous: Offset? = null; values.forEachIndexed { i, value -> value?.let { current -> previous?.let { drawLine(color, it, point(i, current), 3.dp.toPx(), StrokeCap.Round, if (dashed) androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f)) else null) }; drawCircle(color, 3.dp.toPx(), point(i, current)); previous = point(i, current) } } }
+        drawSeries(points.map { it.previous }, CoffeeVisuals.warmOutline, true); drawSeries(points.map { it.current }, CoffeeVisuals.forest, false)
     }
 }
 
-@Composable
-private fun YearlyContent(report: YearlyInsights?, onOpenRecord: (RatedRecordSummary) -> Unit) {
-    if (report == null || report.period.cupCount == 0) {
-        EmptyCard("这一年还没有咖啡记录", "切换年份看看往年的咖啡足迹")
-        return
-    }
-    val period = report.period
-    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        MetricGrid(
-            listOf(
-                "全年杯数" to "${period.cupCount} 杯",
-                "全年消费" to formatFen(period.totalSpendFen),
-                "月均消费" to formatFen(report.averageMonthlySpendFen),
-                "单杯均价" to period.averagePriceFen?.let(::formatFen).orDash(),
-            ),
-        )
-        SectionTitle("十二个月趋势")
-        TrendChart(report.monthlyPoints)
-        report.ratingTrendText?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
-        Text("消费最高：${report.highestSpendMonths.joinToString().ifBlank { "—" }}")
-        Text("消费最低：${report.lowestSpendMonths.joinToString().ifBlank { "—" }}")
-        SectionTitle("偏好排行")
-        RankingGroups(period)
-        SectionTitle("年度最高分")
-        RatedRecordRows(report.highestRatedRecords, onOpenRecord)
-        SectionTitle("年度评分 Top 5")
-        RatedRecordRows(report.topRatedRecords, onOpenRecord)
-    }
+@Composable private fun DonutCard(title: String, shares: List<ShareValue>, tag: String, modifier: Modifier) = CoffeeCard(modifier.testTag(tag)) {
+    Text(title, color = CoffeeVisuals.forest, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Box(Modifier.fillMaxWidth().height(96.dp), contentAlignment = Alignment.Center) { Canvas(Modifier.size(90.dp).semantics { contentDescription = "$title：" + shares.joinToString { "${it.label} ${it.cups}杯 ${percent(it)}" } }) { var start = -90f; shares.forEachIndexed { i, s -> val sweep = (s.fraction * 360f).toFloat(); drawArc(listOf(CoffeeVisuals.forest, CoffeeVisuals.peach, CoffeeVisuals.mint, CoffeeVisuals.warmOutline)[i % 4], start, sweep, false, style = Stroke(16.dp.toPx())); start += sweep } }; Text("${shares.sumOf { it.cups }}\n杯", color = CoffeeVisuals.forest) }
+    shares.forEach { Text("${it.label} · ${it.cups} 杯 · ${percent(it)}", color = CoffeeVisuals.secondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis) }
 }
-
-@Composable
-private fun MetricGrid(values: List<Pair<String, String>>) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        values.chunked(2).forEach { row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                row.forEach { (label, value) ->
-                    Card(
-                        Modifier.weight(1f)
-                            .testTag(TestTags.InsightsMetricCardPrefix + label)
-                            .semantics { this[InsightsMetricCardColor] = CoffeeVisuals.white },
-                        shape = RoundedCornerShape(CoffeeVisuals.cornerMedium),
-                        colors = CardDefaults.cardColors(containerColor = CoffeeVisuals.white),
-                    ) {
-                        Column(Modifier.padding(14.dp)) {
-                            Text(label, color = CoffeeVisuals.secondaryText)
-                            Text(
-                                value,
-                                style = MaterialTheme.typography.titleLarge,
-                                modifier = if (label == "实际消费") {
-                                    Modifier.testTag(TestTags.MonthlySpend)
-                                } else Modifier,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun RankingGroups(period: PeriodInsights) {
-    RankingLine("品牌", period.topBrands)
-    RankingLine("产品", period.topProducts)
-    RankingLine("豆子", period.topBeans)
-    RankingLine("冲煮", period.topBrewMethods)
-}
-
-@Composable
-private fun RankingLine(label: String, values: List<RankedValue>) {
-    Text("$label：${values.joinToString { "${it.name} ${it.count}次" }.ifBlank { "—" }}")
-}
-
-@Composable
-private fun RatedRecordRows(records: List<RatedRecordSummary>, onOpenRecord: (RatedRecordSummary) -> Unit) {
-    if (records.isEmpty()) {
-        Text("—")
-        return
-    }
-    records.take(20).forEach { record ->
-        TextButton(onClick = { onOpenRecord(record) }) {
-            Text("${record.brandName} · ${record.itemName} · ${record.ratingHalfStars / 2.0}★")
-        }
-    }
-    if (records.size > 20) Text("另有 ${records.size - 20} 条并列记录")
-}
-
-@Composable
-private fun RecordDetailDialog(record: RatedRecordSummary, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("原始记录") },
-        text = {
-            Column(
-                Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Text("${record.brandName} · ${record.itemName}", style = MaterialTheme.typography.titleMedium)
-                Text(record.localDate)
-                Text("评分：${record.ratingHalfStars / 2.0}★")
-                Text("实际支付：${record.actualPriceFen?.let(::formatFen) ?: "未记录"}")
-                Text("冲煮方式：${record.brewMethod ?: "未记录"}")
-                Text("产地：${record.origin ?: "未记录"}")
-                Text("处理法：${record.processing ?: "未记录"}")
-                Text("烘焙度：${record.roastLevel ?: "未记录"}")
-                Text("风味：${record.flavorNotes ?: "未记录"}")
-                Text("备注：${record.note ?: "未记录"}")
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
-    )
-}
-
-@Composable
-private fun TrendChart(points: List<TrendPoint>) {
-    val description = "消费与评分趋势图：" + points.mapNotNull { point ->
-        val facts = buildList {
-            point.spendFen?.let { add("消费${fenWithoutSymbol(it)}元") }
-            point.averageRating?.let { add("平均评分${String.format(Locale.ROOT, "%.1f", it)}星") }
-        }
-        facts.takeIf(List<String>::isNotEmpty)?.let { "${point.label} ${it.joinToString("，")}" }
-    }.joinToString("；")
-        .ifBlank { "暂无数据" }
-    val barColor = MaterialTheme.colorScheme.secondary
-    val ratingColor = MaterialTheme.colorScheme.primary
-    val chartScroll = rememberScrollState()
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("■ 消费柱", color = barColor)
-            Text("● 评分折线", color = ratingColor)
-        }
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val pointWidth = 72.dp
-            val contentWidth = maxOf(maxWidth, pointWidth * points.size.coerceAtLeast(1))
-            val cellWidth = contentWidth / points.size.coerceAtLeast(1)
-            Column(Modifier.fillMaxWidth().horizontalScroll(chartScroll)) {
-                Column(Modifier.width(contentWidth)) {
-                    Canvas(
-                        Modifier.fillMaxWidth().height(150.dp).semantics { contentDescription = description },
-                    ) {
-                        val maxSpend = points.mapNotNull(TrendPoint::spendFen).maxOrNull()?.takeIf { it > 0 } ?: 1L
-                        val centers = chartPointCenters(size.width, points.size)
-                        val cell = size.width / points.size.coerceAtLeast(1)
-                        var lastRating: Offset? = null
-                        points.forEachIndexed { index, point ->
-                            point.spendFen?.let { spend ->
-                                val barHeight = size.height * .72f * (spend.toDouble() / maxSpend.toDouble()).toFloat()
-                                drawRoundRect(
-                                    color = barColor.copy(alpha = .55f),
-                                    topLeft = Offset(centers[index] - cell * .225f, size.height - barHeight),
-                                    size = androidx.compose.ui.geometry.Size(cell * .45f, barHeight),
-                                )
-                            }
-                            point.averageRating?.let { rating ->
-                                val current = Offset(centers[index], size.height * (1f - (rating / 5.0).toFloat()))
-                                lastRating?.let { drawLine(ratingColor, it, current, 4.dp.toPx(), StrokeCap.Round) }
-                                drawCircle(ratingColor, 4.dp.toPx(), current)
-                                lastRating = current
-                            }
-                        }
-                    }
-                    Row(Modifier.fillMaxWidth()) {
-                        points.forEach { point ->
-                            Column(
-                                Modifier.width(cellWidth).padding(vertical = 2.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                            ) {
-                                Text(point.label)
-                                point.spendFen?.let { Text(formatFen(it)) }
-                                point.averageRating?.let { Text("${String.format(Locale.ROOT, "%.1f", it)}★") }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-internal fun chartPointCenters(chartWidthPx: Float, pointCount: Int): List<Float> {
-    if (pointCount <= 0) return emptyList()
-    val cell = chartWidthPx / pointCount
-    return List(pointCount) { index -> (index + .5f) * cell }
-}
-
-@Composable
-private fun BrandShareChart(shares: List<BrandSpendShare>) {
-    val description = "品牌消费占比图：" + shares.joinToString("，") {
-        "${it.name} ${String.format(Locale.ROOT, "%.0f%%", it.fraction * 100)}"
-    }.ifBlank { "暂无数据" }
-    val colors = listOf(
-        MaterialTheme.colorScheme.primary,
-        MaterialTheme.colorScheme.secondary,
-        MaterialTheme.colorScheme.tertiary,
-        MaterialTheme.colorScheme.outline,
-    )
-    Canvas(Modifier.fillMaxWidth().height(130.dp).semantics { contentDescription = description }) {
-        var start = -90f
-        shares.forEachIndexed { index, share ->
-            val sweep = (share.fraction * 360).toFloat()
-            drawArc(colors[index % colors.size], start, sweep, false, style = Stroke(22.dp.toPx()))
-            start += sweep
-        }
-    }
-    shares.forEach { Text("${it.name} · ${formatFen(it.spendFen)} · ${String.format(Locale.ROOT, "%.0f%%", it.fraction * 100)}") }
-}
-
-@Composable private fun SectionTitle(value: String) = Text(value, style = MaterialTheme.typography.titleMedium)
-
-@Composable
-private fun EmptyCard(title: String, subtitle: String) {
-    Card(Modifier.fillMaxWidth().padding(16.dp), shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
+@Composable private fun RankingCard(title: String, values: List<RankedValue>, tag: String, modifier: Modifier) = CoffeeCard(modifier.testTag(tag)) { Text(title, color = CoffeeVisuals.forest); values.take(3).forEachIndexed { i, value -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text("${i + 1}", color = CoffeeVisuals.peach); Text(value.name, Modifier.weight(1f).padding(horizontal = 6.dp), maxLines = 1, overflow = TextOverflow.Ellipsis); Text("${value.cups}杯", color = CoffeeVisuals.secondaryText) } }; if (values.isEmpty()) Text("—", color = CoffeeVisuals.secondaryText) }
+@Composable private fun HighlightCard(title: String, item: HighlightRecord, tag: String, resolver: ImagePathResolver, onOpen: (String) -> Unit) = CoffeeCard(Modifier.fillMaxWidth().testTag(tag).clickable { onOpen(item.recordId) }) { Row(verticalAlignment = Alignment.CenterVertically) { val logo = bundledBrandLogoRes(item.brandName); val fallbackPainter = logo?.let { painterResource(it) }; ResolvedLocalAssetImage(item.imageAssetId, item.brandLogoAssetId, resolver, "$title ${item.brandName}", ContentScale.Fit, Modifier.size(72.dp).border(1.dp, CoffeeVisuals.warmOutline, RoundedCornerShape(CoffeeVisuals.cornerSmall)), fallbackPainter); Column(Modifier.padding(start = 12.dp)) { Text(title, color = CoffeeVisuals.forest); Text(item.brandName, color = CoffeeVisuals.secondaryText); Text(item.itemName, maxLines = 1, overflow = TextOverflow.Ellipsis); Text("${item.ratingHalfStars / 2.0}★", color = CoffeeVisuals.peach); if (item.tiedProductCount > 0) Text("另有 ${item.tiedProductCount} 款并列", color = CoffeeVisuals.secondaryText) } } }
+@Composable private fun CoffeeCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) = Card(modifier.semantics { this[InsightsMetricCardColor] = CoffeeVisuals.white }, shape = RoundedCornerShape(CoffeeVisuals.cornerMedium), colors = CardDefaults.cardColors(containerColor = CoffeeVisuals.white), border = BorderStroke(1.dp, CoffeeVisuals.warmOutline)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp), content = content) }
+@Composable private fun EmptyCard(title: String) = CoffeeCard(Modifier.fillMaxWidth()) { Text(title, color = CoffeeVisuals.forest); Text("下一杯会从这里开始留下痕迹", color = CoffeeVisuals.secondaryText) }
+private fun percent(share: ShareValue) = String.format(Locale.ROOT, "%.0f%%", share.fraction * 100)
 internal fun formatFen(fen: Long): String = "¥${fenWithoutSymbol(fen)}"
 private fun fenWithoutSymbol(fen: Long): String = "${fen / 100}.${(fen % 100).toString().padStart(2, '0')}"
-internal fun formatSignedFen(fen: Long): String {
-    val value = BigInteger.valueOf(fen)
-    val parts = value.abs().divideAndRemainder(BigInteger.valueOf(100))
-    val amount = "¥${parts[0]}.${parts[1].toString().padStart(2, '0')}"
-    return (if (value.signum() >= 0) "+" else "-") + amount
-}
-private fun signedFen(fen: Long): String = formatSignedFen(fen)
-private fun String?.orDash(): String = this ?: "—"
+internal fun formatSignedFen(fen: Long): String { val value = BigInteger.valueOf(fen); val parts = value.abs().divideAndRemainder(BigInteger.valueOf(100)); return (if (value.signum() >= 0) "+" else "-") + "¥${parts[0]}.${parts[1].toString().padStart(2, '0')}" }

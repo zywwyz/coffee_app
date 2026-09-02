@@ -1,17 +1,20 @@
 package com.niumi.coffeejournal.insights
 
-import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import com.niumi.coffeejournal.ui.theme.CoffeeTheme
+import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.ui.CoffeeVisuals
+import com.niumi.coffeejournal.ui.theme.CoffeeTheme
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -23,115 +26,79 @@ import org.robolectric.annotation.Config
 class InsightsScreenRobolectricTest {
     @get:Rule val compose = createComposeRule()
 
-    @Test
-    fun `insights presents its cream surface and white metric cards`() {
+    @Test fun `summary uses approved cream forest and rounded card semantics`() {
         compose.setContent { CoffeeTheme { InsightsScreen(state(), {}, {}) } }
-
-        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.InsightsSurface).assertIsDisplayed()
-            .assert(SemanticsMatcher.expectValue(InsightsSurfaceColor, CoffeeVisuals.cream))
-        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.InsightsMetricCardPrefix + "喝了几杯").assertIsDisplayed()
-            .assert(SemanticsMatcher.expectValue(InsightsMetricCardColor, CoffeeVisuals.white))
+        compose.onNodeWithTag(TestTags.InsightsSurface).assertIsDisplayed()
+            .assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(InsightsSurfaceColor, CoffeeVisuals.cream))
+        compose.onNodeWithTag(TestTags.InsightsHabitHero).assertIsDisplayed()
+            .assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(InsightsMetricCardColor, CoffeeVisuals.white))
     }
 
-    @Test
-    fun `tabs expose monthly yearly and switch callbacks`() {
-        var yearlyClicks = 0
-        val state = state()
-        compose.setContent {
-            CoffeeTheme {
-                InsightsScreen(state, onShowMonthly = {}, onShowYearly = { yearlyClicks++ })
-            }
-        }
-
-        compose.onNodeWithText("月度总结").assertIsDisplayed()
-        compose.onNodeWithText("年度总结").performClick()
-        compose.runOnIdle { assert(yearlyClicks == 1) }
+    @Test fun `switches periods and dispatches previous next callbacks`() {
+        var monthly = 0; var yearly = 0; var previous = 0; var next = 0
+        compose.setContent { CoffeeTheme { InsightsScreen(state(), { monthly++ }, { yearly++ }, { previous++ }, { next++ }) } }
+        compose.onNodeWithText("月度").assertIsDisplayed()
+        compose.onNodeWithText("年度").performClick()
+        compose.onNodeWithText("上一周期").performClick()
+        compose.onNodeWithText("下一周期").performClick()
+        compose.runOnIdle { assertEquals(0, monthly); assertEquals(1, yearly); assertEquals(1, previous); assertEquals(1, next) }
     }
 
-    @Test
-    fun `small screen scrolls to preferences and charts have accessible facts`() {
+    @Test fun `habit hero exposes exact values and price gaps`() {
         compose.setContent { CoffeeTheme { InsightsScreen(state(), {}, {}) } }
-
-        compose.onNodeWithText("偏好排行").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("消费柱", substring = true).assertExists()
-        compose.onNodeWithText("评分折线", substring = true).assertExists()
-        compose.onNodeWithText("第1周").assertExists()
-        compose.onAllNodesWithText("¥10.00")[0].assertExists()
-        compose.onAllNodesWithText("4.5★")[0].assertExists()
-        compose.onNodeWithContentDescription("第1周 消费10.00元，平均评分4.5星", substring = true).assertExists()
-        compose.onNodeWithContentDescription("品牌消费占比图：瑞幸 100%").assertExists()
+        compose.onNodeWithTag(TestTags.InsightsHabitHero).assertIsDisplayed()
+        compose.onNodeWithText("7").assertIsDisplayed()
+        compose.onNodeWithText("饮用天数 4", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("最长连续 3 天", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("平均评分 4.5", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("总消费 —").assertIsDisplayed()
+        compose.onNodeWithText("杯均 —").assertIsDisplayed()
     }
 
-    @Test
-    fun `best record opens immutable snapshot details instead of exposing id`() {
+    @Test fun `trend and donut legends have non color accessibility facts`() {
         compose.setContent { CoffeeTheme { InsightsScreen(state(), {}, {}) } }
-
-        compose.onAllNodesWithText("瑞幸 · 生椰拿铁 · 4.5★")[0].performScrollTo().performClick()
-        compose.onNodeWithText("原始记录").assertIsDisplayed()
-        compose.onNodeWithText("2026-08-01").assertIsDisplayed()
-        compose.onNodeWithText("实际支付：¥10.00").assertIsDisplayed()
-        compose.onNodeWithText("产地：云南").assertExists()
+        compose.onNodeWithTag(TestTags.InsightsTrendChart).performScrollTo()
+        compose.onNodeWithContentDescription("饮用趋势：本期累计杯数；上期累计杯数", substring = true).assertExists()
+        compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("BLACK · 4 杯 · 57%").assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.InsightsBrandDonut).assertIsDisplayed()
+        compose.onNodeWithText("瑞幸 · 5 杯 · 71%").assertIsDisplayed()
     }
 
-    @Test
-    fun `chart semantics never invent price or rating facts`() {
-        val base = state()
-        val points = listOf(
-            TrendPoint("第1周", null, 0, 1, 4.0),
-            TrendPoint("第2周", 0, 1, 0, null),
-        )
-        val report = requireNotNull(base.monthly).copy(period = base.monthly.period.copy(points = points))
-        compose.setContent { CoffeeTheme { InsightsScreen(base.copy(monthly = report), {}, {}) } }
-
-        compose.onNodeWithContentDescription(
-            "消费与评分趋势图：第1周 平均评分4.0星；第2周 消费0.00元",
-        ).assertExists()
+    @Test fun `rankings stay at three and long names are present`() {
+        compose.setContent { CoffeeTheme { InsightsScreen(state(), {}, {}) } }
+        compose.onNodeWithTag(TestTags.InsightsTopBrands).performScrollTo()
+        compose.onAllNodesWithText("1").assertCountEquals(2)
+        compose.onNodeWithText("一个特别特别特别特别特别特别特别特别长的产品名称").assertExists()
     }
 
-    @Test
-    fun `signed delta handles minimum long without double minus`() {
-        org.junit.Assert.assertEquals("-¥92233720368547758.08", formatSignedFen(Long.MIN_VALUE))
+    @Test fun `highlight opens the supplied record id and indicates equal ratings`() {
+        var opened: String? = null
+        compose.setContent { CoffeeTheme { InsightsScreen(state(), {}, {}, onOpenRecord = { opened = it }) } }
+        compose.onNodeWithTag(TestTags.InsightsBestCard).performScrollTo().performClick()
+        compose.runOnIdle { assertEquals("best", opened) }
+        compose.onNodeWithText("本期评分一致").performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithTag(TestTags.InsightsWorstCard).assertCountEquals(0)
     }
 
-    @Test
-    fun `canvas points and fixed width labels share centers while scrolling`() {
-        val centers = chartPointCenters(864f, 12)
-        org.junit.Assert.assertEquals(36f, centers.first(), 0f)
-        org.junit.Assert.assertEquals(828f, centers.last(), 0f)
-        val scroll = 240f
-        org.junit.Assert.assertEquals(centers[5] - scroll, (5.5f * 72f) - scroll, 0f)
-    }
-
-    @Test
-    fun `empty state remains useful`() {
+    @Test fun `empty and unrated states remain informative`() {
         val empty = state().copy(monthly = InsightsCalculator.monthly(2026, 8, emptyList(), emptyList()))
         compose.setContent { CoffeeTheme { InsightsScreen(empty, {}, {}) } }
-
         compose.onNodeWithText("这个月还没有咖啡记录").assertIsDisplayed()
     }
 
     private fun state(): InsightsUiState {
-        val point = TrendPoint("第1周", 1_000, 1, 2, 4.5)
-        val summary = RatedRecordSummary(
-            "one", "2026-08-01", "瑞幸", "生椰拿铁", 9, 1_000, "冰", "清爽".repeat(100),
-            origin = "云南", processing = "水洗", roastLevel = "中烘", flavorNotes = "坚果",
-        )
+        val habit = HabitSummary(7, 4, 3, 4.5, null, null, 2)
+        val types = listOf(ShareValue("BLACK", "BLACK", 4, 4.0 / 7), ShareValue("MILK", "MILK", 3, 3.0 / 7))
+        val brands = listOf(ShareValue("luckin", "瑞幸", 5, 5.0 / 7), ShareValue("manner", "MANNER", 2, 2.0 / 7))
         val period = PeriodInsights(
-            1, 1_000, 1_000, 4.5,
-            listOf(RankedValue("瑞幸", 1)), listOf(RankedValue("生椰拿铁", 1)),
-            emptyList(), listOf(RankedValue("冰", 1)), listOf("one"), listOf("one"), listOf(point),
-            bestRecords = listOf(summary), worstRecords = listOf(summary),
+            cupCount = 7, totalSpendFen = 0, averagePriceFen = null, averageRating = 4.5,
+            topBrands = listOf(RankedValue("瑞幸", 5), RankedValue("MANNER", 2), RankedValue("库迪", 1), RankedValue("多余", 1)),
+            topProducts = listOf(RankedValue("一个特别特别特别特别特别特别特别特别长的产品名称", 4), RankedValue("拿铁", 2), RankedValue("美式", 1), RankedValue("多余", 1)),
+            topBeans = emptyList(), topBrewMethods = emptyList(), bestRecordIds = emptyList(), worstRecordIds = emptyList(), points = emptyList(),
+            habit = habit, coffeeTypeShares = types, brandShares = brands,
+            best = HighlightRecord("best", "瑞幸", "生椰拿铁", 9, null, null, 2), worst = null,
         )
-        return InsightsUiState(
-            year = 2026,
-            month = 8,
-            loading = false,
-            monthly = MonthlyInsights(
-                2026, 8, period,
-                SpendDelta(1_000, null, SpendDeltaBaseline.MISSING),
-                listOf(BrandSpendShare("瑞幸", 1_000, 1.0)),
-                null,
-            ),
-        )
+        return InsightsUiState(2026, 8, loading = false, monthly = MonthlyInsights(2026, 8, period, SpendDelta(0, null, SpendDeltaBaseline.MISSING), emptyList(), null, habit, listOf(ComparisonPoint(1, 1, 0)), types, brands, period.topBrands, period.topProducts, period.best, null))
     }
 }

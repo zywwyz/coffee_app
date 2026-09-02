@@ -100,6 +100,9 @@ data object Settings : NavKey
 @Serializable
 data class ChainBrandProducts(val brandId: String) : NavKey
 
+@Serializable
+data class RecordDetails(val recordId: String) : NavKey
+
 private data class RootDestination(
     val key: NavKey,
     val label: String,
@@ -223,8 +226,19 @@ private fun AppNavigationContent(
                     }
                 }
                 entry<Insights> {
-                    if (journalRepository != null) InsightsFeature(journalRepository, journalClock) { backStack.add(Settings) }
+                    if (journalRepository != null) InsightsFeature(
+                        repository = journalRepository,
+                        clock = journalClock,
+                        imagePathResolver = imagePathResolver,
+                        onOpenRecord = { backStack.add(RecordDetails(it)) },
+                        onOpenSettings = { backStack.add(Settings) },
+                    )
                     else RootContent("咖啡回顾", "查看饮用、评分与消费趋势") { backStack.add(Settings) }
+                }
+                entry<RecordDetails> { destination ->
+                    if (journalRepository != null) RecordDetailsDestination(journalRepository, destination.recordId) {
+                        backStack.removeAt(backStack.lastIndex)
+                    }
                 }
                 entry<Settings> {
                     if (backupManager != null) SettingsScreen(backupManager, onBack = { backStack.removeAt(backStack.lastIndex) })
@@ -232,6 +246,23 @@ private fun AppNavigationContent(
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun RecordDetailsDestination(repository: JournalRepository, recordId: String, onBack: () -> Unit) {
+    val record by produceState<com.niumi.coffeejournal.core.model.DrinkRecord?>(null, repository, recordId) {
+        value = repository.get(recordId)
+    }
+    Column(Modifier.fillMaxSize().background(CoffeeVisuals.cream).padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        TextButton(onClick = onBack) { Text("返回") }
+        Text("记录详情", style = MaterialTheme.typography.headlineSmall, color = CoffeeVisuals.forest)
+        record?.let {
+            Text("${it.snapshot.brandName} · ${it.snapshot.itemName}", style = MaterialTheme.typography.titleMedium)
+            Text(it.localDate)
+            Text("评分：${it.ratingHalfStars?.div(2.0)?.toString()?.plus("★") ?: "未记录"}")
+            Text("实际支付：${it.actualPriceFen?.let { price -> "¥${price / 100}.${(price % 100).toString().padStart(2, '0')}" } ?: "未记录"}")
+        } ?: Text("记录不存在或已删除")
     }
 }
 
