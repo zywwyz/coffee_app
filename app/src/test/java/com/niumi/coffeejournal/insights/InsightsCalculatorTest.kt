@@ -22,6 +22,9 @@ class InsightsCalculatorTest {
         assertEquals(1, current.trend.first().previous); assertEquals(0, current.trend[1].previous)
         assertEquals(12, InsightsCalculator.yearly(2025, emptyList(), today = "2026-04-10").trend.size)
     }
+    @Test fun `first supported year has no previous comparison`() {
+        assertNull(InsightsCalculator.yearly(1, emptyList(), today = "2026-04-10").trend.first().previous)
+    }
     @Test fun `legacy yearly points retain real monthly spend and rating facts`() {
         val report = InsightsCalculator.yearly(2025, listOf(r("jan", "2025-01-01", price = 300, rating = 8)))
         assertEquals(300L, report.monthlyPoints.first().spendFen)

@@ -20,11 +20,14 @@ import kotlinx.coroutines.launch
 
 interface InsightsRepository {
     fun observeMonth(year: Int, month: Int): Flow<List<DrinkRecord>>
+    fun observeRange(startLocalDate: String, endLocalDate: String): Flow<List<DrinkRecord>>
 }
 
 class JournalInsightsRepository(private val journalRepository: JournalRepository) : InsightsRepository {
     override fun observeMonth(year: Int, month: Int): Flow<List<DrinkRecord>> =
         journalRepository.observeMonth(year, month)
+    override fun observeRange(startLocalDate: String, endLocalDate: String): Flow<List<DrinkRecord>> =
+        journalRepository.observeRange(startLocalDate, endLocalDate)
 }
 
 enum class InsightsMode { MONTHLY, YEARLY }
@@ -165,9 +168,10 @@ class InsightsViewModel(
     }
 
     private suspend fun observeYearly(selected: InsightsUiState, selectedGeneration: Long) {
-        val years = listOf(selected.year, selected.year - 1).filter { it >= 1 }
-        val months = years.flatMap { year -> (1..12).map { month -> repository.observeMonth(year, month) } }
-        combine(months) { emissions -> emissions.flatMap { it } }.collect { records ->
+        val startYear = if (selected.year == 1) 1 else selected.year - 1
+        repository.observeRange(
+            "%04d-01-01".format(startYear), "%04d-12-31".format(selected.year),
+        ).collect { records ->
             if (generation != selectedGeneration) return@collect
             mutableState.value = mutableState.value.copy(
                 loading = false,

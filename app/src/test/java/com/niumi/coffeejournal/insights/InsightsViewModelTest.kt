@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
@@ -75,15 +77,14 @@ class InsightsViewModelTest {
         val viewModel = viewModel(repository)
 
         viewModel.showYearly()
-        repository.flow(2026, 1).value = listOf(record("current", "2026-01-01"))
-        repository.flow(2026, 9).value = listOf(record("future", "2026-09-01"))
-        repository.flow(2025, 1).value = listOf(record("previous", "2025-01-01"))
+        repository.range("2025-01-01", "2026-12-31").value = listOf(
+            record("current", "2026-01-01"), record("future", "2026-09-01"), record("previous", "2025-01-01"),
+        )
         yield()
 
         val state = viewModel.uiState.value
         assertEquals(2026, state.year)
-        assertTrue((1..12).all { 2026 to it in repository.observed })
-        assertTrue((1..12).all { 2025 to it in repository.observed })
+        assertEquals(1, repository.rangeSubscriptions.size)
         assertEquals(12, state.yearly?.monthlyPoints?.size)
         assertEquals(1, state.yearly?.period?.cupCount)
         assertEquals(8, state.yearly?.trend?.size)
@@ -98,7 +99,7 @@ class InsightsViewModelTest {
         val viewModel = viewModel(repository)
         viewModel.showYearly()
         viewModel.previousYear()
-        repository.flow(2025, 12).value = listOf(record("dec", "2025-12-31"))
+        repository.range("2024-01-01", "2025-12-31").value = listOf(record("dec", "2025-12-31"))
         yield()
 
         assertEquals(2025 to 8, viewModel.uiState.value.year to viewModel.uiState.value.month)
@@ -110,19 +111,21 @@ class InsightsViewModelTest {
     }
 
     @Test
-    fun `rapid mode switch cancels yearly streams before they can replace monthly statistics`() = runBlocking {
+    fun `rapid mode switch cancels single yearly range before queued emission can replace monthly statistics`() = runTest {
         val repository = FakeInsightsRepository()
-        val viewModel = viewModel(repository)
+        val scope = CoroutineScope(Job() + StandardTestDispatcher(testScheduler))
+        val viewModel = viewModel(repository, scope)
+        testScheduler.runCurrent()
         viewModel.showYearly()
-        yield()
-        val yearlySubscriptions = repository.subscriptions.takeLast(24)
+        testScheduler.runCurrent()
+        val yearlySubscription = repository.rangeSubscriptions.single { it.active }
         viewModel.showMonthly()
         repository.flow(2026, 8).value = listOf(record("monthly", "2026-08-01"))
-        repository.flow(2026, 1).value = List(9) { record("stale-$it", "2026-01-01") }
-        yield()
+        repository.range("2025-01-01", "2026-12-31").value = List(9) { record("stale-$it", "2026-01-01") }
+        testScheduler.runCurrent()
 
-        assertEquals(24, yearlySubscriptions.size)
-        assertTrue(yearlySubscriptions.none { it.active })
+        assertTrue(!yearlySubscription.active)
+        assertEquals(1, repository.rangeSubscriptions.size)
         assertEquals(2, repository.subscriptions.count { it.active })
         assertEquals(setOf(2026 to 8, 2026 to 7), repository.subscriptions.filter { it.active }.map { it.month }.toSet())
         assertEquals(InsightsMode.MONTHLY, viewModel.uiState.value.mode)
@@ -162,9 +165,12 @@ class InsightsViewModelTest {
         data class Subscription(val month: Pair<Int, Int>, var active: Boolean = false)
 
         private val flows = mutableMapOf<Pair<Int, Int>, MutableStateFlow<List<DrinkRecord>>>()
+        private val ranges = mutableMapOf<Pair<String, String>, MutableStateFlow<List<DrinkRecord>>>()
         val observed = mutableListOf<Pair<Int, Int>>()
         val subscriptions = mutableListOf<Subscription>()
+        val rangeSubscriptions = mutableListOf<Subscription>()
         fun flow(year: Int, month: Int) = flows.getOrPut(year to month) { MutableStateFlow(emptyList()) }
+        fun range(start: String, end: String) = ranges.getOrPut(start to end) { MutableStateFlow(emptyList()) }
         override fun observeMonth(year: Int, month: Int): Flow<List<DrinkRecord>> {
             observed += year to month
             val subscription = Subscription(year to month)
@@ -173,10 +179,17 @@ class InsightsViewModelTest {
                 .onStart { subscription.active = true }
                 .onCompletion { subscription.active = false }
         }
+        override fun observeRange(startLocalDate: String, endLocalDate: String): Flow<List<DrinkRecord>> {
+            val subscription = Subscription(0 to 0)
+            rangeSubscriptions += subscription
+            return range(startLocalDate, endLocalDate)
+                .onStart { subscription.active = true }
+                .onCompletion { subscription.active = false }
+        }
     }
 
-    private fun viewModel(repository: FakeInsightsRepository) = InsightsViewModel.factory(
-        repository, FixedClock("2026-08-20"), CoroutineScope(Job() + Dispatchers.Unconfined),
+    private fun viewModel(repository: FakeInsightsRepository, scope: CoroutineScope = CoroutineScope(Job() + Dispatchers.Unconfined)) = InsightsViewModel.factory(
+        repository, FixedClock("2026-08-20"), scope,
     ).create(InsightsViewModel::class.java)
 
     private class FixedClock(private val localDate: String) : Clock {

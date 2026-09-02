@@ -65,6 +65,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit4)
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(platform(libs.androidx.compose.bom))

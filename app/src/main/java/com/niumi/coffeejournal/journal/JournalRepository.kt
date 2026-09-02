@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.map
 
 interface JournalRepository {
     fun observeMonth(year: Int, month: Int): Flow<List<DrinkRecord>>
+    fun observeRange(startLocalDate: String, endLocalDate: String): Flow<List<DrinkRecord>> =
+        error("Range observation is not supported")
     suspend fun newDraft(type: ItemType, itemId: String): DrinkDraft
     suspend fun replaceDraftForItem(current: DrinkDraft, type: ItemType, itemId: String): DrinkDraft =
         newDraft(type, itemId)
@@ -208,6 +210,9 @@ class DefaultJournalRepository(
         val (start, end) = monthRange(year, month)
         return drinkStore.observeRange(start, end)
     }
+
+    override fun observeRange(startLocalDate: String, endLocalDate: String): Flow<List<DrinkRecord>> =
+        drinkStore.observeRange(startLocalDate, endLocalDate)
 
     override suspend fun newDraft(type: ItemType, itemId: String): DrinkDraft {
         val item = catalogRepository.getItem(itemId)
