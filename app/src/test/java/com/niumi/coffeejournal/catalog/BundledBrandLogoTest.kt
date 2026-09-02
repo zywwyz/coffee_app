@@ -65,7 +65,7 @@ class BundledBrandLogoTest {
             "seed-chain-lucky-cup" to "ad21987c3104fa81395ffffe077ca1013f652b49197f47d2d4b25370cb5be5e0",
             "seed-chain-starbucks" to "b390417c47778e611c1562dde83bd20ef6ec2a84d999c0c093e27f44bc02e304",
             "seed-chain-kcoffee" to "e2b82809a099e6ffcfe6f1e644d9b0711a06dbd8e269940484002d85262a860b",
-            "seed-chain-manner" to "07e2f7c918683b99fb0f5b2cfef1fa5e2a77e316d915c9d694aac242dab494eb",
+            "seed-chain-manner" to "42530c6e8cc213db8aa491461949a27a945cf0a68ce0b2f0ef829f2b296ce62f",
             "seed-chain-hucoffee" to "b31f4fc6a8f9360b4c92f0ddd8d4afbb59116fe263dedc8d5e8b6b24c2a33592",
             "seed-chain-tims" to "657f671dcb778ece6cdbfbeb2c2a75f03bb2adefd6073975ff7ee6c0c5da9334",
             "seed-chain-mstand" to "52be31423e7be8b5f5bef22c8e08b531910468e136f5c1fb0a12a8c81fa5c0a4",

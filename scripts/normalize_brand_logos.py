@@ -21,6 +21,7 @@ WIDE_WORDMARKS = {"brand_logo_cotti.png", "brand_logo_kcoffee.png"}
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIRECTORY = PROJECT_ROOT / "assets/brand-logos/source"
 REFERENCE_PREVIEW = PROJECT_ROOT / "assets/brand-logos/reference/calendar-logo-reference.png"
+APPROVED_MANNER = PROJECT_ROOT / "assets/brand-logos/reference/manner-user-approved.jpeg"
 OUTPUT_DIRECTORY = PROJECT_ROOT / "app/src/main/res/drawable-nodpi"
 
 # (left, top, right, bottom) in the 853x1843 user-approved old preview.
@@ -88,6 +89,10 @@ def remove_edge_connected_pale_background(image: Image.Image) -> Image.Image:
 
 
 def audited_input(filename: str) -> tuple[Image.Image, str]:
+    if filename == "brand_logo_manner.png":
+        if not APPROVED_MANNER.exists():
+            raise ValueError(f"Missing user-approved MANNER input: {APPROVED_MANNER}")
+        return remove_edge_connected_pale_background(Image.open(APPROVED_MANNER)), "user-approved MANNER JPEG"
     if filename not in REFERENCE_DERIVATIVES:
         return Image.open(SOURCE_DIRECTORY / filename), "audited source"
     if not REFERENCE_PREVIEW.exists():
@@ -117,10 +122,17 @@ def main() -> None:
         output_logo = OUTPUT_DIRECTORY / source_logo.name
         input_image, input_kind = audited_input(source_logo.name)
         output = normalized_logo(input_image, artwork_edge(source_logo.name))
-        output.save(output_logo, format="PNG", optimize=False)
-        source_digest = hashlib.sha256(
-            (REFERENCE_PREVIEW if source_logo.name in REFERENCE_DERIVATIVES else source_logo).read_bytes(),
-        ).hexdigest()
+        existing_pixels = (
+            Image.open(output_logo).convert("RGBA").tobytes()
+            if output_logo.exists()
+            else None
+        )
+        if existing_pixels != output.tobytes():
+            output.save(output_logo, format="PNG", optimize=False)
+        input_path = APPROVED_MANNER if source_logo.name == "brand_logo_manner.png" else (
+            REFERENCE_PREVIEW if source_logo.name in REFERENCE_DERIVATIVES else source_logo
+        )
+        source_digest = hashlib.sha256(input_path.read_bytes()).hexdigest()
         output_digest = hashlib.sha256(output_logo.read_bytes()).hexdigest()
         alpha_bounds = output.getchannel("A").getbbox()
         print(

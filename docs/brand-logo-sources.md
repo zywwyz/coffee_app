@@ -4,7 +4,7 @@
 
 ## 2026-08-28 日历展示版审计补充
 
-用户明确确认 `assets/brand-logos/reference/calendar-logo-reference.png` 中的日历展示版本。该文件为用户提供的旧预览，SHA-256 为 `795e9fd6ca4db0dc8882b2647ec2fd80f0d73ee49912bc9965d8259b0bdc3462`，作为受版本控制的审计输入。`scripts/normalize_brand_logos.py` 对其中的固定像素区域作可复现裁切，并仅移除与裁切边缘连通的浅色日历背景；每个派生裁切在去背景后均保留至少 2px 的透明边，且不包含日期或计数徽标。不重绘、变形或烘焙白色卡片底。
+用户明确确认 `assets/brand-logos/reference/calendar-logo-reference.png` 中的日历展示版本。该文件为用户提供的旧预览，SHA-256 为 `795e9fd6ca4db0dc8882b2647ec2fd80f0d73ee49912bc9965d8259b0bdc3462`，作为受版本控制的审计输入。`scripts/normalize_brand_logos.py` 对其中的固定像素区域作可复现裁切，并仅移除与裁切边缘连通的浅色日历背景；每个派生裁切在去背景后均保留至少 2px 的透明边，且不包含日期或计数徽标。MANNER 改用用户明确批准的 `assets/brand-logos/reference/manner-user-approved.jpeg`（SHA-256 `a9db5eb2fc2c2a295e609b7e5de1853c3c6201bb4458bebb34c51a8e4db71117`）；同样只移除边缘连通的近白背景，保留内部白洞与全部黑色线条。不重绘、变形或烘焙白色卡片底。
 
 | 输出资源 | 展示输入 | 参考裁切坐标（left, top, right, bottom） |
 | --- | --- | --- |
@@ -12,7 +12,7 @@
 | `brand_logo_luckin.png` | 用户确认旧预览派生：蓝鹿 + `luckin coffee` 竖向完整标识 | `(140, 1378, 237, 1480)` |
 | `brand_logo_cotti.png` | 用户确认旧预览派生：黑色两行 `Cotti Coffee` | `(485, 1035, 580, 1098)` |
 | `brand_logo_kcoffee.png` | 用户确认旧预览派生：肯悦咖啡 `KCOFFEE` 横向字标 | `(711, 1400, 810, 1470)` |
-| `brand_logo_manner.png` | 用户确认旧预览派生：紧凑深色 `MANNER` 方块标识 | `(26, 1556, 124, 1640)` |
+| `brand_logo_manner.png` | 用户明确批准 JPEG：完整上三角、`MANNER` 字框及下三角 | `manner-user-approved.jpeg` |
 | `brand_logo_hucoffee.png` | 用户确认旧预览派生：沪咖 `JENNY X COFFEE` 招牌 | `(370, 1205, 468, 1300)` |
 | `brand_logo_nowwa.png` | 用户确认旧预览派生：橙色图形 + `NOWWA` 竖向完整标识 | `(598, 1020, 694, 1120)` |
 | `brand_logo_peets.png` | 用户确认旧预览派生：紧凑竖向 `Peet's Coffee` 标识 | `(712, 1212, 810, 1305)` |
@@ -29,7 +29,7 @@
 | `seed-chain-lucky-cup` | source | `9279e2da6267478f5e0750ebe30043269a9692200aceda5e2a6f949ad77c95a1` | `ad21987c3104fa81395ffffe077ca1013f652b49197f47d2d4b25370cb5be5e0` |
 | `seed-chain-starbucks` | source | `f1a864970f8cf1b29678adbc3fc15ad2d75c985f115597a105ce7c6fe094e8f3` | `b390417c47778e611c1562dde83bd20ef6ec2a84d999c0c093e27f44bc02e304` |
 | `seed-chain-kcoffee` | reference `(711, 1400, 810, 1470)` | `a2954112041316d76499562560dd10b32bfc984d01af4df916877f0e4c37f72a` | `e2b82809a099e6ffcfe6f1e644d9b0711a06dbd8e269940484002d85262a860b` |
-| `seed-chain-manner` | reference `(26, 1556, 124, 1640)` | `6be48435f67fc32c711adbccede92d5fb36751c535f7a1db7622104b9c458ddb` | `07e2f7c918683b99fb0f5b2cfef1fa5e2a77e316d915c9d694aac242dab494eb` |
+| `seed-chain-manner` | `manner-user-approved.jpeg` (`a9db5eb2fc2c2a295e609b7e5de1853c3c6201bb4458bebb34c51a8e4db71117`) | `b1046b48cbc6b8950ec10509939ad76f6855599785f09cd2f176e46dd4829fb5` | `42530c6e8cc213db8aa491461949a27a945cf0a68ce0b2f0ef829f2b296ce62f` |
 | `seed-chain-hucoffee` | reference `(370, 1205, 468, 1300)` | `d5d32cdde1366ea3f414bdc02bb9e076696c73870db1e5721a513d049d779c26` | `b31f4fc6a8f9360b4c92f0ddd8d4afbb59116fe263dedc8d5e8b6b24c2a33592` |
 | `seed-chain-tims` | source | `c87b36ae298a45c74cdf59895cb6b8cb61316682ec1eb64d7bb1377e5f4687e3` | `657f671dcb778ece6cdbfbeb2c2a75f03bb2adefd6073975ff7ee6c0c5da9334` |
 | `seed-chain-mstand` | source | `3de36ada75841f32ab3b1820cac03b4ed9809812d4514af7999ca37ae0d49979` | `52be31423e7be8b5f5bef22c8e08b531910468e136f5c1fb0a12a8c81fa5c0a4` |
@@ -44,7 +44,7 @@
 | 幸运咖／蜜雪冰城股份有限公司 | [官网](https://www.xingyunka.com/)；页面资源 `lucky-cup.png` | `brand_logo_lucky_cup.png`（512×512）`562e11fd06583f782c575b61a0cd9bf287d9f2bca5011e90cc0d36217176e0f5` | 原审计资源等比缩至 400px artwork box，透明补边居中。 |
 | 星巴克／Starbucks China | [中国官网](https://www.starbucks.com.cn/)；官方 SVG `starbucks.svg` | `brand_logo_starbucks.png`（512×512）`93310a837b050bd16fbbd0a2bea605c847f01c631d2a4f2320ffd86d3f12ad84` | 原审计资源等比缩至 400px artwork box，透明补边居中。 |
 | 肯悦咖啡／百胜中国 | [百胜中国 IR 发布](https://ir.yumchina.com/zh-hans/news-releases/news-release-details/kenyuekafeiqingzhuqizaizhongguokaishedi200jiamendianyingwenban)；[官方发布照片](https://mma.prnewswire.com/media/2451669/KCOFFEE_Celebrates_Opening_200th_Store_China.jpg) | `brand_logo_kcoffee.png`（512×512）`84094c9dea84cf97d9f7c7e94486da20b1a4cd130f1e2cdf9195c36559f88e3e` | 完整“肯悦咖啡 KCOFFEE”横向标识保持原样，等比缩至 430px 横向 artwork box，透明补边居中；未重绘或变色。 |
-| MANNER／上海茵赫实业 | [官网](https://www.wearemanner.com/)；页面资源 `manner.png` | `brand_logo_manner.png`（512×512）`a2dfe3cd4bbc01b575548e728723c119cf097cbc6c09c0c9ead7a0073edfc570` | 原审计资源等比缩至 400px artwork box，保留深色高对比背景并居中。 |
+| MANNER／上海茵赫实业 | 用户明确批准文件 `assets/brand-logos/reference/manner-user-approved.jpeg`（SHA-256 `a9db5eb2fc2c2a295e609b7e5de1853c3c6201bb4458bebb34c51a8e4db71117`）；[官网](https://www.wearemanner.com/) | `brand_logo_manner.png`（512×512）`b1046b48cbc6b8950ec10509939ad76f6855599785f09cd2f176e46dd4829fb5` | 仅以 flood-fill 移除与 JPEG 边缘连通的近白背景；保留内部白洞、黑色线条以及完整上下三角/字框。裁除透明外边后等比缩至 430px artwork box 并透明居中，未裁切、未非等比缩放或重绘。 |
 | 沪咖／沪上阿姨体系 | [港交所正式招股书](https://www.hkexnews.hk/listedco/listconews/sehk/2025/0428/2025042800056_c.pdf)（品牌归属/名称依据，印刷页150／物理页160）；[南方+记者报道](https://static.nfnews.com/content/202408/28/c9692491.html)（像素直接来源，正面品牌车招牌图 `hucoffee-2.png`） | `brand_logo_hucoffee.png`（512×512）`1474938e0cb650c8776c0c15cd63c7e83bc0d9d919bfdfaacd1ddbb64b68adb8` | 完整“沪咖 JENNY X COFFEE”招牌保持原样，等比缩至 400px artwork box，透明补边居中；未重绘或变色。 |
 | Tims／TH International | [中国官网](https://www.timschina.com/home/index)；页面资源 `tims.png` | `brand_logo_tims.png`（512×512）`f4b2175ff5fef28684fc2e25257e1d6e5240c54fabd9f88a9b5037ad7a3b3ec3` | 原审计资源等比缩至 400px artwork box，透明补边居中。 |
 | M Stand／上海艾恰餐饮服务 | [官网](https://mstand.cn/)；官方 CDN `https://nwzimg.wezhan.cn/contents/sitefiles2047/10235946/images/47286529.png` | `brand_logo_mstand.png`（512×512）`e9f9c5d73562c7664c8155a9c0a55ddeaf82421ab454d9c0a15b8d7857889153` | 原审计资源等比缩至 400px artwork box，保留白色高对比背景并居中。 |
@@ -68,4 +68,4 @@
 | `brand_logo_peets.png` | `1071bd412ed57f62aa2c964f0b4ec4b23c123e0d36c6193cf3d36ccd9861bfa5` |
 | `brand_logo_arabica.png` | `2f6f79a9b73a2793c54f53922f011a1254c69962e8559ba5296c224e71def20f` |
 
-所有 Android 输出资源位于 `app/src/main/res/drawable-nodpi/`；2026-08-28 使用 `python3 scripts/normalize_brand_logos.py`（`scripts/requirements-brand-logos.txt` 固定 `Pillow==11.3.0`，本批已据此验证）对审计输入机械去除透明外边、Lanczos 等比缩放并透明补边为 512×512。用户确认的八个展示版本使用本页所列的受控参考预览裁切；其余四个资源继续使用原高分审计源。横向字标使用 450px artwork box，其他品牌使用 430px artwork box；四周最小透明安全边为 31px。该离线资产维护依赖不进入 Android runtime 或构建产物。未引入第三方图、AI 生成、重绘或来源替换。
+所有 Android 输出资源位于 `app/src/main/res/drawable-nodpi/`；2026-09-03 使用 `python3 scripts/normalize_brand_logos.py`（`scripts/requirements-brand-logos.txt` 固定 `Pillow==11.3.0`）对审计输入机械去除透明外边、Lanczos 等比缩放并透明补边为 512×512。除 MANNER 外的七个展示版本使用本页所列的受控参考预览裁切；MANNER 使用受控批准 JPEG；其余四个资源继续使用原高分审计源。横向字标使用 450px artwork box，其他品牌使用 430px artwork box；四周最小透明安全边为 31px。该离线资产维护依赖不进入 Android runtime 或构建产物。未引入第三方图、AI 生成、重绘或来源替换。
