@@ -44,6 +44,15 @@ class InsightsCalculatorTest {
         val p = InsightsCalculator.period(listOf(r("a", "2026-01-01", "A", "Old", at=1, source="same"), r("b", "2026-01-02", "B", "New", at=2, source="same")))
         assertEquals("B · New", p.topProducts.single().name)
     }
+    @Test fun `same time source records use greatest id representative independent of input order`() {
+        val old = r("a", "2026-01-01", "A", "Old", rating=10, at=1, source="same")
+        val newest = r("z", "2026-01-01", "B", "New", rating=10, at=1, source="same")
+        listOf(listOf(old, newest), listOf(newest, old)).forEach { records ->
+            val p = InsightsCalculator.period(records)
+            assertEquals("B · New", p.topProducts.single().name)
+            assertEquals("z", p.best!!.recordId)
+        }
+    }
     @Test fun `brand share fourth place uses newest tie breaker before other`() {
         val p=InsightsCalculator.period(listOf(r("a","2026-01-01",brand="A",at=1),r("b","2026-01-01",brand="B",at=2),r("c","2026-01-01",brand="C",at=3),r("d","2026-01-01",brand="D",at=4),r("e","2026-01-01",brand="E",at=5)))
         assertEquals(listOf("E","D","C","B","OTHER"),p.brandShares.map{it.key})
