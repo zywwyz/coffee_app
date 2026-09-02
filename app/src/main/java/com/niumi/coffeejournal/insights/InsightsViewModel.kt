@@ -44,6 +44,7 @@ class InsightsViewModel(
     initialYear: Int,
     initialMonth: Int,
     coroutineScope: CoroutineScope? = null,
+    private val clock: Clock = SystemClock,
 ) : ViewModel() {
     private val scope = coroutineScope ?: viewModelScope
     private val mutableState = MutableStateFlow(InsightsUiState(initialYear, initialMonth))
@@ -118,7 +119,11 @@ class InsightsViewModel(
     }
 
     companion object {
-        fun factory(repository: InsightsRepository, clock: Clock = SystemClock): ViewModelProvider.Factory =
+        fun factory(
+            repository: InsightsRepository,
+            clock: Clock = SystemClock,
+            coroutineScope: CoroutineScope? = null,
+        ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -127,6 +132,8 @@ class InsightsViewModel(
                         repository,
                         localDate.substring(0, 4).toInt(),
                         localDate.substring(5, 7).toInt(),
+                        coroutineScope,
+                        clock,
                     ) as T
                 }
             }
@@ -148,7 +155,9 @@ class InsightsViewModel(
             if (generation != selectedGeneration) return@collect
             mutableState.value = mutableState.value.copy(
                 loading = false,
-                monthly = InsightsCalculator.monthly(selected.year, selected.month, current, prior),
+                monthly = InsightsCalculator.monthly(
+                    selected.year, selected.month, current, prior, clock.read().localDate,
+                ),
                 yearly = null,
                 errorMessage = null,
             )
@@ -156,12 +165,13 @@ class InsightsViewModel(
     }
 
     private suspend fun observeYearly(selected: InsightsUiState, selectedGeneration: Long) {
-        val months = (1..12).map { repository.observeMonth(selected.year, it) }
+        val years = listOf(selected.year, selected.year - 1).filter { it >= 1 }
+        val months = years.flatMap { year -> (1..12).map { month -> repository.observeMonth(year, month) } }
         combine(months) { emissions -> emissions.flatMap { it } }.collect { records ->
             if (generation != selectedGeneration) return@collect
             mutableState.value = mutableState.value.copy(
                 loading = false,
-                yearly = InsightsCalculator.yearly(selected.year, records),
+                yearly = InsightsCalculator.yearly(selected.year, records, clock.read().localDate),
                 monthly = null,
                 errorMessage = null,
             )
