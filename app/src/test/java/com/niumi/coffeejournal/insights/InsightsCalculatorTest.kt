@@ -1,277 +1,42 @@
 package com.niumi.coffeejournal.insights
 
+import com.niumi.coffeejournal.core.model.CoffeeType
 import com.niumi.coffeejournal.core.model.DrinkRecord
 import com.niumi.coffeejournal.core.model.DrinkSnapshot
 import com.niumi.coffeejournal.core.model.ItemType
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
+import org.junit.Assert.*
 import org.junit.Test
 
 class InsightsCalculatorTest {
-    @Test
-    fun `unrated and unpriced cups use the correct denominators`() {
-        val report = InsightsCalculator.monthly(
-            year = 2026,
-            month = 8,
-            records = listOf(
-                record("rated", "2026-08-01", price = 990, rating = 9),
-                record("unrated", "2026-08-02", price = 2_000, rating = null),
-                record("unpriced", "2026-08-03", price = null, rating = 10),
-            ),
-            previousMonthRecords = emptyList(),
-        )
-
-        assertEquals(3, report.period.cupCount)
-        assertEquals(2_990L, report.period.totalSpendFen)
-        assertEquals(1_495L, report.period.averagePriceFen)
-        assertEquals(4.75, report.period.averageRating!!, 0.0)
-        assertNull(report.spendDelta.percent)
-        assertEquals(SpendDeltaBaseline.MISSING, report.spendDelta.baseline)
+    @Test fun `current month stops daily trend at today and compares prior common days`() {
+        val report = InsightsCalculator.monthly(2026, 9, listOf(r("c1", "2026-09-01"), r("c3", "2026-09-03"), r("future", "2026-09-30")), listOf(r("p1", "2026-08-01"), r("p3", "2026-08-03")), today = "2026-09-03")
+        assertEquals(3, report.trend.size); assertEquals(listOf(1, 1, 2), report.trend.map { it.current }); assertEquals(listOf(1, 1, 2), report.trend.map { it.previous })
     }
-
-    @Test
-    fun `ties are preserved and deterministically sorted`() {
-        val report = InsightsCalculator.period(
-            listOf(
-                record("z", "2026-08-01", brand = "瑞幸", item = "生椰", rating = 8),
-                record("a", "2026-08-02", brand = "Manner", item = "澳白", rating = 8),
-                record("low2", "2026-08-03", brand = "瑞幸", item = "美式", rating = 4),
-                record("low1", "2026-08-04", brand = "Manner", item = "拿铁", rating = 4),
-            ),
-            points = emptyList(),
-        )
-
-        assertEquals(listOf("Manner", "瑞幸"), report.topBrands.map { it.name })
-        assertEquals(listOf("a", "z"), report.bestRecordIds)
-        assertEquals(listOf("low1", "low2"), report.worstRecordIds)
-        assertEquals(listOf("Manner · 澳白", "瑞幸 · 生椰"), report.bestRecords.map { "${it.brandName} · ${it.itemName}" })
+    @Test fun `historical and leap month trends use full current days and null previous overflow`() {
+        val report = InsightsCalculator.monthly(2024, 3, listOf(r("d30", "2024-03-30")), listOf(r("d29", "2024-02-29")), today = "2026-09-03")
+        assertEquals(31, report.trend.size); assertEquals(1, report.trend[29].current); assertNull(report.trend[29].previous)
     }
-
-    @Test
-    fun `spend saturates and shares only include priced records`() {
-        val report = InsightsCalculator.monthly(
-            2026, 8,
-            listOf(
-                record("max", "2026-08-01", brand = "A", price = Long.MAX_VALUE),
-                record("overflow", "2026-08-02", brand = "A", price = 1),
-                record("free", "2026-08-03", brand = "B", price = null),
-            ),
-            emptyList(),
-        )
-
-        assertEquals(Long.MAX_VALUE, report.period.totalSpendFen)
-        assertEquals(listOf("A"), report.brandSpendShares.map { it.name })
-        assertEquals(Long.MAX_VALUE, report.brandSpendShares.single().spendFen)
+    @Test fun `year trend cuts current year and has twelve points for historical years`() {
+        val current = InsightsCalculator.yearly(2026, listOf(r("jan", "2026-01-01"), r("apr", "2026-04-01"), r("old", "2025-01-01")), today = "2026-04-10")
+        assertEquals(4, current.trend.size); assertEquals(listOf(1, 0, 0, 1), current.trend.map { it.current })
+        assertEquals(12, InsightsCalculator.yearly(2025, emptyList(), today = "2026-04-10").trend.size)
     }
-
-    @Test
-    fun `annual average and brand fractions use exact totals before display saturation`() {
-        val report = InsightsCalculator.yearly(
-            2026,
-            listOf(
-                record("a", "2026-01-01", brand = "A", price = Long.MAX_VALUE),
-                record("b", "2026-02-01", brand = "B", price = Long.MAX_VALUE),
-            ),
-        )
-        val monthly = InsightsCalculator.monthly(
-            2026, 1,
-            listOf(
-                record("a", "2026-01-01", brand = "A", price = Long.MAX_VALUE),
-                record("b", "2026-01-02", brand = "B", price = Long.MAX_VALUE),
-            ),
-            emptyList(),
-        )
-
-        assertEquals(Long.MAX_VALUE / 6, report.averageMonthlySpendFen)
-        assertEquals(listOf(0.5, 0.5), monthly.brandSpendShares.map { it.fraction })
+    @Test fun `habit uses unique local dates consecutive streak and price denominators`() {
+        val habit = InsightsCalculator.period(listOf(r("a", "2026-01-01", price=100, rating=8), r("b", "2026-01-01", price=null), r("c", "2026-01-02", price=300, rating=null), r("d", "2026-01-04", price=null, rating=10))).habit
+        assertEquals(3, habit.drinkingDays); assertEquals(2, habit.longestStreak); assertEquals(400L, habit.totalSpendFen); assertEquals(200L, habit.averagePriceFen); assertEquals(4.5, habit.averageRating!!, 0.0)
     }
-
-    @Test
-    fun `monthly validates dates and builds five local date weeks`() {
-        val report = InsightsCalculator.monthly(
-            2026, 8,
-            listOf(
-                record("first", "2026-08-01", price = 100),
-                record("last", "2026-08-31", price = 200),
-                record("bad", "2026-02-30", price = 999),
-                record("other", "2026-09-01", price = 999),
-            ),
-            emptyList(),
-        )
-
-        assertEquals(2, report.period.cupCount)
-        assertEquals(5, report.period.points.size)
-        assertEquals(100L, report.period.points.first().spendFen)
-        assertEquals(200L, report.period.points.last().spendFen)
+    @Test fun `coffee type shares cover all four types and brands retain top four plus other`() {
+        val records = listOf(r("1","2026-01-01",type=CoffeeType.BLACK,brand="A"),r("2","2026-01-02",type=CoffeeType.FRUIT,brand="B"),r("3","2026-01-03",type=CoffeeType.MILK,brand="C"),r("4","2026-01-04",type=CoffeeType.HAND_BREW,brand="D"),r("5","2026-01-05",brand="E"))
+        val p=InsightsCalculator.period(records); assertEquals(4,p.coffeeTypeShares.size); assertEquals(listOf("A","B","C","D","OTHER"),p.brandShares.map { it.key })
     }
-
-    @Test
-    fun `snapshot names isolate reports from current catalog`() {
-        val original = record("one", "2026-08-01", brand = "保存时品牌", item = "保存时产品")
-        val report = InsightsCalculator.period(listOf(original), emptyList())
-
-        assertEquals("保存时品牌", report.topBrands.single().name)
-        assertEquals("保存时产品", report.topProducts.single().name)
+    @Test fun `rankings use newest then stable keys and limit three`() {
+        val p=InsightsCalculator.period(listOf(r("z","2026-01-01",brand="B",item="same",at=1),r("a","2026-01-01",brand="A",item="same",at=2),r("c","2026-01-01",brand="C"),r("d","2026-01-01",brand="D")))
+        assertEquals(listOf("A","B","C"),p.topBrands.map { it.name }); assertEquals("A\u0000same",p.topProducts.first().key)
     }
-
-    @Test
-    fun `year has twelve points and preserves high low ties among populated months`() {
-        val report = InsightsCalculator.yearly(
-            2026,
-            listOf(
-                record("jan", "2026-01-02", price = 100, rating = 8),
-                record("feb", "2026-02-02", price = 200, rating = 9),
-                record("mar", "2026-03-02", price = 200, rating = 10),
-                record("apr", "2026-04-02", price = 100, rating = 7),
-            ),
-        )
-
-        assertEquals(12, report.monthlyPoints.size)
-        assertEquals(50L, report.averageMonthlySpendFen)
-        assertEquals(listOf("2月", "3月"), report.highestSpendMonths)
-        assertEquals(listOf("1月", "4月"), report.lowestSpendMonths)
-        assertEquals(listOf("mar", "feb", "jan", "apr"), report.topRatedRecordIds)
-        assertEquals(listOf("产品", "产品", "产品", "产品"), report.topRatedRecords.map { it.itemName })
-        assertNull(report.ratingTrendText)
+    @Test fun `best and worst aggregate distinct products retaining latest asset and equal ratings omit worst`() {
+        val p=InsightsCalculator.period(listOf(r("old","2026-01-01",brand="A",item="X",rating=10,at=1,image="old"),r("new","2026-01-02",brand="A",item="X",rating=10,at=2,image="new"),r("low","2026-01-03",brand="B",item="Y",rating=4),r("low2","2026-01-04",brand="C",item="Z",rating=4,at=3)))
+        assertEquals("new",p.best!!.recordId); assertEquals("new",p.best!!.imageAssetId); assertEquals(0,p.best!!.tiedProductCount); assertEquals("low2",p.worst!!.recordId); assertEquals(1,p.worst!!.tiedProductCount)
+        assertNull(InsightsCalculator.period(listOf(r("x","2026-01-01",rating=8),r("y","2026-01-02",rating=8))).worst)
     }
-
-    @Test
-    fun `fewer than two rated periods has facts but no trend conclusion`() {
-        val monthly = InsightsCalculator.monthly(
-            2026, 8, listOf(record("one", "2026-08-01", rating = 8)), emptyList(),
-        )
-        val yearly = InsightsCalculator.yearly(
-            2026, listOf(record("one", "2026-08-01", rating = 8)),
-        )
-
-        assertNull(monthly.ratingTrendText)
-        assertNull(yearly.ratingTrendText)
-    }
-
-    @Test
-    fun `unrated records are never reported as best or worst`() {
-        val report = InsightsCalculator.period(
-            listOf(record("unrated", "2026-08-01", rating = null)), emptyList(),
-        )
-
-        assertTrue(report.bestRecordIds.isEmpty())
-        assertTrue(report.worstRecordIds.isEmpty())
-    }
-
-    @Test
-    fun `zero prior spend differs from missing prior prices without fake percentage`() {
-        val zero = InsightsCalculator.monthly(
-            2026, 8, listOf(record("now", "2026-08-01", price = 100)),
-            listOf(record("prior", "2026-07-01", price = 0)),
-        )
-
-        assertEquals(SpendDeltaBaseline.ZERO, zero.spendDelta.baseline)
-        assertNull(zero.spendDelta.percent)
-    }
-
-    @Test
-    fun `year top five preserves rating ties at cutoff`() {
-        val records = (1..7).map { index ->
-            record(
-                "r$index", "2026-01-${index.toString().padStart(2, '0')}",
-                rating = if (index <= 3) 10 else 8,
-            )
-        }
-
-        val report = InsightsCalculator.yearly(2026, records)
-
-        assertEquals(7, report.topRatedRecords.size)
-        assertEquals(10, report.highestRatedRecords.first().ratingHalfStars)
-    }
-
-    @Test
-    fun `trend point distinguishes missing price from zero price`() {
-        val missing = InsightsCalculator.monthly(
-            2026, 8, listOf(record("rated", "2026-08-01", price = null, rating = 9)), emptyList(),
-        ).period.points.first()
-        val zero = InsightsCalculator.monthly(
-            2026, 8, listOf(record("free", "2026-08-01", price = 0, rating = null)), emptyList(),
-        ).period.points.first()
-
-        assertNull(missing.spendFen)
-        assertEquals(0L, zero.spendFen)
-        assertEquals(0, missing.pricedCupCount)
-        assertEquals(1, zero.pricedCupCount)
-
-        val yearly = InsightsCalculator.yearly(
-            2026,
-            listOf(
-                record("jan-rated", "2026-01-01", price = null, rating = 8),
-                record("feb-free", "2026-02-01", price = 0, rating = null),
-            ),
-        )
-        assertNull(yearly.monthlyPoints[0].spendFen)
-        assertEquals(4.0, yearly.monthlyPoints[0].averageRating!!, 0.0)
-        assertEquals(0L, yearly.monthlyPoints[1].spendFen)
-        assertNull(yearly.monthlyPoints[1].averageRating)
-    }
-
-    @Test
-    fun `first supported month has no previous baseline`() {
-        val report = InsightsCalculator.monthly(
-            1, 1,
-            listOf(record("current", "0001-01-01", price = 100)),
-            listOf(record("not-prior", "0001-12-01", price = 999)),
-        )
-
-        assertEquals(SpendDeltaBaseline.MISSING, report.spendDelta.baseline)
-        assertEquals(100L, report.spendDelta.amountFen)
-    }
-
-    @Test
-    fun `date validation uses proleptic Gregorian rules`() {
-        val report = InsightsCalculator.yearly(1582, listOf(
-            record("cutover", "1582-10-10"),
-            record("bad1500", "1500-02-29"),
-            record("leap1600", "1600-02-29"),
-        ))
-        assertEquals(1, report.period.cupCount)
-        assertEquals(1, InsightsCalculator.yearly(1600, listOf(record("x", "1600-02-29"))).period.cupCount)
-        assertEquals(0, InsightsCalculator.yearly(1900, listOf(record("x", "1900-02-29"))).period.cupCount)
-        assertEquals(1, InsightsCalculator.yearly(2000, listOf(record("x", "2000-02-29"))).period.cupCount)
-        assertEquals(1, InsightsCalculator.yearly(1, listOf(record("x", "0001-01-01"))).period.cupCount)
-        assertEquals(1, InsightsCalculator.yearly(9999, listOf(record("x", "9999-12-31"))).period.cupCount)
-    }
-
-    @Test
-    fun `trend prose requires two well sampled periods`() {
-        val singleton = InsightsCalculator.yearly(2026, listOf(
-            record("a", "2026-01-01", rating = 4), record("b", "2026-02-01", rating = 10),
-        ))
-        val rise = InsightsCalculator.yearly(2026, listOf(
-            record("a1", "2026-01-01", rating = 4), record("a2", "2026-01-02", rating = 4),
-            record("b1", "2026-02-01", rating = 8), record("b2", "2026-02-02", rating = 8),
-        ))
-        assertNull(singleton.ratingTrendText)
-        assertEquals("评分趋势上升", rise.ratingTrendText)
-        assertEquals(2, rise.monthlyPoints[0].ratingSampleCount)
-    }
-
-    private fun record(
-        id: String,
-        date: String,
-        brand: String = "品牌",
-        item: String = "产品",
-        price: Long? = null,
-        rating: Int? = null,
-        itemType: ItemType = ItemType.CHAIN_PRODUCT,
-        brew: String? = "拿铁",
-    ) = DrinkRecord(
-        id = id,
-        occurredAtEpochMillis = 0,
-        localDate = date,
-        itemType = itemType,
-        sourceItemId = "source-$id",
-        brewMethod = brew,
-        ratingHalfStars = rating,
-        actualPriceFen = price,
-        note = null,
-        snapshot = DrinkSnapshot(brand, item, null, null, null),
-    )
+    private fun r(id:String,date:String,brand:String="品牌",item:String="产品",price:Long?=null,rating:Int?=null,type:CoffeeType=CoffeeType.BLACK,at:Long=0,image:String?=null)=DrinkRecord(id,at,date,ItemType.CHAIN_PRODUCT,"",null,rating,price,null,DrinkSnapshot(brand,item,null,null,image,brandLogoAssetId="logo",coffeeType=type))
 }
