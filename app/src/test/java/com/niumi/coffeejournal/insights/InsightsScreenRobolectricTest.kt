@@ -12,6 +12,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.semantics.Role
 import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.ui.CoffeeVisuals
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
@@ -43,6 +45,12 @@ class InsightsScreenRobolectricTest {
         compose.onNodeWithText("上一周期").performClick()
         compose.onNodeWithText("下一周期").performClick()
         compose.runOnIdle { assertEquals(0, monthly); assertEquals(1, yearly); assertEquals(1, previous); assertEquals(1, next) }
+    }
+
+    @Test fun `mode tabs expose selected tab semantics`() {
+        compose.setContent { CoffeeTheme { InsightsScreen(state(), {}, {}) } }
+        compose.onNodeWithText("月度").assertIsSelected()
+        compose.onNodeWithText("年度").assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.Role, Role.Tab))
     }
 
     @Test fun `habit hero exposes exact values and price gaps`() {

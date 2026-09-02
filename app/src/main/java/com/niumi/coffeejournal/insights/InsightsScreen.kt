@@ -4,6 +4,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,6 +45,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -105,10 +108,10 @@ fun InsightsScreen(
 
 private data class Dashboard(val habit: HabitSummary, val trend: List<ComparisonPoint>, val types: List<ShareValue>, val brands: List<ShareValue>, val topBrands: List<RankedValue>, val topProducts: List<RankedValue>, val best: HighlightRecord?, val worst: HighlightRecord?)
 
-@Composable private fun ModeSelector(mode: InsightsMode, month: () -> Unit, year: () -> Unit) = Row(Modifier.fillMaxWidth().background(CoffeeVisuals.mint, RoundedCornerShape(CoffeeVisuals.cornerMedium)).padding(4.dp)) {
+@Composable private fun ModeSelector(mode: InsightsMode, month: () -> Unit, year: () -> Unit) = Row(Modifier.fillMaxWidth().selectableGroup().background(CoffeeVisuals.mint, RoundedCornerShape(CoffeeVisuals.cornerMedium)).padding(4.dp)) {
     ModeButton("月度", mode == InsightsMode.MONTHLY, month); ModeButton("年度", mode == InsightsMode.YEARLY, year)
 }
-@Composable private fun RowScope.ModeButton(label: String, selected: Boolean, onClick: () -> Unit) = Box(Modifier.weight(1f).background(if (selected) CoffeeVisuals.white else Color.Transparent, RoundedCornerShape(CoffeeVisuals.cornerSmall)).clickable(onClick = onClick).padding(vertical = 10.dp), contentAlignment = Alignment.Center) { Text(label, color = CoffeeVisuals.forest) }
+@Composable private fun RowScope.ModeButton(label: String, selected: Boolean, onClick: () -> Unit) = Box(Modifier.weight(1f).background(if (selected) CoffeeVisuals.white else Color.Transparent, RoundedCornerShape(CoffeeVisuals.cornerSmall)).selectable(selected = selected, role = Role.Tab, onClick = onClick).padding(vertical = 10.dp), contentAlignment = Alignment.Center) { Text(label, color = CoffeeVisuals.forest) }
 
 @Composable private fun PeriodSelector(state: InsightsUiState, previousMonth: () -> Unit, nextMonth: () -> Unit, previousYear: () -> Unit, nextYear: () -> Unit) {
     val monthly = state.mode == InsightsMode.MONTHLY
@@ -164,7 +167,7 @@ private data class Dashboard(val habit: HabitSummary, val trend: List<Comparison
     shares.forEach { Text("${it.label} · ${it.cups} 杯 · ${percent(it)}", color = CoffeeVisuals.secondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis) }
 }
 @Composable private fun RankingCard(title: String, values: List<RankedValue>, tag: String, modifier: Modifier) = CoffeeCard(modifier.testTag(tag)) { Text(title, color = CoffeeVisuals.forest); values.take(3).forEachIndexed { i, value -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text("${i + 1}", color = CoffeeVisuals.peach); Text(value.name, Modifier.weight(1f).padding(horizontal = 6.dp), maxLines = 1, overflow = TextOverflow.Ellipsis); Text("${value.cups}杯", color = CoffeeVisuals.secondaryText) } }; if (values.isEmpty()) Text("—", color = CoffeeVisuals.secondaryText) }
-@Composable private fun HighlightCard(title: String, item: HighlightRecord, tag: String, resolver: ImagePathResolver, onOpen: (String) -> Unit) = CoffeeCard(Modifier.fillMaxWidth().testTag(tag).clickable { onOpen(item.recordId) }) { Row(verticalAlignment = Alignment.CenterVertically) { val logo = bundledBrandLogoRes(item.brandName); val fallbackPainter = logo?.let { painterResource(it) }; ResolvedLocalAssetImage(item.imageAssetId, item.brandLogoAssetId, resolver, "$title ${item.brandName}", ContentScale.Fit, Modifier.size(72.dp).border(1.dp, CoffeeVisuals.warmOutline, RoundedCornerShape(CoffeeVisuals.cornerSmall)), fallbackPainter); Column(Modifier.padding(start = 12.dp)) { Text(title, color = CoffeeVisuals.forest); Text(item.brandName, color = CoffeeVisuals.secondaryText); Text(item.itemName, maxLines = 1, overflow = TextOverflow.Ellipsis); Text("${item.ratingHalfStars / 2.0}★", color = CoffeeVisuals.peach); if (item.tiedProductCount > 0) Text("另有 ${item.tiedProductCount} 款并列", color = CoffeeVisuals.secondaryText) } } }
+@Composable private fun HighlightCard(title: String, item: HighlightRecord, tag: String, resolver: ImagePathResolver, onOpen: (String) -> Unit) = CoffeeCard(Modifier.fillMaxWidth().testTag(tag).clickable { onOpen(item.recordId) }) { Row(verticalAlignment = Alignment.CenterVertically) { val logo = bundledBrandLogoRes(item.brandName); val fallbackPainter = logo?.let { painterResource(it) }; ResolvedLocalAssetImage(item.imageAssetId, item.brandLogoAssetId, resolver, "$title ${item.brandName}", ContentScale.Fit, Modifier.size(72.dp).border(1.dp, CoffeeVisuals.warmOutline, RoundedCornerShape(CoffeeVisuals.cornerSmall)), fallbackPainter); Column(Modifier.weight(1f).padding(start = 12.dp)) { Text(title, color = CoffeeVisuals.forest); Text(item.brandName, color = CoffeeVisuals.secondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(item.itemName, maxLines = 1, overflow = TextOverflow.Ellipsis); Text("${item.ratingHalfStars / 2.0}★", color = CoffeeVisuals.peach); if (item.tiedProductCount > 0) Text("另有 ${item.tiedProductCount} 款并列", color = CoffeeVisuals.secondaryText) } } }
 @Composable private fun CoffeeCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) = Card(modifier.semantics { this[InsightsMetricCardColor] = CoffeeVisuals.white }, shape = RoundedCornerShape(CoffeeVisuals.cornerMedium), colors = CardDefaults.cardColors(containerColor = CoffeeVisuals.white), border = BorderStroke(1.dp, CoffeeVisuals.warmOutline)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp), content = content) }
 @Composable private fun EmptyCard(title: String) = CoffeeCard(Modifier.fillMaxWidth()) { Text(title, color = CoffeeVisuals.forest); Text("下一杯会从这里开始留下痕迹", color = CoffeeVisuals.secondaryText) }
 private fun percent(share: ShareValue) = String.format(Locale.ROOT, "%.0f%%", share.fraction * 100)

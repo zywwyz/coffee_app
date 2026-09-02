@@ -262,6 +262,12 @@ private fun RecordDetailsDestination(repository: JournalRepository, recordId: St
             Text(it.localDate)
             Text("评分：${it.ratingHalfStars?.div(2.0)?.toString()?.plus("★") ?: "未记录"}")
             Text("实际支付：${it.actualPriceFen?.let { price -> "¥${price / 100}.${(price % 100).toString().padStart(2, '0')}" } ?: "未记录"}")
+            it.brewMethod?.takeIf(String::isNotBlank)?.let { value -> Text("冲煮方式：$value") }
+            it.note?.takeIf(String::isNotBlank)?.let { value -> Text("备注：$value") }
+            it.snapshot.origin?.takeIf(String::isNotBlank)?.let { value -> Text("产地：$value") }
+            it.snapshot.processing?.takeIf(String::isNotBlank)?.let { value -> Text("处理法：$value") }
+            it.snapshot.roastLevel?.takeIf(String::isNotBlank)?.let { value -> Text("烘焙度：$value") }
+            it.snapshot.flavorNotes?.takeIf(String::isNotBlank)?.let { value -> Text("风味：$value") }
         } ?: Text("记录不存在或已删除")
     }
 }
