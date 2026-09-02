@@ -146,8 +146,10 @@ private data class Dashboard(val habit: HabitSummary, val trend: List<Comparison
 
 @Composable private fun TrendChart(points: List<ComparisonPoint>, mode: InsightsMode) = CoffeeCard(Modifier.fillMaxWidth().testTag(TestTags.InsightsTrendChart)) {
     Text("饮用趋势", style = MaterialTheme.typography.titleMedium, color = CoffeeVisuals.forest)
-    Text("森林实线 本期累计杯数  ·  暖灰虚线 上期累计杯数", color = CoffeeVisuals.secondaryText)
-    val desc = "饮用趋势：本期累计杯数；上期累计杯数" + if (points.isEmpty()) "；暂无数据" else "；${if (mode == InsightsMode.MONTHLY) "每日" else "每月"}${points.joinToString { " ${it.index}:${it.current ?: 0}/${it.previous ?: 0}" }}"
+    val currentLabel = if (mode == InsightsMode.MONTHLY) "本月累计杯数" else "今年每月杯数"
+    val previousLabel = if (mode == InsightsMode.MONTHLY) "上月同期累计杯数" else "去年同期每月杯数"
+    Text("森林实线 $currentLabel  ·  暖灰虚线 $previousLabel", color = CoffeeVisuals.secondaryText)
+    val desc = "饮用趋势：$currentLabel；$previousLabel" + if (points.isEmpty()) "；暂无数据" else "；${if (mode == InsightsMode.MONTHLY) "每日" else "每月"}${points.joinToString { " ${it.index}:${it.current ?: 0}/${it.previous ?: 0}" }}"
     Canvas(Modifier.fillMaxWidth().height(150.dp).semantics { contentDescription = desc }) {
         val max = points.flatMap { listOfNotNull(it.current, it.previous) }.maxOrNull()?.coerceAtLeast(1) ?: 1
         fun point(i: Int, n: Int) = Offset(if (points.size <= 1) size.width / 2 else i * size.width / (points.size - 1), size.height - n.toFloat() / max * (size.height - 16.dp.toPx()) - 8.dp.toPx())

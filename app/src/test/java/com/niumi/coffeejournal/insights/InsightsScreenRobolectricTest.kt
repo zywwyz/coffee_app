@@ -6,6 +6,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -58,11 +59,29 @@ class InsightsScreenRobolectricTest {
     @Test fun `trend and donut legends have non color accessibility facts`() {
         compose.setContent { CoffeeTheme { InsightsScreen(state(), {}, {}) } }
         compose.onNodeWithTag(TestTags.InsightsTrendChart).performScrollTo()
-        compose.onNodeWithContentDescription("饮用趋势：本期累计杯数；上期累计杯数", substring = true).assertExists()
+        compose.onNodeWithContentDescription("饮用趋势：本月累计杯数；上月同期累计杯数", substring = true).assertExists()
         compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("BLACK · 4 杯 · 57%").assertIsDisplayed()
         compose.onNodeWithTag(TestTags.InsightsBrandDonut).assertIsDisplayed()
         compose.onNodeWithText("瑞幸 · 5 杯 · 71%").assertIsDisplayed()
+    }
+
+    @Test fun `yearly state renders monthly comparison without cumulative wording`() {
+        val monthly = state().monthly!!
+        val yearly = YearlyInsights(
+            year = 2026, period = monthly.period, averageMonthlySpendFen = 0,
+            monthlyPoints = emptyList(), highestSpendMonths = emptyList(), lowestSpendMonths = emptyList(),
+            topRatedRecordIds = emptyList(), ratingTrendText = null,
+            habit = monthly.habit, trend = listOf(ComparisonPoint(1, 3, 2)),
+            coffeeTypeShares = monthly.coffeeTypeShares, brandShares = monthly.brandShares,
+            topBrands = monthly.topBrands, topProducts = monthly.topProducts, best = monthly.best, worst = monthly.worst,
+        )
+        compose.setContent { CoffeeTheme { InsightsScreen(state().copy(mode = InsightsMode.YEARLY, monthly = null, yearly = yearly), {}, {}) } }
+
+        compose.onNodeWithTag(TestTags.InsightsTrendChart).performScrollTo()
+        compose.onNodeWithText("今年每月", substring = true).assertIsDisplayed()
+        compose.onNodeWithContentDescription("饮用趋势：今年每月杯数；去年同期每月杯数", substring = true).assertExists()
+        compose.onAllNodesWithContentDescription("累计", substring = true).assertCountEquals(0)
     }
 
     @Test fun `rankings stay at three and long names are present`() {
