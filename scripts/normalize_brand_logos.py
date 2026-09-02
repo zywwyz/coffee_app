@@ -113,13 +113,13 @@ def normalized_logo(image: Image.Image, maximum_edge: int) -> Image.Image:
     return canvas
 
 
-def main() -> None:
+def main(output_directory: Path = OUTPUT_DIRECTORY) -> None:
     source_logos = sorted(SOURCE_DIRECTORY.glob("brand_logo_*.png"))
     if len(source_logos) != 12:
         raise ValueError(f"Expected 12 audited source logos, found {len(source_logos)}")
 
     for source_logo in source_logos:
-        output_logo = OUTPUT_DIRECTORY / source_logo.name
+        output_logo = output_directory / source_logo.name
         input_image, input_kind = audited_input(source_logo.name)
         output = normalized_logo(input_image, artwork_edge(source_logo.name))
         existing_pixels = (

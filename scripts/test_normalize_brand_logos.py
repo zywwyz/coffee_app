@@ -1,7 +1,10 @@
 """Regression checks for audited calendar-preview logo extraction."""
 
-import io
+import hashlib
+import tempfile
+import time
 import unittest
+from pathlib import Path
 
 from PIL import Image
 
@@ -9,6 +12,7 @@ from scripts.normalize_brand_logos import (
     PROJECT_ROOT,
     REFERENCE_DERIVATIVES,
     audited_input,
+    main,
     normalized_logo,
     remove_edge_connected_pale_background,
 )
@@ -36,7 +40,11 @@ class ApprovedMannerNormalizationTest(unittest.TestCase):
         )
         manner_input, input_kind = audited_input("brand_logo_manner.png")
         self.assertEqual("user-approved MANNER JPEG", input_kind)
-        output = normalized_logo(manner_input, 430)
+        expected = normalized_logo(manner_input, 430)
+        output = Image.open(
+            PROJECT_ROOT / "app/src/main/res/drawable-nodpi/brand_logo_manner.png",
+        ).convert("RGBA")
+        self.assertEqual(expected.tobytes(), output.tobytes())
         source_bounds = source.getchannel("A").getbbox()
         output_bounds = output.getchannel("A").getbbox()
 
@@ -68,16 +76,16 @@ class ApprovedMannerNormalizationTest(unittest.TestCase):
             self.assertIsNotNone(alpha.crop((left, y0, right, max(y0 + 1, y1))).getbbox(), name)
 
     def test_manner_normalization_is_idempotent(self) -> None:
-        source = remove_edge_connected_pale_background(
-            Image.open(PROJECT_ROOT / "assets/brand-logos/reference/manner-user-approved.jpeg"),
-        )
-        first = normalized_logo(source, 430)
-        second = normalized_logo(source, 430)
-        first_bytes = io.BytesIO()
-        second_bytes = io.BytesIO()
-        first.save(first_bytes, format="PNG", optimize=False)
-        second.save(second_bytes, format="PNG", optimize=False)
-        self.assertEqual(first_bytes.getvalue(), second_bytes.getvalue())
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_directory = Path(temporary_directory)
+            main(output_directory=output_directory)
+            first = output_directory / "brand_logo_manner.png"
+            first_digest = hashlib.sha256(first.read_bytes()).hexdigest()
+            first_mtime = first.stat().st_mtime_ns
+            time.sleep(0.01)
+            main(output_directory=output_directory)
+            self.assertEqual(first_digest, hashlib.sha256(first.read_bytes()).hexdigest())
+            self.assertEqual(first_mtime, first.stat().st_mtime_ns)
 
 
 if __name__ == "__main__":
