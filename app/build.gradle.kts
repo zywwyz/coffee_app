@@ -76,7 +76,8 @@ dependencies {
 // Robolectric Native Graphics is process-global and crashes when mixed into the complete
 // legacy-graphics unit suite. Keep the release suite deterministic; opt in only for PNG review.
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
-    if (!project.hasProperty("calendarPreview")) {
+    if (!project.hasProperty("calendarPreview") && !project.hasProperty("insightsPreview")) {
         exclude("**/CalendarPreviewRenderTest*")
+        exclude("**/InsightsPreviewRenderTest*")
     }
 }

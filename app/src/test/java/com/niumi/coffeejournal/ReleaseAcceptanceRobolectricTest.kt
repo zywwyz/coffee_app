@@ -72,6 +72,12 @@ class ReleaseAcceptanceRobolectricTest {
             compose.onAllNodesWithTag(TestTags.InsightsHabitHero).fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithTag(TestTags.InsightsHabitHero).assertIsDisplayed()
+        compose.onNodeWithText("年度").performClick().assertIsSelected()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("今年每月杯数", substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("去年同期每月杯数", substring = true).assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.BottomInsightsTab).assertIsDisplayed()
         compose.onNodeWithText("咖啡日历").performClick()
         compose.onNodeWithTag(TestTags.RecordButton).performClick()
         compose.onNodeWithText("饮用日期").assertIsDisplayed()
