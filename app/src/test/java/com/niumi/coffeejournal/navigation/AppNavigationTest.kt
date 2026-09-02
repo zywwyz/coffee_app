@@ -8,6 +8,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -37,6 +38,8 @@ import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.CatalogItem
 import com.niumi.coffeejournal.core.model.DrinkDraft
 import com.niumi.coffeejournal.core.model.DrinkRecord
+import com.niumi.coffeejournal.core.model.DrinkSnapshot
+import com.niumi.coffeejournal.core.model.CoffeeType
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.core.image.ImageAsset
@@ -155,6 +158,36 @@ class AppNavigationTest {
     }
 
     @Test
+    fun highlight_opens_complete_record_details_and_back_restores_summary_navigation() {
+        compose.setContent {
+            CoffeeTheme {
+                AppNavigation(
+                    journalRepository = HighlightJournalRepository,
+                    catalogRepository = FakeCatalogRepository,
+                    journalClock = object : com.niumi.coffeejournal.journal.Clock { override fun read() = com.niumi.coffeejournal.journal.ClockReading(0, "2026-09-02") },
+                )
+            }
+        }
+        compose.onNodeWithText("总结").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag(TestTags.InsightsBestCard).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag(TestTags.InsightsBestCard).performScrollTo().performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("记录详情").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("风味：坚果").fetchSemanticsNodes().isNotEmpty() }
+        listOf(
+            "瑞幸 · 生椰拿铁", "2026-09-02", "评分：4.5★", "实际支付：¥12.34",
+            "冲煮方式：冰美式", "备注：清爽", "产地：云南", "处理法：水洗",
+            "烘焙度：中烘", "风味：坚果",
+        ).forEach { field ->
+            compose.onNodeWithText(field).performScrollTo().assertIsDisplayed()
+        }
+        compose.onAllNodesWithTag(TestTags.BottomInsightsTab).assertCountEquals(0)
+        compose.onNodeWithText("返回").performScrollTo().performClick()
+        compose.onNodeWithTag(TestTags.RootScreenTitle).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.InsightsBestCard).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.BottomInsightsTab).assertIsDisplayed()
+    }
+
+    @Test
     fun chainBrandOpensChildPageAndHidesRootNavigation() {
         compose.setContent { CoffeeTheme { AppNavigation(FakeJournalRepository, ChainCatalogRepository) } }
         compose.onNodeWithText("豆库").performClick()
@@ -238,6 +271,16 @@ class AppNavigationTest {
 
     private object FakeJournalRepository : JournalRepository {
         override fun observeMonth(year: Int, month: Int): Flow<List<DrinkRecord>> = flowOf(emptyList())
+        override suspend fun newDraft(type: ItemType, itemId: String): DrinkDraft = error("unused")
+        override suspend fun save(draft: DrinkDraft): String = error("unused")
+        override suspend fun saveDraft(draft: DrinkDraft) = true
+        override suspend fun delete(recordId: String) = Unit
+    }
+
+    private object HighlightJournalRepository : JournalRepository {
+        private val record = DrinkRecord("highlight", 1, "2026-09-02", ItemType.CHAIN_PRODUCT, "item", "冰美式", 9, 1234, "清爽", DrinkSnapshot("瑞幸", "生椰拿铁", "云南", "水洗", null, roastLevel = "中烘", flavorNotes = "坚果", coffeeType = CoffeeType.MILK))
+        override fun observeMonth(year: Int, month: Int): Flow<List<DrinkRecord>> = flowOf(if (year == 2026 && month == 9) listOf(record) else emptyList())
+        override suspend fun get(recordId: String): DrinkRecord? = record.takeIf { it.id == recordId }
         override suspend fun newDraft(type: ItemType, itemId: String): DrinkDraft = error("unused")
         override suspend fun save(draft: DrinkDraft): String = error("unused")
         override suspend fun saveDraft(draft: DrinkDraft) = true

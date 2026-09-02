@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
@@ -254,7 +256,7 @@ private fun RecordDetailsDestination(repository: JournalRepository, recordId: St
     val record by produceState<com.niumi.coffeejournal.core.model.DrinkRecord?>(null, repository, recordId) {
         value = repository.get(recordId)
     }
-    Column(Modifier.fillMaxSize().background(CoffeeVisuals.cream).padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.fillMaxSize().background(CoffeeVisuals.cream).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         TextButton(onClick = onBack) { Text("返回") }
         Text("记录详情", style = MaterialTheme.typography.headlineSmall, color = CoffeeVisuals.forest)
         record?.let {

@@ -108,6 +108,19 @@ class InsightsScreenRobolectricTest {
         compose.onAllNodesWithTag(TestTags.InsightsWorstCard).assertCountEquals(0)
     }
 
+    @Test fun `long highlight names stay inside the card at 320dp`() {
+        val base = state()
+        val longBrand = "特别特别特别特别特别特别长的品牌名称"
+        val longItem = "特别特别特别特别特别特别长的产品名称"
+        val period = base.monthly!!.period.copy(best = HighlightRecord("best", longBrand, longItem, 9, null, null, 0))
+        compose.setContent { CoffeeTheme { InsightsScreen(base.copy(monthly = base.monthly.copy(period = period, best = period.best)), {}, {}) } }
+        val card = compose.onNodeWithTag(TestTags.InsightsBestCard).fetchSemanticsNode().boundsInRoot
+        val brand = compose.onNodeWithText(longBrand).fetchSemanticsNode().boundsInRoot
+        val item = compose.onNodeWithText(longItem).fetchSemanticsNode().boundsInRoot
+        org.junit.Assert.assertTrue(brand.right <= card.right)
+        org.junit.Assert.assertTrue(item.right <= card.right)
+    }
+
     @Test fun `empty and unrated states remain informative`() {
         val empty = state().copy(monthly = InsightsCalculator.monthly(2026, 8, emptyList(), emptyList()))
         compose.setContent { CoffeeTheme { InsightsScreen(empty, {}, {}) } }
