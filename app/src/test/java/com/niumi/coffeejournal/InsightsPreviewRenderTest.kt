@@ -8,6 +8,8 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -46,15 +48,16 @@ class InsightsPreviewRenderTest {
     fun `renders monthly and yearly insights using Room records and real product assets`() = runBlocking {
         val app = compose.activity.application as InMemoryCoffeeJournalApp
         appToClose = app
-        val asset = app.imageStore.importWhole(Uri.fromFile(realFixture("IMG_20260815_193103.png")), ImageKind.PRODUCT)
-        app.imageStore.importWhole(Uri.fromFile(realFixture("IMG_20260815_193103-scaled.png")), ImageKind.PRODUCT)
-        seed(app, asset.id)
+        val primaryAsset = app.imageStore.importWhole(Uri.fromFile(realFixture("IMG_20260815_193103.png")), ImageKind.PRODUCT)
+        val secondaryAsset = app.imageStore.importWhole(Uri.fromFile(realFixture("IMG_20260815_193103-scaled.png")), ImageKind.PRODUCT)
+        seed(app, primaryAsset.id, secondaryAsset.id)
 
         compose.onNodeWithTag(TestTags.BottomInsightsTab).performClick()
         awaitDashboard()
         captureTop("本月累计杯数", "上月同期累计杯数", "insights-monthly-hero-trend-cream-forest.png")
         captureBreakdown("insights-monthly-breakdown-cream-forest.png")
-        compose.onNodeWithContentDescription("本期最好 MANNER", useUnmergedTree = true).assertExists()
+        compose.onNodeWithContentDescription("本期最好 MANNER", useUnmergedTree = true)
+            .assert(hasStateDescription("品牌图片"))
         compose.waitUntil(10_000) {
             compose.onAllNodesWithContentDescription("本期最差 瑞幸", useUnmergedTree = true).fetchSemanticsNodes().any {
                 runCatching { it.config[SemanticsProperties.StateDescription] }.getOrNull() == "主图片已加载"
@@ -79,11 +82,11 @@ class InsightsPreviewRenderTest {
     }
 
     private fun captureTop(currentLegend: String, previousLegend: String, name: String) {
-        compose.onNodeWithTag(TestTags.InsightsSurface).performScrollToNode(hasTestTag(TestTags.InsightsTrendChart))
-        compose.onNodeWithTag(TestTags.InsightsHabitHero).assertExists()
+        compose.onNodeWithTag(TestTags.RootScreenTitle).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.InsightsHabitHero).assertIsDisplayed()
         compose.onNodeWithTag(TestTags.InsightsTrendChart).assertIsDisplayed()
-        compose.onNodeWithText(currentLegend, substring = true).assertExists()
-        compose.onNodeWithText(previousLegend, substring = true).assertExists()
+        compose.onNodeWithText(currentLegend, substring = true).assertIsDisplayed()
+        compose.onNodeWithText(previousLegend, substring = true).assertIsDisplayed()
         capture(name)
     }
 
@@ -91,6 +94,9 @@ class InsightsPreviewRenderTest {
         compose.onNodeWithTag(TestTags.InsightsSurface).performScrollToNode(hasTestTag(TestTags.InsightsCoffeeTypeDonut))
         compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).assertIsDisplayed()
         compose.onNodeWithTag(TestTags.InsightsBrandDonut).assertIsDisplayed()
+        listOf("黑咖", "果咖", "奶咖", "手冲").forEach { compose.onNodeWithText(it).assertIsDisplayed() }
+        compose.onAllNodesWithText("3杯 · 38%").assertCountEquals(3)
+        compose.onAllNodesWithText("1杯 · 13%").assertCountEquals(5)
         compose.onNodeWithTag(TestTags.InsightsTopBrands).assertExists()
         compose.onNodeWithTag(TestTags.InsightsTopProducts).assertExists()
         compose.onNodeWithText("另有", substring = true).assertExists()
@@ -102,7 +108,8 @@ class InsightsPreviewRenderTest {
 
     private fun captureHighlights(name: String) {
         compose.onNodeWithTag(TestTags.InsightsWorstCard).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithContentDescription("本期最好 MANNER", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithContentDescription("本期最好 MANNER", useUnmergedTree = true)
+            .assert(hasStateDescription("品牌图片"))
         compose.onNodeWithTag(TestTags.BottomInsightsTab).assertIsDisplayed()
         capture(name)
     }
@@ -121,13 +128,13 @@ class InsightsPreviewRenderTest {
         assertTrue("$name must not be flat", colors.size > 8)
     }
 
-    private suspend fun seed(app: CoffeeJournalApp, productAssetId: String) {
+    private suspend fun seed(app: CoffeeJournalApp, productAssetId: String, secondaryProductAssetId: String) {
         val records = listOf(
             row("aug-01", "2026-08-01", "MANNER", "奶油拿铁", "MILK", 10, 1600),
             row("aug-02", "2026-08-02", "MANNER", "奶油拿铁", "MILK", 8, 1600),
             row("aug-03", "2026-08-09", "MANNER", "桂花拿铁", "MILK", 10, null),
             row("aug-04", "2026-08-04", "瑞幸", "超长名称冷萃咖啡限定风味", "BLACK", 2, 990, productAssetId),
-            row("aug-05", "2026-08-05", "瑞幸", "超长名称冷萃咖啡限定风味", "BLACK", 2, 990, productAssetId),
+            row("aug-05", "2026-08-05", "瑞幸", "超长名称冷萃咖啡限定风味", "BLACK", 2, 990, secondaryProductAssetId),
             row("aug-06", "2026-08-06", "库迪", "果咖", "FRUIT", 10, 1200),
             row("aug-07", "2026-08-07", "星巴克", "手冲埃塞", "HAND_BREW", 10, 3200, null, "PERSONAL_BEAN", "HAND_BREW"),
             row("aug-08", "2026-08-01", "第4品牌", "第4产品", "BLACK", 6, 1100),

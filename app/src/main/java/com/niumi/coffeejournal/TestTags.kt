@@ -32,6 +32,8 @@ object TestTags {
     const val InsightsTopProducts = "insights-top-products"
     const val InsightsBestCard = "insights-best-card"
     const val InsightsWorstCard = "insights-worst-card"
+    const val InsightsBestImage = "insights-best-image"
+    const val InsightsWorstImage = "insights-worst-image"
     const val CatalogSurface = "catalog-surface"
     const val BottomNavigationSurface = "bottom-navigation-surface"
     const val BottomCalendarTab = "bottom-tab-咖啡日历"
