@@ -46,6 +46,7 @@ class InsightsPreviewRenderTest {
 
     @Test
     fun `renders monthly and yearly insights using Room records and real product assets`() = runBlocking {
+        clearInsightPreviews()
         val app = compose.activity.application as InMemoryCoffeeJournalApp
         appToClose = app
         val primaryAsset = app.imageStore.importWhole(Uri.fromFile(realFixture("IMG_20260815_193103.png")), ImageKind.PRODUCT)
@@ -72,6 +73,7 @@ class InsightsPreviewRenderTest {
         captureTop("今年每月杯数", "去年同期每月杯数", "insights-yearly-hero-trend-cream-forest.png")
         captureBreakdown("insights-yearly-breakdown-cream-forest.png", listOf("黑咖 · 3杯 · 30%", "果咖 · 2杯 · 20%", "奶咖 · 4杯 · 40%", "手冲 · 1杯 · 10%", "MANNER · 4杯 · 40%", "其他 · 1杯 · 10%"))
         captureHighlights("insights-yearly-highlights-cream-forest.png")
+        assertOnlyExpectedPreviews()
     }
 
     private fun awaitDashboard() {
@@ -97,6 +99,8 @@ class InsightsPreviewRenderTest {
         expectedRows.forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed() }
         compose.onNodeWithTag(TestTags.InsightsTopBrands).assertExists()
         compose.onNodeWithTag(TestTags.InsightsTopProducts).assertExists()
+        compose.onAllNodesWithContentDescription("Top3 品牌 第", substring = true).assertCountEquals(3)
+        compose.onAllNodesWithContentDescription("Top3 产品 第", substring = true).assertCountEquals(3)
         compose.onNodeWithText("另有", substring = true).assertExists()
         compose.onAllNodesWithText("第4品牌").assertCountEquals(0)
         compose.onAllNodesWithText("第4产品").assertCountEquals(0)
@@ -129,6 +133,13 @@ class InsightsPreviewRenderTest {
         assertTrue("$name must be review-sized", maxOf(decoded!!.width, decoded.height) > 1000)
         val colors = buildSet { for (y in 0 until decoded.height step 32) for (x in 0 until decoded.width step 32) add(decoded.getPixel(x, y)) }
         assertTrue("$name must not be flat", colors.size > 8)
+    }
+
+    private fun previewDirectory() = File("build/reports/previews")
+    private fun clearInsightPreviews() { previewDirectory().listFiles()?.filter { it.name.startsWith("insights-") }?.forEach { it.delete() } }
+    private fun assertOnlyExpectedPreviews() {
+        val expected = setOf("insights-monthly-hero-trend-cream-forest.png", "insights-monthly-breakdown-cream-forest.png", "insights-monthly-highlights-cream-forest.png", "insights-yearly-hero-trend-cream-forest.png", "insights-yearly-breakdown-cream-forest.png", "insights-yearly-highlights-cream-forest.png")
+        assertTrue(previewDirectory().listFiles()?.filter { it.name.startsWith("insights-") }?.map { it.name }?.toSet() == expected)
     }
 
     private suspend fun seed(app: CoffeeJournalApp, productAssetId: String, secondaryProductAssetId: String) {
