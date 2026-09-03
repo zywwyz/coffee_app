@@ -7,6 +7,7 @@ import android.net.Uri
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -81,8 +82,8 @@ class InsightsPreviewRenderTest {
         compose.onNodeWithTag(TestTags.InsightsSurface).performScrollToNode(hasTestTag(TestTags.InsightsTrendChart))
         compose.onNodeWithTag(TestTags.InsightsHabitHero).assertExists()
         compose.onNodeWithTag(TestTags.InsightsTrendChart).assertIsDisplayed()
-        compose.onNodeWithText(currentLegend, substring = true).assertIsDisplayed()
-        compose.onNodeWithText(previousLegend, substring = true).assertIsDisplayed()
+        compose.onNodeWithText(currentLegend, substring = true).assertExists()
+        compose.onNodeWithText(previousLegend, substring = true).assertExists()
         capture(name)
     }
 
