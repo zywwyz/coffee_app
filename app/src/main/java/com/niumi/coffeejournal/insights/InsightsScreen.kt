@@ -178,7 +178,7 @@ private data class Dashboard(val habit: HabitSummary, val trend: List<Comparison
 @Composable private fun CoffeeCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) = Card(modifier.semantics { this[InsightsMetricCardColor] = CoffeeVisuals.white }, shape = RoundedCornerShape(CoffeeVisuals.cornerMedium), colors = CardDefaults.cardColors(containerColor = CoffeeVisuals.white), border = BorderStroke(1.dp, CoffeeVisuals.warmOutline)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp), content = content) }
 @Composable private fun EmptyCard(title: String) = CoffeeCard(Modifier.fillMaxWidth()) { Text(title, color = CoffeeVisuals.forest); Text("下一杯会从这里开始留下痕迹", color = CoffeeVisuals.secondaryText) }
 private fun percent(share: ShareValue) = String.format(Locale.ROOT, "%.0f%%", share.fraction * 100)
-private fun donutLabel(label: String) = when (label) { "BLACK" -> "黑咖"; "FRUIT" -> "果咖"; "MILK" -> "奶咖"; "HAND_BREW" -> "手冲"; else -> label }
+private fun donutLabel(label: String) = when (label) { "BLACK" -> "黑咖"; "FRUIT" -> "果咖"; "MILK" -> "奶咖"; "HAND_BREW" -> "手冲"; "OTHER" -> "其他"; else -> label }
 internal fun formatFen(fen: Long): String = "¥${fenWithoutSymbol(fen)}"
 private fun fenWithoutSymbol(fen: Long): String = "${fen / 100}.${(fen % 100).toString().padStart(2, '0')}"
 internal fun formatSignedFen(fen: Long): String { val value = BigInteger.valueOf(fen); val parts = value.abs().divideAndRemainder(BigInteger.valueOf(100)); return (if (value.signum() >= 0) "+" else "-") + "¥${parts[0]}.${parts[1].toString().padStart(2, '0')}" }

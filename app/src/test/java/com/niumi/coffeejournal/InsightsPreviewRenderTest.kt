@@ -55,7 +55,8 @@ class InsightsPreviewRenderTest {
         compose.onNodeWithTag(TestTags.BottomInsightsTab).performClick()
         awaitDashboard()
         captureTop("本月累计杯数", "上月同期累计杯数", "insights-monthly-hero-trend-cream-forest.png")
-        captureBreakdown("insights-monthly-breakdown-cream-forest.png", listOf("黑咖 · 3杯 · 38%", "果咖 · 1杯 · 13%", "奶咖 · 3杯 · 38%", "手冲 · 1杯 · 13%", "MANNER · 3杯 · 38%"))
+        captureBreakdown("insights-monthly-breakdown-cream-forest.png", listOf("黑咖 · 3杯 · 38%", "果咖 · 1杯 · 13%", "奶咖 · 3杯 · 38%", "手冲 · 1杯 · 13%", "MANNER · 3杯 · 38%", "其他 · 1杯 · 13%"))
+        captureRankings("insights-monthly-top3-cream-forest.png")
         compose.onNodeWithContentDescription("本期最好 MANNER", useUnmergedTree = true)
             .assert(hasStateDescription("品牌图片"))
         compose.waitUntil(10_000) {
@@ -70,7 +71,8 @@ class InsightsPreviewRenderTest {
             compose.onAllNodesWithText("今年每月杯数", substring = true).fetchSemanticsNodes().isNotEmpty()
         }
         captureTop("今年每月杯数", "去年同期每月杯数", "insights-yearly-hero-trend-cream-forest.png")
-        captureBreakdown("insights-yearly-breakdown-cream-forest.png", listOf("黑咖 · 3杯 · 30%", "果咖 · 2杯 · 20%", "奶咖 · 4杯 · 40%", "手冲 · 1杯 · 10%", "MANNER · 4杯 · 40%"))
+        captureBreakdown("insights-yearly-breakdown-cream-forest.png", listOf("黑咖 · 3杯 · 30%", "果咖 · 2杯 · 20%", "奶咖 · 4杯 · 40%", "手冲 · 1杯 · 10%", "MANNER · 4杯 · 40%", "其他 · 1杯 · 10%"))
+        captureRankings("insights-yearly-top3-cream-forest.png")
         captureHighlights("insights-yearly-highlights-cream-forest.png")
     }
 
@@ -100,6 +102,14 @@ class InsightsPreviewRenderTest {
         compose.onNodeWithText("另有", substring = true).assertExists()
         compose.onAllNodesWithText("第4品牌").assertCountEquals(0)
         compose.onAllNodesWithText("第4产品").assertCountEquals(0)
+        compose.onNodeWithTag(TestTags.BottomInsightsTab).assertIsDisplayed()
+        capture(name)
+    }
+
+    private fun captureRankings(name: String) {
+        compose.onNodeWithTag(TestTags.InsightsSurface).performScrollToNode(hasTestTag(TestTags.InsightsTopBrands))
+        compose.onNodeWithTag(TestTags.InsightsTopBrands).assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.InsightsTopProducts).assertIsDisplayed()
         compose.onNodeWithTag(TestTags.BottomInsightsTab).assertIsDisplayed()
         capture(name)
     }

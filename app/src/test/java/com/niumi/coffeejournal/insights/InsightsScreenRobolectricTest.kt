@@ -80,7 +80,7 @@ class InsightsScreenRobolectricTest {
         compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("黑咖 · 4杯 · 57%").assertIsDisplayed()
         compose.onNodeWithTag(TestTags.InsightsBrandDonut).assertIsDisplayed()
-        compose.onNodeWithText("瑞幸 · 5 杯 · 71%").assertIsDisplayed()
+        compose.onNodeWithContentDescription("瑞幸 · 5杯 · 71%").assertIsDisplayed()
     }
 
     @Test fun `yearly state renders monthly comparison without cumulative wording`() {
