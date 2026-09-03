@@ -55,7 +55,7 @@ class InsightsPreviewRenderTest {
         compose.onNodeWithTag(TestTags.BottomInsightsTab).performClick()
         awaitDashboard()
         captureTop("本月累计杯数", "上月同期累计杯数", "insights-monthly-hero-trend-cream-forest.png")
-        captureBreakdown("insights-monthly-breakdown-cream-forest.png")
+        captureBreakdown("insights-monthly-breakdown-cream-forest.png", listOf("黑咖 · 3杯 · 38%", "果咖 · 1杯 · 13%", "奶咖 · 3杯 · 38%", "手冲 · 1杯 · 13%", "MANNER · 3杯 · 38%"))
         compose.onNodeWithContentDescription("本期最好 MANNER", useUnmergedTree = true)
             .assert(hasStateDescription("品牌图片"))
         compose.waitUntil(10_000) {
@@ -70,7 +70,7 @@ class InsightsPreviewRenderTest {
             compose.onAllNodesWithText("今年每月杯数", substring = true).fetchSemanticsNodes().isNotEmpty()
         }
         captureTop("今年每月杯数", "去年同期每月杯数", "insights-yearly-hero-trend-cream-forest.png")
-        captureBreakdown("insights-yearly-breakdown-cream-forest.png")
+        captureBreakdown("insights-yearly-breakdown-cream-forest.png", listOf("黑咖 · 3杯 · 30%", "果咖 · 2杯 · 20%", "奶咖 · 4杯 · 40%", "手冲 · 1杯 · 10%", "MANNER · 4杯 · 40%"))
         captureHighlights("insights-yearly-highlights-cream-forest.png")
     }
 
@@ -90,13 +90,11 @@ class InsightsPreviewRenderTest {
         capture(name)
     }
 
-    private fun captureBreakdown(name: String) {
+    private fun captureBreakdown(name: String, expectedRows: List<String>) {
         compose.onNodeWithTag(TestTags.InsightsSurface).performScrollToNode(hasTestTag(TestTags.InsightsCoffeeTypeDonut))
         compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).assertIsDisplayed()
         compose.onNodeWithTag(TestTags.InsightsBrandDonut).assertIsDisplayed()
-        listOf("黑咖", "果咖", "奶咖", "手冲").forEach { compose.onNodeWithText(it).assertIsDisplayed() }
-        compose.onAllNodesWithText("3杯 · 38%").assertCountEquals(3)
-        compose.onAllNodesWithText("1杯 · 13%").assertCountEquals(5)
+        expectedRows.forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed() }
         compose.onNodeWithTag(TestTags.InsightsTopBrands).assertExists()
         compose.onNodeWithTag(TestTags.InsightsTopProducts).assertExists()
         compose.onNodeWithText("另有", substring = true).assertExists()

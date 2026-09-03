@@ -78,7 +78,7 @@ class InsightsScreenRobolectricTest {
         compose.onNodeWithTag(TestTags.InsightsTrendChart).performScrollTo()
         compose.onNodeWithContentDescription("饮用趋势：本月累计杯数；上月同期累计杯数", substring = true).assertExists()
         compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("BLACK · 4 杯 · 57%").assertIsDisplayed()
+        compose.onNodeWithContentDescription("黑咖 · 4杯 · 57%").assertIsDisplayed()
         compose.onNodeWithTag(TestTags.InsightsBrandDonut).assertIsDisplayed()
         compose.onNodeWithText("瑞幸 · 5 杯 · 71%").assertIsDisplayed()
     }
