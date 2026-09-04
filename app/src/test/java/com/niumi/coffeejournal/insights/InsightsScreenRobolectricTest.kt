@@ -90,7 +90,7 @@ class InsightsScreenRobolectricTest {
         compose.onNodeWithContentDescription("饮用趋势：本月累计杯数；上月同期累计杯数", substring = true).assertExists()
         compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("黑咖 · 4杯 · 57%").assertIsDisplayed()
-        compose.onNodeWithTag(TestTags.InsightsBrandDonut).assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.InsightsBrandDonut).performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("瑞幸 · 5杯 · 71%").assertIsDisplayed()
     }
 
@@ -117,6 +117,38 @@ class InsightsScreenRobolectricTest {
         compose.onNodeWithTag(TestTags.InsightsTopBrands).performScrollTo()
         compose.onAllNodesWithText("1").assertCountEquals(2)
         compose.onNodeWithText("一个特别特别特别特别特别特别特别特别长的产品名称").assertExists()
+    }
+
+    @Test fun `insight cards use full width and wrap long legend and ranking names at 320dp`() {
+        val base = state()
+        val longBrand = "一个特别特别特别特别特别特别特别特别特别特别特别特别长的咖啡品牌名称"
+        val longProduct = "一个特别特别特别特别特别特别特别特别特别特别特别特别长的咖啡产品名称"
+        val monthly = base.monthly!!.copy(
+            brandShares = listOf(ShareValue("long", longBrand, 5, 5.0 / 7)),
+            topProducts = listOf(RankedValue(longProduct, 4)),
+        )
+        compose.setContent { CoffeeTheme { InsightsScreen(base.copy(monthly = monthly), {}, {}) } }
+
+        val minimumCardWidth = with(compose.density) { 280.dp.toPx() }
+        listOf(
+            TestTags.InsightsCoffeeTypeDonut,
+            TestTags.InsightsBrandDonut,
+            TestTags.InsightsTopBrands,
+            TestTags.InsightsTopProducts,
+        ).forEach { tag ->
+            compose.onNodeWithTag(tag).performScrollTo()
+            org.junit.Assert.assertTrue(compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot.width >= minimumCardWidth)
+        }
+
+        val brandCard = compose.onNodeWithTag(TestTags.InsightsBrandDonut).fetchSemanticsNode().boundsInRoot
+        val brand = compose.onNodeWithText(longBrand).fetchSemanticsNode().boundsInRoot
+        val productCard = compose.onNodeWithTag(TestTags.InsightsTopProducts).fetchSemanticsNode().boundsInRoot
+        val product = compose.onNodeWithText(longProduct).fetchSemanticsNode().boundsInRoot
+        val twoLines = with(compose.density) { 36.dp.toPx() }
+        org.junit.Assert.assertTrue(brand.height >= twoLines)
+        org.junit.Assert.assertTrue(product.height >= twoLines)
+        org.junit.Assert.assertTrue(brand.left >= brandCard.left && brand.right <= brandCard.right)
+        org.junit.Assert.assertTrue(product.left >= productCard.left && product.right <= productCard.right)
     }
 
     @Test fun `highlight opens the supplied record id and indicates equal ratings`() {
