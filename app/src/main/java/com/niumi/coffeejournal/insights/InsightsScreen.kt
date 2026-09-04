@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -64,6 +65,7 @@ import java.util.Locale
 
 internal val InsightsSurfaceColor = SemanticsPropertyKey<Color>("InsightsSurfaceColor")
 internal val InsightsMetricCardColor = SemanticsPropertyKey<Color>("InsightsMetricCardColor")
+private val donutColors = listOf(CoffeeVisuals.forest, CoffeeVisuals.peach, CoffeeVisuals.mint, CoffeeVisuals.warmOutline)
 
 @Composable
 fun InsightsFeature(
@@ -161,12 +163,13 @@ private data class Dashboard(val habit: HabitSummary, val trend: List<Comparison
 @Composable private fun DonutCard(title: String, shares: List<ShareValue>, tag: String, modifier: Modifier) = CoffeeCard(modifier.testTag(tag)) {
     Text(title, color = CoffeeVisuals.forest)
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(96.dp), contentAlignment = Alignment.Center) { Canvas(Modifier.size(90.dp).semantics { contentDescription = "$title：" + shares.joinToString { "${donutLabel(it.label)} ${it.cups}杯 ${percent(it)}" } }) { var start = -90f; shares.forEachIndexed { i, s -> val sweep = (s.fraction * 360f).toFloat(); drawArc(listOf(CoffeeVisuals.forest, CoffeeVisuals.peach, CoffeeVisuals.mint, CoffeeVisuals.warmOutline)[i % 4], start, sweep, false, style = Stroke(16.dp.toPx())); start += sweep } }; Text("${shares.sumOf { it.cups }}\n杯", color = CoffeeVisuals.forest) }
+        Box(Modifier.size(96.dp), contentAlignment = Alignment.Center) { Canvas(Modifier.size(90.dp).semantics { contentDescription = "$title：" + shares.joinToString { "${donutLabel(it.label)} ${it.cups}杯 ${percent(it)}" } }) { var start = -90f; shares.forEachIndexed { i, s -> val sweep = (s.fraction * 360f).toFloat(); drawArc(donutColors[i % donutColors.size], start, sweep, false, style = Stroke(16.dp.toPx())); start += sweep } }; Text("${shares.sumOf { it.cups }}\n杯", color = CoffeeVisuals.forest) }
         Column(Modifier.weight(1f)) {
-            shares.forEach { share ->
+            shares.forEachIndexed { index, share ->
                 val label = donutLabel(share.label)
                 Row(Modifier.fillMaxWidth().semantics { contentDescription = "$label · ${share.cups}杯 · ${percent(share)}" }) {
-                    Text(label, Modifier.weight(1f), color = CoffeeVisuals.secondaryText)
+                    Box(Modifier.padding(top = 4.dp).size(8.dp).background(donutColors[index % donutColors.size], CircleShape).testTag("$tag-legend-dot-$index"))
+                    Text(label, Modifier.weight(1f).padding(start = 6.dp), color = CoffeeVisuals.secondaryText)
                     Text("${share.cups}杯 · ${percent(share)}", color = CoffeeVisuals.secondaryText, maxLines = 1)
                 }
             }

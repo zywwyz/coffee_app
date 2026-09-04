@@ -123,9 +123,14 @@ class InsightsScreenRobolectricTest {
         val base = state()
         val longBrand = "一个特别特别特别特别特别特别特别特别特别特别特别特别长的咖啡品牌名称"
         val longProduct = "一个特别特别特别特别特别特别特别特别特别特别特别特别长的咖啡产品名称"
+        val productName = "$longBrand · $longProduct"
         val monthly = base.monthly!!.copy(
-            brandShares = listOf(ShareValue("long", longBrand, 5, 5.0 / 7)),
-            topProducts = listOf(RankedValue(longProduct, 4)),
+            brandShares = listOf(
+                ShareValue("long", longBrand, 5, 5.0 / 7),
+                ShareValue("second", "第二品牌", 1, 1.0 / 7),
+                ShareValue("third", "第三品牌", 1, 1.0 / 7),
+            ),
+            topProducts = listOf(RankedValue(productName, 4)),
         )
         compose.setContent { CoffeeTheme { InsightsScreen(base.copy(monthly = monthly), {}, {}) } }
 
@@ -139,16 +144,19 @@ class InsightsScreenRobolectricTest {
             compose.onNodeWithTag(tag).performScrollTo()
             org.junit.Assert.assertTrue(compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot.width >= minimumCardWidth)
         }
+        repeat(3) { index -> compose.onNodeWithTag("${TestTags.InsightsBrandDonut}-legend-dot-$index").assertExists() }
 
         val brandCard = compose.onNodeWithTag(TestTags.InsightsBrandDonut).fetchSemanticsNode().boundsInRoot
         val brand = compose.onNodeWithText(longBrand).fetchSemanticsNode().boundsInRoot
+        val brandStats = compose.onNodeWithText("5杯 · 71%").fetchSemanticsNode().boundsInRoot
         val productCard = compose.onNodeWithTag(TestTags.InsightsTopProducts).fetchSemanticsNode().boundsInRoot
-        val product = compose.onNodeWithText(longProduct).fetchSemanticsNode().boundsInRoot
+        val product = compose.onNodeWithText(productName).fetchSemanticsNode().boundsInRoot
+        val productStats = compose.onNodeWithText("4杯").fetchSemanticsNode().boundsInRoot
         val twoLines = with(compose.density) { 36.dp.toPx() }
         org.junit.Assert.assertTrue(brand.height >= twoLines)
         org.junit.Assert.assertTrue(product.height >= twoLines)
-        org.junit.Assert.assertTrue(brand.left >= brandCard.left && brand.right <= brandCard.right)
-        org.junit.Assert.assertTrue(product.left >= productCard.left && product.right <= productCard.right)
+        listOf(brand, brandStats).forEach { bounds -> assertInside(bounds, brandCard) }
+        listOf(product, productStats).forEach { bounds -> assertInside(bounds, productCard) }
     }
 
     @Test fun `highlight opens the supplied record id and indicates equal ratings`() {
@@ -192,5 +200,9 @@ class InsightsScreenRobolectricTest {
             best = HighlightRecord("best", "瑞幸", "生椰拿铁", 9, null, null, 2), worst = null,
         )
         return InsightsUiState(2026, 8, loading = false, monthly = MonthlyInsights(2026, 8, period, SpendDelta(0, null, SpendDeltaBaseline.MISSING), emptyList(), null, habit, listOf(ComparisonPoint(1, 1, 0)), types, brands, period.topBrands, period.topProducts, period.best, null))
+    }
+
+    private fun assertInside(child: androidx.compose.ui.geometry.Rect, parent: androidx.compose.ui.geometry.Rect) {
+        org.junit.Assert.assertTrue(child.left >= parent.left && child.top >= parent.top && child.right <= parent.right && child.bottom <= parent.bottom)
     }
 }
