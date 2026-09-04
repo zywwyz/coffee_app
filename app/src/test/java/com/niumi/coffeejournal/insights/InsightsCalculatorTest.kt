@@ -35,6 +35,36 @@ class InsightsCalculatorTest {
         val habit = InsightsCalculator.period(listOf(r("a", "2026-01-01", price=100, rating=8), r("b", "2026-01-01", price=null), r("c", "2026-01-02", price=300, rating=null), r("d", "2026-01-04", price=null, rating=10))).habit
         assertEquals(3, habit.drinkingDays); assertEquals(2, habit.longestStreak); assertEquals(400L, habit.totalSpendFen); assertEquals(200L, habit.averagePriceFen); assertEquals(4.5, habit.averageRating!!, 0.0)
     }
+    @Test fun `habit streak crosses month boundary and leap day`() {
+        val habit = InsightsCalculator.period(
+            listOf(
+                r("feb28", "2024-02-28"),
+                r("feb29", "2024-02-29"),
+                r("mar1", "2024-03-01"),
+                r("gap", "2024-03-03"),
+            ),
+        ).habit
+        assertEquals(4, habit.drinkingDays)
+        assertEquals(3, habit.longestStreak)
+    }
+    @Test fun `monthly January compares records from previous December by calendar day`() {
+        val report = InsightsCalculator.monthly(
+            2025, 1,
+            listOf(r("jan31", "2025-01-31")),
+            listOf(r("dec31", "2024-12-31"), r("dec30", "2024-12-30")),
+            today = "2026-09-03",
+        )
+        assertEquals(31, report.trend.size)
+        assertEquals(1, report.trend.last().current)
+        assertEquals(2, report.trend.last().previous)
+    }
+    @Test fun `malformed local dates do not contribute to insights`() {
+        val report = InsightsCalculator.period(
+            listOf(r("invalid-day", "2026-02-29"), r("invalid-shape", "2026-2-01"), r("valid", "2026-02-28")),
+        )
+        assertEquals(1, report.cupCount)
+        assertEquals(1, report.habit.drinkingDays)
+    }
     @Test fun `coffee type shares cover all four types and brands retain top four plus other`() {
         val records = listOf(r("1","2026-01-01",type=CoffeeType.BLACK,brand="A"),r("2","2026-01-02",type=CoffeeType.FRUIT,brand="B"),r("3","2026-01-03",type=CoffeeType.MILK,brand="C"),r("4","2026-01-04",type=CoffeeType.HAND_BREW,brand="D"),r("5","2026-01-05",brand="E"))
         val p=InsightsCalculator.period(records); assertEquals(4,p.coffeeTypeShares.size); assertEquals(listOf("A","B","C","D","OTHER"),p.brandShares.map { it.key })
@@ -63,6 +93,29 @@ class InsightsCalculatorTest {
     @Test fun `future current period records affect neither summary nor trend`() {
         val p=InsightsCalculator.monthly(2026,9,listOf(r("now","2026-09-01",rating=10),r("future","2026-09-20",brand="Future",rating=1)),emptyList(),today="2026-09-02")
         assertEquals(1,p.habit.cups); assertEquals("品牌",p.topBrands.single().name); assertEquals("now",p.best!!.recordId); assertEquals(1,p.trend.last().current)
+    }
+    @Test fun `cup delta compares the same available month days including zero cups`() {
+        val up = InsightsCalculator.monthly(
+            2026, 9,
+            listOf(r("one", "2026-09-01"), r("two", "2026-09-02")),
+            listOf(r("prior", "2026-08-01"), r("after-cutoff", "2026-08-04")),
+            today = "2026-09-03",
+        )
+        val down = InsightsCalculator.monthly(
+            2026, 9, emptyList(), listOf(r("prior", "2026-08-02")), today = "2026-09-03",
+        )
+        val flat = InsightsCalculator.monthly(2026, 9, emptyList(), emptyList(), today = "2026-09-03")
+        assertEquals(1, up.habit.cupDelta)
+        assertEquals(-1, down.habit.cupDelta)
+        assertEquals(0, flat.habit.cupDelta)
+    }
+    @Test fun `yearly cup delta compares matching months of the previous year`() {
+        val report = InsightsCalculator.yearly(
+            2026,
+            listOf(r("jan", "2026-01-01"), r("old-jan", "2025-01-01"), r("old-feb", "2025-02-01"), r("old-later", "2025-09-01")),
+            today = "2026-04-10",
+        )
+        assertEquals(-1, report.habit.cupDelta)
     }
     @Test fun `future current year records affect neither aggregates nor trend`() {
         val p=InsightsCalculator.yearly(2026,listOf(r("now","2026-01-01",price=100),r("future","2026-09-20",price=300,brand="Future")),today="2026-04-10")

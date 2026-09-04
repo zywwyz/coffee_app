@@ -3,8 +3,9 @@ package com.niumi.coffeejournal.insights
 import com.niumi.coffeejournal.core.model.CoffeeType
 import com.niumi.coffeejournal.core.model.DrinkRecord
 import com.niumi.coffeejournal.core.model.ItemType
-import java.time.LocalDate
 import java.math.BigInteger
+import java.util.Calendar
+import java.util.Locale
 
 data class ComparisonPoint(val index: Int, val current: Int?, val previous: Int?)
 data class ShareValue(val key: String, val label: String, val cups: Int, val fraction: Double)
@@ -23,7 +24,7 @@ data class YearlyInsights(val year:Int,val period:PeriodInsights,val averageMont
 object InsightsCalculator {
  fun period(records:List<DrinkRecord>, points:List<TrendPoint> = emptyList()):PeriodInsights {
   val valid=records.filter { date(it)!=null }; val priced=valid.mapNotNull { it.actualPriceFen }; val rated=valid.mapNotNull { it.ratingHalfStars }
-  val days=valid.mapNotNull(::date).distinct().sorted(); var run=0; var longest=0; var prev:LocalDate?=null; days.forEach { d->run=if(prev?.plusDays(1)==d)run+1 else 1; longest=maxOf(longest,run);prev=d }
+  val days=valid.mapNotNull(::date).distinct().sorted(); var run=0; var longest=0; var prev:LocalDay?=null; days.forEach { d->run=if(prev?.isImmediatelyBefore(d)==true)run+1 else 1; longest=maxOf(longest,run);prev=d }
   val rankedBrands=rank(valid){ it.snapshot.brandName.trim() }.take(3); val rankedProducts=rankProducts(valid).take(3)
   val types=CoffeeType.entries.map { type-> share(type.name,type.name,valid.count { it.snapshot.coffeeType==type },valid.size) }
   val grouped=valid.groupBy { it.snapshot.brandName.trim() }.map { (k,v)->Triple(k,v.size,v.maxOf { it.occurredAtEpochMillis }) }.sortedWith(compareByDescending<Triple<String,Int,Long>>{it.second}.thenByDescending{it.third}.thenBy{it.first}); val brandShares=if(grouped.size<=4) grouped.map{share(it.first,it.first,it.second,valid.size)} else grouped.take(4).map{share(it.first,it.first,it.second,valid.size)}+share("OTHER","OTHER",grouped.drop(4).sumOf{it.second},valid.size)
@@ -31,12 +32,17 @@ object InsightsCalculator {
   val spend=priced.fold(0L,::saturatingAdd); val exact=priced.fold(BigInteger.ZERO){ total, value -> total + BigInteger.valueOf(value) }; val habit=HabitSummary(valid.size,days.size,longest,rated.takeIf{it.isNotEmpty()}?.average()?.div(2),priced.takeIf{it.isNotEmpty()}?.let{spend},priced.takeIf{it.isNotEmpty()}?.let{exact.divide(BigInteger.valueOf(it.size.toLong())).min(BigInteger.valueOf(Long.MAX_VALUE)).toLong()},null)
   return PeriodInsights(valid.size,spend,habit.averagePriceFen,habit.averageRating,rankedBrands,rankedProducts,emptyList(),emptyList(),emptyList(),emptyList(),points,habit=habit,coffeeTypeShares=types,brandShares=brandShares,best=best,worst=worst)
  }
- fun monthly(year:Int,month:Int,records:List<DrinkRecord>,previousMonthRecords:List<DrinkRecord>,today:String=LocalDate.now().toString()):MonthlyInsights {
-  val now=LocalDate.parse(today); val current=records.filter { date(it)?.let { d->d.year==year&&d.monthValue==month && (year!=now.year||month!=now.monthValue||d<=now) }==true }; val prior=previousMonthRecords.filter { date(it)?.let { d->d==LocalDate.of(year,month,1).minusMonths(1).withDayOfMonth(d.dayOfMonth) }==true }
-  val days=if(year==now.year&&month==now.monthValue) now.dayOfMonth else LocalDate.of(year,month,1).lengthOfMonth(); val priorDays=LocalDate.of(year,month,1).minusMonths(1).lengthOfMonth(); val trend=(1..days).map { i->ComparisonPoint(i,current.count{date(it)?.dayOfMonth==i},if(i<=priorDays) prior.count{date(it)?.dayOfMonth==i} else null) }.runningFold(ComparisonPoint(0,0,0)){a,b->ComparisonPoint(b.index,(a.current?:0)+(b.current?:0),b.previous?.let{(a.previous?:0)+it})}.drop(1)
-  val p=period(current); return MonthlyInsights(year,month,p,SpendDelta(0,null,SpendDeltaBaseline.MISSING),emptyList(),null,trend=trend)
+ fun monthly(year:Int,month:Int,records:List<DrinkRecord>,previousMonthRecords:List<DrinkRecord>,today:String=currentLocalDate()):MonthlyInsights {
+  val now=LocalDay.parse(today) ?: return MonthlyInsights(year,month,period(emptyList()),SpendDelta(0,null,SpendDeltaBaseline.MISSING),emptyList(),null)
+  val current=records.filter { date(it)?.let { d->d.year==year&&d.month==month && (year!=now.year||month!=now.month||d<=now) }==true }
+  val previousYear=if(month==1) year-1 else year; val previousMonth=if(month==1) 12 else month-1
+  val prior=previousMonthRecords.filter { date(it)?.let { d->d.year==previousYear&&d.month==previousMonth }==true }
+  val days=if(year==now.year&&month==now.month) now.day else LocalDay.lengthOfMonth(year,month); val priorDays=LocalDay.lengthOfMonth(previousYear,previousMonth); val trend=(1..days).map { i->ComparisonPoint(i,current.count{date(it)?.day==i},if(i<=priorDays) prior.count{date(it)?.day==i} else null) }.runningFold(ComparisonPoint(0,0,0)){a,b->ComparisonPoint(b.index,(a.current?:0)+(b.current?:0),b.previous?.let{(a.previous?:0)+it})}.drop(1)
+  val p=period(current)
+  val habit=p.habit.copy(cupDelta=current.size-prior.count { date(it)?.day?.let { day -> day <= days } == true })
+  return MonthlyInsights(year,month,p,SpendDelta(0,null,SpendDeltaBaseline.MISSING),emptyList(),null,habit=habit,trend=trend)
  }
- fun yearly(year:Int,records:List<DrinkRecord>,today:String=LocalDate.now().toString()):YearlyInsights { val now=LocalDate.parse(today); val current=records.filter{date(it)?.let { d -> d.year==year && (year!=now.year || d<=now) }==true}; val n=if(year==now.year)now.monthValue else 12; val trend=(1..n).map{i->ComparisonPoint(i,current.count{date(it)?.monthValue==i},if(year==1)null else records.count{date(it)?.let { d -> d.year==year-1 && d.monthValue==i }==true})}; val legacy=(1..12).map { i -> legacyPoint("${i}月", current.filter { date(it)?.monthValue == i }) }; val p=period(current); return YearlyInsights(year,p,0,legacy,emptyList(),emptyList(),emptyList(),null,trend=trend) }
+ fun yearly(year:Int,records:List<DrinkRecord>,today:String=currentLocalDate()):YearlyInsights { val now=LocalDay.parse(today) ?: return YearlyInsights(year,period(emptyList()),0,emptyList(),emptyList(),emptyList(),emptyList(),null); val current=records.filter{date(it)?.let { d -> d.year==year && (year!=now.year || d<=now) }==true}; val n=if(year==now.year)now.month else 12; val trend=(1..n).map{i->ComparisonPoint(i,current.count{date(it)?.month==i},if(year==1)null else records.count{date(it)?.let { d -> d.year==year-1 && d.month==i }==true})}; val legacy=(1..12).map { i -> legacyPoint("${i}月", current.filter { date(it)?.month == i }) }; val p=period(current); val habit=p.habit.copy(cupDelta=if(year==1)null else current.size-records.count { date(it)?.let { d -> d.year==year-1 && d.month<=n }==true }); return YearlyInsights(year,p,0,legacy,emptyList(),emptyList(),emptyList(),null,habit=habit,trend=trend) }
  private fun legacyPoint(label:String, records:List<DrinkRecord>): TrendPoint { val priced=records.mapNotNull { it.actualPriceFen }; val rated=records.mapNotNull { it.ratingHalfStars }; return TrendPoint(label, priced.takeIf { it.isNotEmpty() }?.fold(0L, ::saturatingAdd), priced.size, rated.size, rated.takeIf { it.isNotEmpty() }?.average()?.div(2)) }
  private fun rank(records:List<DrinkRecord>,key:(DrinkRecord)->String)=records.groupBy(key).map{(k,v)->RankedValue(k,latest(v).let{if(k.contains('\u0000'))it.snapshot.brandName+" · "+it.snapshot.itemName else it.snapshot.brandName},v.size,v.maxOf{it.occurredAtEpochMillis})}.sortedWith(compareByDescending<RankedValue>{it.cups}.thenByDescending{it.latestAt}.thenBy{it.key})
  private fun rankProducts(records:List<DrinkRecord>)=records.groupBy{if(it.sourceItemId.isNotBlank())it.sourceItemId else it.snapshot.brandName+"\u0000"+it.snapshot.itemName}.map{(k,v)->val r=latest(v); RankedValue(k,r.snapshot.brandName+" · "+r.snapshot.itemName,v.size,r.occurredAtEpochMillis)}.sortedWith(compareByDescending<RankedValue>{it.cups}.thenByDescending{it.latestAt}.thenBy{it.key})
@@ -44,5 +50,29 @@ object InsightsCalculator {
  private fun latest(records:List<DrinkRecord>)=records.maxWith(compareBy<DrinkRecord>{it.occurredAtEpochMillis}.thenBy{it.id})
  private fun share(key:String,label:String,cups:Int,total:Int)=ShareValue(key,label,cups,if(total==0)0.0 else cups.toDouble()/total)
  private fun saturatingAdd(a:Long,b:Long):Long = if (b>0 && a>Long.MAX_VALUE-b) Long.MAX_VALUE else if (b<0 && a<Long.MIN_VALUE-b) Long.MIN_VALUE else a+b
- private fun date(r:DrinkRecord)=runCatching{LocalDate.parse(r.localDate)}.getOrNull()
+ private fun date(r:DrinkRecord)=LocalDay.parse(r.localDate)
+
+ private fun currentLocalDate(): String {
+  val calendar=Calendar.getInstance()
+  return String.format(Locale.ROOT,"%04d-%02d-%02d",calendar.get(Calendar.YEAR),calendar.get(Calendar.MONTH)+1,calendar.get(Calendar.DAY_OF_MONTH))
+ }
+
+ private data class LocalDay(val year:Int,val month:Int,val day:Int):Comparable<LocalDay> {
+  override fun compareTo(other:LocalDay):Int=ordinal().compareTo(other.ordinal())
+  fun isImmediatelyBefore(other:LocalDay):Boolean=ordinal()+1L==other.ordinal()
+  private fun ordinal():Long=year.toLong()*365L+(year-1L)/4L-(year-1L)/100L+(year-1L)/400L+daysBeforeMonth(year,month)+(day-1)
+  companion object {
+   fun parse(value:String):LocalDay? {
+    if(value.length!=10||value[4]!='-'||value[7]!='-'||value.withIndex().any{(index,char)->index !in setOf(4,7)&&char !in '0'..'9'}) return null
+    val year=value.substring(0,4).toIntOrNull()?:return null; val month=value.substring(5,7).toIntOrNull()?:return null; val day=value.substring(8,10).toIntOrNull()?:return null
+    return if(year in 1..9999&&month in 1..12&&day in 1..lengthOfMonth(year,month)) LocalDay(year,month,day) else null
+   }
+   fun lengthOfMonth(year:Int,month:Int):Int=when(month){1,3,5,7,8,10,12->31;4,6,9,11->30;2->if(isLeapYear(year))29 else 28;else->0}
+   private fun daysBeforeMonth(year:Int,month:Int):Long {
+    val normal=intArrayOf(0,31,59,90,120,151,181,212,243,273,304,334)
+    return (normal[month-1]+if(month>2&&isLeapYear(year))1 else 0).toLong()
+   }
+   private fun isLeapYear(year:Int):Boolean=year%4==0&&(year%100!=0||year%400==0)
+  }
+ }
 }

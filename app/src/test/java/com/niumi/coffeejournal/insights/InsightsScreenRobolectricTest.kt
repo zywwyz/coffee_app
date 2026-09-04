@@ -69,8 +69,19 @@ class InsightsScreenRobolectricTest {
         compose.onNodeWithText("饮用天数 4", substring = true).assertIsDisplayed()
         compose.onNodeWithText("最长连续 3 天", substring = true).assertIsDisplayed()
         compose.onNodeWithText("平均评分 4.5", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("杯数较上期 +2", substring = true).assertIsDisplayed()
         compose.onNodeWithText("总消费 —").assertIsDisplayed()
         compose.onNodeWithText("杯均 —").assertIsDisplayed()
+    }
+
+    @Test fun `habit hero renders a negative cup comparison`() {
+        val monthly = state().monthly!!
+        compose.setContent {
+            CoffeeTheme {
+                InsightsScreen(state().copy(monthly = monthly.copy(habit = monthly.habit.copy(cupDelta = -2))), {}, {})
+            }
+        }
+        compose.onNodeWithText("杯数较上期 -2", substring = true).assertIsDisplayed()
     }
 
     @Test fun `trend and donut legends have non color accessibility facts`() {
