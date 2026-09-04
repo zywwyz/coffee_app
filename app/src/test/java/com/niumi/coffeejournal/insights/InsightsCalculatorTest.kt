@@ -117,6 +117,12 @@ class InsightsCalculatorTest {
         )
         assertEquals(-1, report.habit.cupDelta)
     }
+    @Test fun `first supported month has no previous cup comparison`() {
+        val report = InsightsCalculator.monthly(
+            1, 1, listOf(r("first", "0001-01-01")), emptyList(), today = "0001-01-02",
+        )
+        assertNull(report.habit.cupDelta)
+    }
     @Test fun `future current year records affect neither aggregates nor trend`() {
         val p=InsightsCalculator.yearly(2026,listOf(r("now","2026-01-01",price=100),r("future","2026-09-20",price=300,brand="Future")),today="2026-04-10")
         assertEquals(1,p.habit.cups); assertEquals(100L,p.period.totalSpendFen); assertEquals(listOf(1,0,0,0),p.trend.map { it.current })
