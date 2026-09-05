@@ -8,6 +8,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -72,6 +73,7 @@ import java.util.Locale
 internal val InsightsSurfaceColor = SemanticsPropertyKey<Color>("InsightsSurfaceColor")
 internal val InsightsMetricCardColor = SemanticsPropertyKey<Color>("InsightsMetricCardColor")
 private val donutColors = listOf(CoffeeVisuals.forest, CoffeeVisuals.peach, CoffeeVisuals.mint, CoffeeVisuals.warmOutline)
+private val minimumDonutLegendLabelWidth = 96.dp
 
 @Composable
 fun InsightsFeature(
@@ -181,12 +183,29 @@ private data class Dashboard(val habit: HabitSummary, val trend: List<Comparison
         Column(Modifier.weight(1f)) {
             shares.forEachIndexed { index, share ->
                 val label = donutLabel(share.label)
-                Row(Modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = "$label · ${share.cups}杯 · ${percent(share)}" }) {
-                    Box(Modifier.padding(top = 4.dp).size(8.dp).background(donutColors[index % donutColors.size], CircleShape).testTag("$tag-legend-dot-$index"))
-                    Text(label, Modifier.weight(1f).padding(start = 6.dp), color = CoffeeVisuals.secondaryText)
-                    Text("${share.cups}杯", Modifier.width(cupsColumnWidth).testTag("$tag-legend-cups-$index"), color = CoffeeVisuals.secondaryText, maxLines = 1, textAlign = TextAlign.End)
-                    Text("·", Modifier.width(14.dp), color = CoffeeVisuals.secondaryText, maxLines = 1, textAlign = TextAlign.Center)
-                    Text(percent(share), Modifier.width(percentColumnWidth).testTag("$tag-legend-percent-$index"), color = CoffeeVisuals.secondaryText, maxLines = 1, textAlign = TextAlign.End)
+                BoxWithConstraints(Modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = "$label · ${share.cups}杯 · ${percent(share)}" }) {
+                    val statsWidth = cupsColumnWidth + 14.dp + percentColumnWidth
+                    val oneLineMinimum = 8.dp + 6.dp + minimumDonutLegendLabelWidth + statsWidth
+                    @Composable fun Stats() {
+                        Text("${share.cups}杯", Modifier.width(cupsColumnWidth).testTag("$tag-legend-cups-$index"), color = CoffeeVisuals.secondaryText, maxLines = 1, textAlign = TextAlign.End)
+                        Text("·", Modifier.width(14.dp), color = CoffeeVisuals.secondaryText, maxLines = 1, textAlign = TextAlign.Center)
+                        Text(percent(share), Modifier.width(percentColumnWidth).testTag("$tag-legend-percent-$index"), color = CoffeeVisuals.secondaryText, maxLines = 1, textAlign = TextAlign.End)
+                    }
+                    if (maxWidth >= oneLineMinimum) {
+                        Row(Modifier.fillMaxWidth()) {
+                            Box(Modifier.padding(top = 4.dp).size(8.dp).background(donutColors[index % donutColors.size], CircleShape).testTag("$tag-legend-dot-$index"))
+                            Text(label, Modifier.weight(1f).padding(start = 6.dp).testTag("$tag-legend-label-$index"), color = CoffeeVisuals.secondaryText)
+                            Stats()
+                        }
+                    } else {
+                        Column(Modifier.fillMaxWidth()) {
+                            Row(Modifier.fillMaxWidth()) {
+                                Box(Modifier.padding(top = 4.dp).size(8.dp).background(donutColors[index % donutColors.size], CircleShape).testTag("$tag-legend-dot-$index"))
+                                Text(label, Modifier.weight(1f).padding(start = 6.dp).testTag("$tag-legend-label-$index"), color = CoffeeVisuals.secondaryText)
+                            }
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { Stats() }
+                        }
+                    }
                 }
             }
         }

@@ -168,8 +168,9 @@ class InsightsScreenRobolectricTest {
     @Test fun `enlarged donut legend value columns avoid overflow and expose one row description`() {
         val base = state()
         val monthly = base.monthly!!
+        val longLabel = "特别特别特别特别特别特别长的咖啡类型"
         val shares = listOf(
-            ShareValue("BLACK", "BLACK", 123, 1.0),
+            ShareValue("extreme", longLabel, 123, 1.0),
             ShareValue("OTHER", "其他", 0, 0.0),
         )
         val density = compose.density.density
@@ -184,11 +185,16 @@ class InsightsScreenRobolectricTest {
             assertNoVisualOverflow(legendCupsTag(TestTags.InsightsCoffeeTypeDonut, index))
             assertNoVisualOverflow(legendPercentTag(TestTags.InsightsCoffeeTypeDonut, index))
         }
+        val card = compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).fetchSemanticsNode().boundsInRoot
+        val label = compose.onNodeWithTag("${TestTags.InsightsCoffeeTypeDonut}-legend-label-0", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertNoVisualOverflow("${TestTags.InsightsCoffeeTypeDonut}-legend-label-0")
+        org.junit.Assert.assertTrue(label.width >= with(compose.density) { 96.dp.toPx() })
+        assertInside(label, card)
         val cups = (0..1).map { compose.onNodeWithTag(legendCupsTag(TestTags.InsightsCoffeeTypeDonut, it), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot }
         val percentages = (0..1).map { compose.onNodeWithTag(legendPercentTag(TestTags.InsightsCoffeeTypeDonut, it), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot }
         assertEquals(cups.first().left, cups.last().left, 0.5f)
         assertEquals(percentages.first().right, percentages.last().right, 0.5f)
-        compose.onNodeWithContentDescription("黑咖 · 123杯 · 100%").assertExists()
+        compose.onNodeWithContentDescription("$longLabel · 123杯 · 100%").assertExists()
         compose.onAllNodesWithText("·").assertCountEquals(0)
     }
 
@@ -310,6 +316,7 @@ class InsightsScreenRobolectricTest {
         node.config[SemanticsActions.GetTextLayoutResult].action!!.invoke(results)
         org.junit.Assert.assertFalse(results.single().hasVisualOverflow)
     }
+
 
     private fun legendCupsTag(cardTag: String, index: Int) = "$cardTag-legend-cups-$index"
     private fun legendPercentTag(cardTag: String, index: Int) = "$cardTag-legend-percent-$index"
