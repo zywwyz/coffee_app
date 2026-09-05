@@ -13,8 +13,10 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.niumi.coffeejournal.TestTags
@@ -102,7 +104,7 @@ class InsightsScreenRobolectricTest {
 
         val donut = compose.onNodeWithContentDescription("咖啡类型：", substring = true)
             .fetchSemanticsNode().boundsInRoot
-        val dot = compose.onNodeWithTag("${TestTags.InsightsCoffeeTypeDonut}-legend-dot-0")
+        val dot = compose.onNodeWithTag("${TestTags.InsightsCoffeeTypeDonut}-legend-dot-0", useUnmergedTree = true)
             .fetchSemanticsNode().boundsInRoot
         val minimumGap = with(compose.density) { 16.dp.toPx() }
 
@@ -121,11 +123,11 @@ class InsightsScreenRobolectricTest {
         compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).performScrollTo()
 
         val cups = (0..3).map { index ->
-            compose.onNodeWithTag(legendCupsTag(TestTags.InsightsCoffeeTypeDonut, index))
+            compose.onNodeWithTag(legendCupsTag(TestTags.InsightsCoffeeTypeDonut, index), useUnmergedTree = true)
                 .fetchSemanticsNode().boundsInRoot
         }
         val percentages = (0..3).map { index ->
-            compose.onNodeWithTag(legendPercentTag(TestTags.InsightsCoffeeTypeDonut, index))
+            compose.onNodeWithTag(legendPercentTag(TestTags.InsightsCoffeeTypeDonut, index), useUnmergedTree = true)
                 .fetchSemanticsNode().boundsInRoot
         }
         cups.drop(1).forEach { bounds ->
@@ -153,14 +155,41 @@ class InsightsScreenRobolectricTest {
 
         val card = compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).fetchSemanticsNode().boundsInRoot
         val donut = compose.onNodeWithContentDescription("咖啡类型：", substring = true).fetchSemanticsNode().boundsInRoot
-        val dot = compose.onNodeWithTag("${TestTags.InsightsCoffeeTypeDonut}-legend-dot-0").fetchSemanticsNode().boundsInRoot
-        val cups = compose.onNodeWithTag(legendCupsTag(TestTags.InsightsCoffeeTypeDonut, 0)).fetchSemanticsNode().boundsInRoot
-        val percentage = compose.onNodeWithTag(legendPercentTag(TestTags.InsightsCoffeeTypeDonut, 0)).fetchSemanticsNode().boundsInRoot
-        val label = compose.onNodeWithText(longName).fetchSemanticsNode().boundsInRoot
+        val dot = compose.onNodeWithTag("${TestTags.InsightsCoffeeTypeDonut}-legend-dot-0", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val cups = compose.onNodeWithTag(legendCupsTag(TestTags.InsightsCoffeeTypeDonut, 0), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val percentage = compose.onNodeWithTag(legendPercentTag(TestTags.InsightsCoffeeTypeDonut, 0), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val label = compose.onNodeWithText(longName, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val minimumGap = with(compose.density) { 16.dp.toPx() }
 
         org.junit.Assert.assertTrue(dot.left - donut.right >= minimumGap)
         listOf(dot, label, cups, percentage).forEach { assertInside(it, card) }
+    }
+
+    @Test fun `enlarged donut legend value columns avoid overflow and expose one row description`() {
+        val base = state()
+        val monthly = base.monthly!!
+        val shares = listOf(
+            ShareValue("BLACK", "BLACK", 123, 1.0),
+            ShareValue("OTHER", "其他", 0, 0.0),
+        )
+        val density = compose.density.density
+        compose.setContent {
+            androidx.compose.runtime.CompositionLocalProvider(LocalDensity provides Density(density, 1.3f)) {
+                CoffeeTheme { InsightsScreen(base.copy(monthly = monthly.copy(coffeeTypeShares = shares)), {}, {}) }
+            }
+        }
+        compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).performScrollTo()
+
+        listOf(0, 1).forEach { index ->
+            assertNoVisualOverflow(legendCupsTag(TestTags.InsightsCoffeeTypeDonut, index))
+            assertNoVisualOverflow(legendPercentTag(TestTags.InsightsCoffeeTypeDonut, index))
+        }
+        val cups = (0..1).map { compose.onNodeWithTag(legendCupsTag(TestTags.InsightsCoffeeTypeDonut, it), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot }
+        val percentages = (0..1).map { compose.onNodeWithTag(legendPercentTag(TestTags.InsightsCoffeeTypeDonut, it), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot }
+        assertEquals(cups.first().left, cups.last().left, 0.5f)
+        assertEquals(percentages.first().right, percentages.last().right, 0.5f)
+        compose.onNodeWithContentDescription("黑咖 · 123杯 · 100%").assertExists()
+        compose.onAllNodesWithText("·").assertCountEquals(0)
     }
 
     @Test fun `yearly state renders monthly comparison without cumulative wording`() {
@@ -213,11 +242,11 @@ class InsightsScreenRobolectricTest {
             compose.onNodeWithTag(tag).performScrollTo()
             org.junit.Assert.assertTrue(compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot.width >= minimumCardWidth)
         }
-        repeat(3) { index -> compose.onNodeWithTag("${TestTags.InsightsBrandDonut}-legend-dot-$index").assertExists() }
+        repeat(3) { index -> compose.onNodeWithTag("${TestTags.InsightsBrandDonut}-legend-dot-$index", useUnmergedTree = true).assertExists() }
 
         val brandCard = compose.onNodeWithTag(TestTags.InsightsBrandDonut).fetchSemanticsNode().boundsInRoot
-        val brand = compose.onNodeWithText(longBrand).fetchSemanticsNode().boundsInRoot
-        val brandStats = compose.onNodeWithTag(legendPercentTag(TestTags.InsightsBrandDonut, 0)).fetchSemanticsNode().boundsInRoot
+        val brand = compose.onNodeWithText(longBrand, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val brandStats = compose.onNodeWithTag(legendPercentTag(TestTags.InsightsBrandDonut, 0), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val productCard = compose.onNodeWithTag(TestTags.InsightsTopProducts).fetchSemanticsNode().boundsInRoot
         val product = compose.onNodeWithText(productName).fetchSemanticsNode().boundsInRoot
         val productStats = compose.onNodeWithContentDescription("Top3 产品 第1名", substring = true).fetchSemanticsNode().boundsInRoot
@@ -273,6 +302,13 @@ class InsightsScreenRobolectricTest {
 
     private fun assertInside(child: androidx.compose.ui.geometry.Rect, parent: androidx.compose.ui.geometry.Rect) {
         org.junit.Assert.assertTrue(child.left >= parent.left && child.top >= parent.top && child.right <= parent.right && child.bottom <= parent.bottom)
+    }
+
+    private fun assertNoVisualOverflow(tag: String) {
+        val node = compose.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode()
+        val results = mutableListOf<TextLayoutResult>()
+        node.config[SemanticsActions.GetTextLayoutResult].action!!.invoke(results)
+        org.junit.Assert.assertFalse(results.single().hasVisualOverflow)
     }
 
     private fun legendCupsTag(cardTag: String, index: Int) = "$cardTag-legend-cups-$index"

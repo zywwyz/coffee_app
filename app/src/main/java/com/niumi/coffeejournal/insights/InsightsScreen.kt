@@ -29,6 +29,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,13 +44,17 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -163,17 +168,25 @@ private data class Dashboard(val habit: HabitSummary, val trend: List<Comparison
 
 @Composable private fun DonutCard(title: String, shares: List<ShareValue>, tag: String, modifier: Modifier) = CoffeeCard(modifier.testTag(tag)) {
     Text(title, color = CoffeeVisuals.forest)
+    val textMeasurer = rememberTextMeasurer()
+    val valueTextStyle = LocalTextStyle.current
+    val density = LocalDensity.current
+    fun widestValueWidth(values: List<String>) = with(density) {
+        values.maxOf { value -> textMeasurer.measure(AnnotatedString(value), style = valueTextStyle, maxLines = 1).size.width }.toDp() + 2.dp
+    }
+    val cupsColumnWidth = remember(shares, valueTextStyle, density.density, density.fontScale) { widestValueWidth(shares.map { "${it.cups}杯" }) }
+    val percentColumnWidth = remember(shares, valueTextStyle, density.density, density.fontScale) { widestValueWidth(shares.map(::percent)) }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(96.dp), contentAlignment = Alignment.Center) { Canvas(Modifier.size(90.dp).semantics { contentDescription = "$title：" + shares.joinToString { "${donutLabel(it.label)} ${it.cups}杯 ${percent(it)}" } }) { var start = -90f; shares.forEachIndexed { i, s -> val sweep = (s.fraction * 360f).toFloat(); drawArc(donutColors[i % donutColors.size], start, sweep, false, style = Stroke(16.dp.toPx())); start += sweep } }; Text("${shares.sumOf { it.cups }}\n杯", color = CoffeeVisuals.forest) }
         Column(Modifier.weight(1f)) {
             shares.forEachIndexed { index, share ->
                 val label = donutLabel(share.label)
-                Row(Modifier.fillMaxWidth().semantics { contentDescription = "$label · ${share.cups}杯 · ${percent(share)}" }) {
+                Row(Modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = "$label · ${share.cups}杯 · ${percent(share)}" }) {
                     Box(Modifier.padding(top = 4.dp).size(8.dp).background(donutColors[index % donutColors.size], CircleShape).testTag("$tag-legend-dot-$index"))
                     Text(label, Modifier.weight(1f).padding(start = 6.dp), color = CoffeeVisuals.secondaryText)
-                    Text("${share.cups}杯", Modifier.width(36.dp).testTag("$tag-legend-cups-$index"), color = CoffeeVisuals.secondaryText, maxLines = 1, textAlign = TextAlign.End)
+                    Text("${share.cups}杯", Modifier.width(cupsColumnWidth).testTag("$tag-legend-cups-$index"), color = CoffeeVisuals.secondaryText, maxLines = 1, textAlign = TextAlign.End)
                     Text("·", Modifier.width(14.dp), color = CoffeeVisuals.secondaryText, maxLines = 1, textAlign = TextAlign.Center)
-                    Text(percent(share), Modifier.width(44.dp).testTag("$tag-legend-percent-$index"), color = CoffeeVisuals.secondaryText, maxLines = 1, textAlign = TextAlign.End)
+                    Text(percent(share), Modifier.width(percentColumnWidth).testTag("$tag-legend-percent-$index"), color = CoffeeVisuals.secondaryText, maxLines = 1, textAlign = TextAlign.End)
                 }
             }
         }
