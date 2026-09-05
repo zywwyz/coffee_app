@@ -14,6 +14,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.ui.CoffeeVisuals
@@ -94,6 +96,73 @@ class InsightsScreenRobolectricTest {
         compose.onNodeWithContentDescription("瑞幸 · 5杯 · 71%").assertIsDisplayed()
     }
 
+    @Test fun `donut and legend keep a sixteen dp safety gap`() {
+        compose.setContent { CoffeeTheme { InsightsScreen(state(), {}, {}) } }
+        compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).performScrollTo()
+
+        val donut = compose.onNodeWithContentDescription("咖啡类型：", substring = true)
+            .fetchSemanticsNode().boundsInRoot
+        val dot = compose.onNodeWithTag("${TestTags.InsightsCoffeeTypeDonut}-legend-dot-0")
+            .fetchSemanticsNode().boundsInRoot
+        val minimumGap = with(compose.density) { 16.dp.toPx() }
+
+        org.junit.Assert.assertTrue(dot.left - donut.right >= minimumGap)
+    }
+
+    @Test fun `donut legend numeric columns share fixed bounds`() {
+        val monthly = state().monthly!!
+        val shares = listOf(
+            ShareValue("BLACK", "BLACK", 4, 1.0),
+            ShareValue("MILK", "MILK", 3, 3.0 / 7),
+            ShareValue("FRUIT", "FRUIT", 0, 0.0),
+            ShareValue("OTHER", "OTHER", 0, 0.0),
+        )
+        compose.setContent { CoffeeTheme { InsightsScreen(state().copy(monthly = monthly.copy(coffeeTypeShares = shares)), {}, {}) } }
+        compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).performScrollTo()
+
+        val cups = (0..3).map { index ->
+            compose.onNodeWithTag(legendCupsTag(TestTags.InsightsCoffeeTypeDonut, index))
+                .fetchSemanticsNode().boundsInRoot
+        }
+        val percentages = (0..3).map { index ->
+            compose.onNodeWithTag(legendPercentTag(TestTags.InsightsCoffeeTypeDonut, index))
+                .fetchSemanticsNode().boundsInRoot
+        }
+        cups.drop(1).forEach { bounds ->
+            assertEquals(cups.first().left, bounds.left, 0.5f)
+            assertEquals(cups.first().right, bounds.right, 0.5f)
+        }
+        percentages.drop(1).forEach { bounds -> assertEquals(percentages.first().right, bounds.right, 0.5f) }
+    }
+
+    @Test fun `enlarged donut legend remains contained with a sixteen dp gap`() {
+        val base = state()
+        val longName = "一个特别特别特别特别特别特别特别特别特别特别特别特别长的咖啡类型名称"
+        val monthly = base.monthly!!
+        val shares = listOf(
+            ShareValue("long", longName, 4, 1.0),
+            ShareValue("zero", "零杯类型", 0, 0.0),
+        )
+        val density = compose.density.density
+        compose.setContent {
+            androidx.compose.runtime.CompositionLocalProvider(LocalDensity provides Density(density, 1.3f)) {
+                CoffeeTheme { InsightsScreen(base.copy(monthly = monthly.copy(coffeeTypeShares = shares)), {}, {}) }
+            }
+        }
+        compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).performScrollTo()
+
+        val card = compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).fetchSemanticsNode().boundsInRoot
+        val donut = compose.onNodeWithContentDescription("咖啡类型：", substring = true).fetchSemanticsNode().boundsInRoot
+        val dot = compose.onNodeWithTag("${TestTags.InsightsCoffeeTypeDonut}-legend-dot-0").fetchSemanticsNode().boundsInRoot
+        val cups = compose.onNodeWithTag(legendCupsTag(TestTags.InsightsCoffeeTypeDonut, 0)).fetchSemanticsNode().boundsInRoot
+        val percentage = compose.onNodeWithTag(legendPercentTag(TestTags.InsightsCoffeeTypeDonut, 0)).fetchSemanticsNode().boundsInRoot
+        val label = compose.onNodeWithText(longName).fetchSemanticsNode().boundsInRoot
+        val minimumGap = with(compose.density) { 16.dp.toPx() }
+
+        org.junit.Assert.assertTrue(dot.left - donut.right >= minimumGap)
+        listOf(dot, label, cups, percentage).forEach { assertInside(it, card) }
+    }
+
     @Test fun `yearly state renders monthly comparison without cumulative wording`() {
         val monthly = state().monthly!!
         val yearly = YearlyInsights(
@@ -148,10 +217,10 @@ class InsightsScreenRobolectricTest {
 
         val brandCard = compose.onNodeWithTag(TestTags.InsightsBrandDonut).fetchSemanticsNode().boundsInRoot
         val brand = compose.onNodeWithText(longBrand).fetchSemanticsNode().boundsInRoot
-        val brandStats = compose.onNodeWithText("5杯 · 71%").fetchSemanticsNode().boundsInRoot
+        val brandStats = compose.onNodeWithTag(legendPercentTag(TestTags.InsightsBrandDonut, 0)).fetchSemanticsNode().boundsInRoot
         val productCard = compose.onNodeWithTag(TestTags.InsightsTopProducts).fetchSemanticsNode().boundsInRoot
         val product = compose.onNodeWithText(productName).fetchSemanticsNode().boundsInRoot
-        val productStats = compose.onNodeWithText("4杯").fetchSemanticsNode().boundsInRoot
+        val productStats = compose.onNodeWithContentDescription("Top3 产品 第1名", substring = true).fetchSemanticsNode().boundsInRoot
         val twoLines = with(compose.density) { 36.dp.toPx() }
         org.junit.Assert.assertTrue(brand.height >= twoLines)
         org.junit.Assert.assertTrue(product.height >= twoLines)
@@ -205,4 +274,7 @@ class InsightsScreenRobolectricTest {
     private fun assertInside(child: androidx.compose.ui.geometry.Rect, parent: androidx.compose.ui.geometry.Rect) {
         org.junit.Assert.assertTrue(child.left >= parent.left && child.top >= parent.top && child.right <= parent.right && child.bottom <= parent.bottom)
     }
+
+    private fun legendCupsTag(cardTag: String, index: Int) = "$cardTag-legend-cups-$index"
+    private fun legendPercentTag(cardTag: String, index: Int) = "$cardTag-legend-percent-$index"
 }
