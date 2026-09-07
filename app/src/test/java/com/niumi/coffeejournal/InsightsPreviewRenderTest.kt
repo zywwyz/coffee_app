@@ -21,6 +21,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.unit.dp
 import com.niumi.coffeejournal.core.database.DrinkRecordEntity
 import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.journal.localNoonEpoch
@@ -56,7 +57,9 @@ class InsightsPreviewRenderTest {
         compose.onNodeWithTag(TestTags.BottomInsightsTab).performClick()
         awaitDashboard()
         captureTop("本月累计杯数", "上月同期累计杯数", "insights-monthly-hero-trend-cream-forest.png")
-        captureBreakdown("insights-monthly-breakdown-cream-forest.png", listOf("黑咖 · 3杯 · 38%", "果咖 · 1杯 · 13%", "奶咖 · 3杯 · 38%", "手冲 · 1杯 · 13%", "MANNER · 3杯 · 38%", "其他 · 1杯 · 13%"), listOf("Top3 品牌 第1名 MANNER 3杯", "Top3 品牌 第2名 瑞幸 2杯", "Top3 品牌 第3名 星巴克 1杯", "Top3 产品 第1名 瑞幸 · 超长名称冷萃咖啡限定风味 2杯", "Top3 产品 第2名 MANNER · 奶油拿铁 2杯", "Top3 产品 第3名 MANNER · 桂花拿铁 1杯"))
+        captureBreakdown("insights-monthly-coffee-breakdown-cream-forest.png", TestTags.InsightsCoffeeTypeDonut, listOf("黑咖 · 3杯 · 38%", "果咖 · 1杯 · 13%", "奶咖 · 3杯 · 38%", "手冲 · 1杯 · 13%"))
+        captureBreakdown("insights-monthly-brand-breakdown-cream-forest.png", TestTags.InsightsBrandDonut, listOf("MANNER · 3杯 · 38%", "其他 · 1杯 · 13%"))
+        assertRankings(listOf("Top3 品牌 第1名 MANNER 3杯", "Top3 品牌 第2名 瑞幸 2杯", "Top3 品牌 第3名 星巴克 1杯", "Top3 产品 第1名 瑞幸 · 超长名称冷萃咖啡限定风味 2杯", "Top3 产品 第2名 MANNER · 奶油拿铁 2杯", "Top3 产品 第3名 MANNER · 桂花拿铁 1杯"))
         compose.onNodeWithContentDescription("本期最好 MANNER", useUnmergedTree = true)
             .assert(hasStateDescription("品牌图片"))
         compose.waitUntil(10_000) {
@@ -71,7 +74,9 @@ class InsightsPreviewRenderTest {
             compose.onAllNodesWithText("今年每月杯数", substring = true).fetchSemanticsNodes().isNotEmpty()
         }
         captureTop("今年每月杯数", "去年同期每月杯数", "insights-yearly-hero-trend-cream-forest.png")
-        captureBreakdown("insights-yearly-breakdown-cream-forest.png", listOf("黑咖 · 3杯 · 30%", "果咖 · 2杯 · 20%", "奶咖 · 4杯 · 40%", "手冲 · 1杯 · 10%", "MANNER · 4杯 · 40%", "其他 · 1杯 · 10%"), listOf("Top3 品牌 第1名 MANNER 4杯", "Top3 品牌 第2名 库迪 2杯", "Top3 品牌 第3名 瑞幸 2杯", "Top3 产品 第1名 瑞幸 · 超长名称冷萃咖啡限定风味 2杯", "Top3 产品 第2名 MANNER · 奶油拿铁 2杯", "Top3 产品 第3名 MANNER · 桂花拿铁 1杯"))
+        captureBreakdown("insights-yearly-coffee-breakdown-cream-forest.png", TestTags.InsightsCoffeeTypeDonut, listOf("黑咖 · 3杯 · 30%", "果咖 · 2杯 · 20%", "奶咖 · 4杯 · 40%", "手冲 · 1杯 · 10%"))
+        captureBreakdown("insights-yearly-brand-breakdown-cream-forest.png", TestTags.InsightsBrandDonut, listOf("MANNER · 4杯 · 40%", "其他 · 1杯 · 10%"))
+        assertRankings(listOf("Top3 品牌 第1名 MANNER 4杯", "Top3 品牌 第2名 库迪 2杯", "Top3 品牌 第3名 瑞幸 2杯", "Top3 产品 第1名 瑞幸 · 超长名称冷萃咖啡限定风味 2杯", "Top3 产品 第2名 MANNER · 奶油拿铁 2杯", "Top3 产品 第3名 MANNER · 桂花拿铁 1杯"))
         captureHighlights("insights-yearly-highlights-cream-forest.png")
         assertOnlyExpectedPreviews()
     }
@@ -92,11 +97,15 @@ class InsightsPreviewRenderTest {
         capture(name)
     }
 
-    private fun captureBreakdown(name: String, expectedRows: List<String>, expectedRankingRows: List<String>) {
-        compose.onNodeWithTag(TestTags.InsightsSurface).performScrollToNode(hasTestTag(TestTags.InsightsCoffeeTypeDonut))
-        compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).assertIsDisplayed()
-        compose.onNodeWithTag(TestTags.InsightsBrandDonut).assertIsDisplayed()
+    private fun captureBreakdown(name: String, donutTag: String, expectedRows: List<String>) {
+        compose.onNodeWithTag(TestTags.InsightsSurface).performScrollToNode(hasTestTag(donutTag))
+        compose.onNodeWithTag(donutTag).assertIsDisplayed()
         expectedRows.forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed() }
+        assertDonutLegendSeparated(donutTag)
+        capture(name)
+    }
+
+    private fun assertRankings(expectedRankingRows: List<String>) {
         compose.onNodeWithTag(TestTags.InsightsTopBrands).assertExists()
         compose.onNodeWithTag(TestTags.InsightsTopProducts).assertExists()
         compose.onAllNodesWithContentDescription("Top3 品牌 第", substring = true).assertCountEquals(3)
@@ -106,12 +115,14 @@ class InsightsPreviewRenderTest {
         compose.onAllNodesWithText("第4品牌").assertCountEquals(0)
         compose.onAllNodesWithText("第4产品").assertCountEquals(0)
         compose.onNodeWithTag(TestTags.InsightsSurface).performScrollToNode(hasTestTag(TestTags.InsightsTopBrands))
-        compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).assertIsDisplayed()
-        compose.onNodeWithTag(TestTags.InsightsBrandDonut).assertIsDisplayed()
         compose.onNodeWithTag(TestTags.InsightsTopBrands).assertIsDisplayed()
-        compose.onNodeWithTag(TestTags.InsightsTopProducts).assertIsDisplayed()
-        compose.onNodeWithTag(TestTags.BottomInsightsTab).assertIsDisplayed()
-        capture(name)
+    }
+
+    private fun assertDonutLegendSeparated(tag: String) {
+        val title = if (tag == TestTags.InsightsCoffeeTypeDonut) "咖啡类型：" else "常喝品牌："
+        val donut = compose.onNodeWithContentDescription(title, substring = true).fetchSemanticsNode().boundsInRoot
+        val dot = compose.onNodeWithTag("$tag-legend-dot-0", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertTrue(dot.left - donut.right >= with(compose.density) { 16.dp.toPx() })
     }
 
     private fun captureHighlights(name: String) {
@@ -139,7 +150,7 @@ class InsightsPreviewRenderTest {
     private fun previewDirectory() = File("build/reports/previews")
     private fun clearInsightPreviews() { previewDirectory().listFiles()?.filter { it.name.startsWith("insights-") }?.forEach { it.delete() } }
     private fun assertOnlyExpectedPreviews() {
-        val expected = setOf("insights-monthly-hero-trend-cream-forest.png", "insights-monthly-breakdown-cream-forest.png", "insights-monthly-highlights-cream-forest.png", "insights-yearly-hero-trend-cream-forest.png", "insights-yearly-breakdown-cream-forest.png", "insights-yearly-highlights-cream-forest.png")
+        val expected = setOf("insights-monthly-hero-trend-cream-forest.png", "insights-monthly-coffee-breakdown-cream-forest.png", "insights-monthly-brand-breakdown-cream-forest.png", "insights-monthly-highlights-cream-forest.png", "insights-yearly-hero-trend-cream-forest.png", "insights-yearly-coffee-breakdown-cream-forest.png", "insights-yearly-brand-breakdown-cream-forest.png", "insights-yearly-highlights-cream-forest.png")
         assertTrue(previewDirectory().listFiles()?.filter { it.name.startsWith("insights-") }?.map { it.name }?.toSet() == expected)
     }
 
