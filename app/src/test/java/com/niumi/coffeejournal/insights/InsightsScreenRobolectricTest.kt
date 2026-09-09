@@ -88,10 +88,10 @@ class InsightsScreenRobolectricTest {
         compose.onNodeWithText("杯数较上期 -2", substring = true).assertIsDisplayed()
     }
 
-    @Test fun `trend and donut legends have non color accessibility facts`() {
+    @Test fun `monthly dashboard omits trend while donut legends retain non color accessibility facts`() {
         compose.setContent { CoffeeTheme { InsightsScreen(state(), {}, {}) } }
-        compose.onNodeWithTag(TestTags.InsightsTrendChart).performScrollTo()
-        compose.onNodeWithContentDescription("饮用趋势：本月累计杯数；上月同期累计杯数", substring = true).assertExists()
+        compose.onAllNodesWithTag(TestTags.InsightsTrendChart).assertCountEquals(0)
+        compose.onAllNodesWithText("饮用趋势").assertCountEquals(0)
         compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("黑咖 · 4杯 · 57%").assertIsDisplayed()
         compose.onNodeWithTag(TestTags.InsightsBrandDonut).performScrollTo().assertIsDisplayed()
@@ -198,7 +198,7 @@ class InsightsScreenRobolectricTest {
         compose.onAllNodesWithText("·").assertCountEquals(0)
     }
 
-    @Test fun `yearly state renders monthly comparison without cumulative wording`() {
+    @Test fun `yearly dashboard omits trend card while rendering coffee type donut`() {
         val monthly = state().monthly!!
         val yearly = YearlyInsights(
             year = 2026, period = monthly.period, averageMonthlySpendFen = 0,
@@ -210,10 +210,9 @@ class InsightsScreenRobolectricTest {
         )
         compose.setContent { CoffeeTheme { InsightsScreen(state().copy(mode = InsightsMode.YEARLY, monthly = null, yearly = yearly), {}, {}) } }
 
-        compose.onNodeWithTag(TestTags.InsightsTrendChart).performScrollTo()
-        compose.onNodeWithText("今年每月", substring = true).assertIsDisplayed()
-        compose.onNodeWithContentDescription("饮用趋势：今年每月杯数；去年同期每月杯数", substring = true).assertExists()
-        compose.onAllNodesWithContentDescription("累计", substring = true).assertCountEquals(0)
+        compose.onAllNodesWithTag(TestTags.InsightsTrendChart).assertCountEquals(0)
+        compose.onAllNodesWithText("饮用趋势").assertCountEquals(0)
+        compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).performScrollTo().assertIsDisplayed()
     }
 
     @Test fun `rankings stay at three and long names are present`() {

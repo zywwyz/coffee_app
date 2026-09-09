@@ -74,9 +74,10 @@ class ReleaseAcceptanceRobolectricTest {
         compose.onNodeWithTag(TestTags.InsightsHabitHero).assertIsDisplayed()
         compose.onNodeWithText("年度").performClick().assertIsSelected()
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("今年每月杯数", substring = true).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithTag(TestTags.InsightsCoffeeTypeDonut).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithText("去年同期每月杯数", substring = true).assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).assertIsDisplayed()
+        compose.onAllNodesWithTag(TestTags.InsightsTrendChart).assertCountEquals(0)
         compose.onNodeWithTag(TestTags.BottomInsightsTab).assertIsDisplayed()
         compose.onNodeWithText("咖啡日历").performClick()
         compose.onNodeWithTag(TestTags.RecordButton).performClick()

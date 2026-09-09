@@ -38,10 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -96,8 +93,8 @@ fun InsightsScreen(
     onPreviousMonth: () -> Unit = {}, onNextMonth: () -> Unit = {}, onPreviousYear: () -> Unit = {}, onNextYear: () -> Unit = {},
     onOpenSettings: () -> Unit = {}, imagePathResolver: ImagePathResolver = ImagePathResolver { null }, onOpenRecord: (String) -> Unit = {},
 ) {
-    val report = if (state.mode == InsightsMode.MONTHLY) state.monthly?.let { it.period to Dashboard(it.habit, it.trend, it.coffeeTypeShares, it.brandShares, it.topBrands, it.topProducts, it.best, it.worst) }
-    else state.yearly?.let { it.period to Dashboard(it.habit, it.trend, it.coffeeTypeShares, it.brandShares, it.topBrands, it.topProducts, it.best, it.worst) }
+    val report = if (state.mode == InsightsMode.MONTHLY) state.monthly?.let { it.period to Dashboard(it.habit, it.coffeeTypeShares, it.brandShares, it.topBrands, it.topProducts, it.best, it.worst) }
+    else state.yearly?.let { it.period to Dashboard(it.habit, it.coffeeTypeShares, it.brandShares, it.topBrands, it.topProducts, it.best, it.worst) }
     Column(Modifier.fillMaxSize().background(CoffeeVisuals.cream).testTag(TestTags.InsightsSurface)
         .semantics { this[InsightsSurfaceColor] = CoffeeVisuals.cream }.verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -111,13 +108,13 @@ fun InsightsScreen(
             state.loading -> CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally).padding(32.dp), color = CoffeeVisuals.forest)
             state.errorMessage != null -> Text(state.errorMessage, color = CoffeeVisuals.forest)
             report == null || report.first.cupCount == 0 -> EmptyCard(if (state.mode == InsightsMode.MONTHLY) "这个月还没有咖啡记录" else "这一年还没有咖啡记录")
-            else -> DashboardContent(report.second, state.mode, imagePathResolver, onOpenRecord)
+            else -> DashboardContent(report.second, imagePathResolver, onOpenRecord)
         }
         Spacer(Modifier.height(12.dp))
     }
 }
 
-private data class Dashboard(val habit: HabitSummary, val trend: List<ComparisonPoint>, val types: List<ShareValue>, val brands: List<ShareValue>, val topBrands: List<RankedValue>, val topProducts: List<RankedValue>, val best: HighlightRecord?, val worst: HighlightRecord?)
+private data class Dashboard(val habit: HabitSummary, val types: List<ShareValue>, val brands: List<ShareValue>, val topBrands: List<RankedValue>, val topProducts: List<RankedValue>, val best: HighlightRecord?, val worst: HighlightRecord?)
 
 @Composable private fun ModeSelector(mode: InsightsMode, month: () -> Unit, year: () -> Unit) = Row(Modifier.fillMaxWidth().selectableGroup().background(CoffeeVisuals.mint, RoundedCornerShape(CoffeeVisuals.cornerMedium)).padding(4.dp)) {
     ModeButton("月度", mode == InsightsMode.MONTHLY, month); ModeButton("年度", mode == InsightsMode.YEARLY, year)
@@ -133,9 +130,8 @@ private data class Dashboard(val habit: HabitSummary, val trend: List<Comparison
     }
 }
 
-@Composable private fun DashboardContent(data: Dashboard, mode: InsightsMode, resolver: ImagePathResolver, onOpenRecord: (String) -> Unit) {
+@Composable private fun DashboardContent(data: Dashboard, resolver: ImagePathResolver, onOpenRecord: (String) -> Unit) {
     HabitHero(data.habit)
-    TrendChart(data.trend, mode)
     DonutCard("咖啡类型", data.types, TestTags.InsightsCoffeeTypeDonut, Modifier.fillMaxWidth())
     DonutCard("常喝品牌", data.brands, TestTags.InsightsBrandDonut, Modifier.fillMaxWidth())
     RankingCard("Top3 品牌", data.topBrands, TestTags.InsightsTopBrands, Modifier.fillMaxWidth())
@@ -152,20 +148,6 @@ private data class Dashboard(val habit: HabitSummary, val trend: List<Comparison
     Text("饮用天数 ${habit.drinkingDays} · 最长连续 ${habit.longestStreak} 天", color = CoffeeVisuals.secondaryText)
     Text("平均评分 ${habit.averageRating?.let { String.format(Locale.ROOT, "%.1f", it) } ?: "—"} · 杯数较上期 ${habit.cupDelta?.let { if (it >= 0) "+$it" else "$it" } ?: "—"}", color = CoffeeVisuals.secondaryText)
     Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) { Text("总消费 ${habit.totalSpendFen?.let(::formatFen) ?: "—"}", color = CoffeeVisuals.secondaryText); Text("杯均 ${habit.averagePriceFen?.let(::formatFen) ?: "—"}", color = CoffeeVisuals.secondaryText) }
-}
-
-@Composable private fun TrendChart(points: List<ComparisonPoint>, mode: InsightsMode) = CoffeeCard(Modifier.fillMaxWidth().testTag(TestTags.InsightsTrendChart)) {
-    Text("饮用趋势", style = MaterialTheme.typography.titleMedium, color = CoffeeVisuals.forest)
-    val currentLabel = if (mode == InsightsMode.MONTHLY) "本月累计杯数" else "今年每月杯数"
-    val previousLabel = if (mode == InsightsMode.MONTHLY) "上月同期累计杯数" else "去年同期每月杯数"
-    Text("森林实线 $currentLabel  ·  暖灰虚线 $previousLabel", color = CoffeeVisuals.secondaryText)
-    val desc = "饮用趋势：$currentLabel；$previousLabel" + if (points.isEmpty()) "；暂无数据" else "；${if (mode == InsightsMode.MONTHLY) "每日" else "每月"}${points.joinToString { " ${it.index}:${it.current ?: 0}/${it.previous ?: 0}" }}"
-    Canvas(Modifier.fillMaxWidth().height(150.dp).semantics { contentDescription = desc }) {
-        val max = points.flatMap { listOfNotNull(it.current, it.previous) }.maxOrNull()?.coerceAtLeast(1) ?: 1
-        fun point(i: Int, n: Int) = Offset(if (points.size <= 1) size.width / 2 else i * size.width / (points.size - 1), size.height - n.toFloat() / max * (size.height - 16.dp.toPx()) - 8.dp.toPx())
-        fun drawSeries(values: List<Int?>, color: Color, dashed: Boolean) { var previous: Offset? = null; values.forEachIndexed { i, value -> value?.let { current -> previous?.let { drawLine(color, it, point(i, current), 3.dp.toPx(), StrokeCap.Round, if (dashed) androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f)) else null) }; drawCircle(color, 3.dp.toPx(), point(i, current)); previous = point(i, current) } } }
-        drawSeries(points.map { it.previous }, CoffeeVisuals.warmOutline, true); drawSeries(points.map { it.current }, CoffeeVisuals.forest, false)
-    }
 }
 
 @Composable private fun DonutCard(title: String, shares: List<ShareValue>, tag: String, modifier: Modifier) = CoffeeCard(modifier.testTag(tag)) {
