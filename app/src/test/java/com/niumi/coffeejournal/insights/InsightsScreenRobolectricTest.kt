@@ -170,7 +170,7 @@ class InsightsScreenRobolectricTest {
         val monthly = base.monthly!!
         val longLabel = "特别特别特别特别特别特别长的咖啡类型"
         val shares = listOf(
-            ShareValue("extreme", longLabel, 123, 1.0),
+            ShareValue("extreme", longLabel, 1234567890, 1.0),
             ShareValue("OTHER", "其他", 0, 0.0),
         )
         val density = compose.density.density
@@ -187,14 +187,18 @@ class InsightsScreenRobolectricTest {
         }
         val card = compose.onNodeWithTag(TestTags.InsightsCoffeeTypeDonut).fetchSemanticsNode().boundsInRoot
         val label = compose.onNodeWithTag("${TestTags.InsightsCoffeeTypeDonut}-legend-label-0", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val firstCups = compose.onNodeWithTag(legendCupsTag(TestTags.InsightsCoffeeTypeDonut, 0), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val firstPercentage = compose.onNodeWithTag(legendPercentTag(TestTags.InsightsCoffeeTypeDonut, 0), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         assertNoVisualOverflow("${TestTags.InsightsCoffeeTypeDonut}-legend-label-0")
-        org.junit.Assert.assertTrue(label.width >= with(compose.density) { 96.dp.toPx() })
-        assertInside(label, card)
+        listOf(label, firstCups, firstPercentage).forEach { assertInside(it, card) }
+        val oneDp = with(compose.density) { 1.dp.toPx() }
+        assertEquals(label.top, firstCups.top, oneDp)
+        assertEquals(label.top, firstPercentage.top, oneDp)
         val cups = (0..1).map { compose.onNodeWithTag(legendCupsTag(TestTags.InsightsCoffeeTypeDonut, it), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot }
         val percentages = (0..1).map { compose.onNodeWithTag(legendPercentTag(TestTags.InsightsCoffeeTypeDonut, it), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot }
         assertEquals(cups.first().left, cups.last().left, 0.5f)
         assertEquals(percentages.first().right, percentages.last().right, 0.5f)
-        compose.onNodeWithContentDescription("$longLabel · 123杯 · 100%").assertExists()
+        compose.onNodeWithContentDescription("$longLabel · 1234567890杯 · 100%").assertExists()
         compose.onAllNodesWithText("·").assertCountEquals(0)
     }
 
