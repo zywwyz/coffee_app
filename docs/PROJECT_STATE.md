@@ -17,7 +17,7 @@
 - `journal`：记录、草稿、日历显示模式、详情与不可变快照。
 - `catalog`：12 个内置 Logo、连锁品牌/产品的手动 CRUD、个人豆库。
 - `core/image`：本地原始图片字节、引用、产品图→Logo→占位图回退及变更协调。
-- `insights`：月/年比较、习惯统计、趋势、占比、排行与历史图片回退。
+- `insights`：月/年比较、习惯统计、占比、排行与历史图片回退。
 - `backup` / `settings`：版本化 ZIP、校验、原子恢复与 SAF 设置页。
 - 已删除 `importer` 和网络相关架构：无官网更新、OCR、截图裁剪、ML Kit、OkHttp 或 `INTERNET` 权限。
 
@@ -29,7 +29,7 @@
 - 手动新增/编辑/删除自定义连锁品牌与 Logo；手动新增/编辑/删除产品名称、黑咖/果咖/奶咖分类和可选实拍图。个人豆在统计中固定归类为“手冲”。
 - `DrinkSnapshot` 固化 `CoffeeType`：历史记录不受目录后续编辑影响；新建个人豆记录写入 `HAND_BREW`。
 - 备份格式为 v4：v1–v3 恢复时派生历史 `CoffeeType`，v4 恢复严格校验快照类型与领域规则；恢复仍采用 staging 校验与原子替换。
-- 总结支持月度/年度切换：习惯摘要含上期杯数差（月度同日比较、年度同期间比较，年份 1 无基线）、月累计日趋势/年逐月趋势、咖啡类型与品牌双 Donut（黑咖/果咖/奶咖/手冲；Top 4 品牌+其他）、Top 3，以及最好/最差记录卡与历史图片回退。Donut 图例与圆环保留 16dp 安全间距，杯数与百分比独立对齐；窄屏或大字体时数值自适应换到名称下方。
+- 总结支持月度/年度切换：习惯摘要含上期杯数差（月度同日比较、年度同期间比较，年份 1 无基线）；月度与年度均刻意不显示趋势卡；咖啡类型与品牌双 Donut（黑咖/果咖/奶咖/手冲；Top 4 品牌+其他）、Top 3，以及最好/最差记录卡与历史图片回退。Donut 图例与圆环保留 16dp 安全间距；每个图例采用单行对齐列，长名称只在名称列内换行，杯数和百分比列跨行对齐。
 - MANNER 使用用户确认来源图生成透明 512px 打包 Logo，并保留来源与输出哈希审计；所有内置品牌 Logo 随包提供。
 - minSdk 23；统计日期相关实现兼容 API 23。
 
@@ -71,7 +71,7 @@ export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 最终发布矩阵（2026-09-04）：
 
 - `clean testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease --offline --no-daemon`：PASS；383 tests，0 failures / errors / skips；lint 0 errors、8 warnings。
-- 预览测试 fixture 仅位于测试资源，不会打入 APK。八张真实 Compose 总结评审图输出到 `app/build/reports/previews/`：月度/年度分别生成 `hero-trend`、`coffee-breakdown`、`brand-breakdown` 和 `highlights` 图；占比卡分别滚动捕获，不再强制两张自适应高度卡同时处于首屏。
+- 预览测试 fixture 仅位于测试资源，不会打入 APK。八张真实 Compose 总结评审图输出到 `app/build/reports/previews/`：月度/年度分别生成 `hero`、`coffee-breakdown`、`brand-breakdown` 和 `highlights` 图；占比卡分别滚动捕获，不再强制两张自适应高度卡同时处于首屏。
 - Debug APK：`app/build/outputs/apk/debug/app-debug.apk`，14,314,965 bytes，SHA-256 `b610fab5685b264ce3d9d06f06b99b7a1053762133e7158f2c985df912612f35`；版本 1.0（versionCode 1），Android Debug v1/v2 签名。
 - Release APK（unsigned）：`app/build/outputs/apk/release/app-release-unsigned.apk`，SHA-256 `dd99a6603c000829ca8f8c46cfb5698e9ca249895eabc019eed6b28b2e2ad641`。
 - 合并 Manifest：minSdk 23、targetSdk 36；无 `INTERNET`／相机／定位／宽泛存储权限；`allowBackup`、`fullBackupContent`、`cleartextTraffic` 均为 false，并声明 `dataExtractionRules`。

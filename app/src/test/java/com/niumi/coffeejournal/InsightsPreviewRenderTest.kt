@@ -56,7 +56,7 @@ class InsightsPreviewRenderTest {
 
         compose.onNodeWithTag(TestTags.BottomInsightsTab).performClick()
         awaitDashboard()
-        captureTop("本月累计杯数", "上月同期累计杯数", "insights-monthly-hero-trend-cream-forest.png")
+        captureHero("insights-monthly-hero-cream-forest.png")
         captureBreakdown("insights-monthly-coffee-breakdown-cream-forest.png", TestTags.InsightsCoffeeTypeDonut, listOf("黑咖 · 3杯 · 38%", "果咖 · 1杯 · 13%", "奶咖 · 3杯 · 38%", "手冲 · 1杯 · 13%"))
         captureBreakdown("insights-monthly-brand-breakdown-cream-forest.png", TestTags.InsightsBrandDonut, listOf("MANNER · 3杯 · 38%", "其他 · 1杯 · 13%"))
         assertRankings(listOf("Top3 品牌 第1名 MANNER 3杯", "Top3 品牌 第2名 瑞幸 2杯", "Top3 品牌 第3名 星巴克 1杯", "Top3 产品 第1名 瑞幸 · 超长名称冷萃咖啡限定风味 2杯", "Top3 产品 第2名 MANNER · 奶油拿铁 2杯", "Top3 产品 第3名 MANNER · 桂花拿铁 1杯"))
@@ -71,9 +71,9 @@ class InsightsPreviewRenderTest {
 
         compose.onNodeWithText("年度").performScrollTo().assertIsDisplayed().performClick().assertIsSelected()
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("今年每月杯数", substring = true).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithTag(TestTags.InsightsCoffeeTypeDonut).fetchSemanticsNodes().isNotEmpty()
         }
-        captureTop("今年每月杯数", "去年同期每月杯数", "insights-yearly-hero-trend-cream-forest.png")
+        captureHero("insights-yearly-hero-cream-forest.png")
         captureBreakdown("insights-yearly-coffee-breakdown-cream-forest.png", TestTags.InsightsCoffeeTypeDonut, listOf("黑咖 · 3杯 · 30%", "果咖 · 2杯 · 20%", "奶咖 · 4杯 · 40%", "手冲 · 1杯 · 10%"))
         captureBreakdown("insights-yearly-brand-breakdown-cream-forest.png", TestTags.InsightsBrandDonut, listOf("MANNER · 4杯 · 40%", "其他 · 1杯 · 10%"))
         assertRankings(listOf("Top3 品牌 第1名 MANNER 4杯", "Top3 品牌 第2名 库迪 2杯", "Top3 品牌 第3名 瑞幸 2杯", "Top3 产品 第1名 瑞幸 · 超长名称冷萃咖啡限定风味 2杯", "Top3 产品 第2名 MANNER · 奶油拿铁 2杯", "Top3 产品 第3名 MANNER · 桂花拿铁 1杯"))
@@ -88,12 +88,11 @@ class InsightsPreviewRenderTest {
         }
     }
 
-    private fun captureTop(currentLegend: String, previousLegend: String, name: String) {
+    private fun captureHero(name: String) {
         compose.onNodeWithTag(TestTags.RootScreenTitle).performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag(TestTags.InsightsHabitHero).assertIsDisplayed()
-        compose.onNodeWithTag(TestTags.InsightsTrendChart).assertIsDisplayed()
-        compose.onNodeWithText(currentLegend, substring = true).assertIsDisplayed()
-        compose.onNodeWithText(previousLegend, substring = true).assertIsDisplayed()
+        compose.onAllNodesWithTag(TestTags.InsightsTrendChart).assertCountEquals(0)
+        compose.onAllNodesWithText("饮用趋势", substring = true).assertCountEquals(0)
         capture(name)
     }
 
@@ -150,7 +149,7 @@ class InsightsPreviewRenderTest {
     private fun previewDirectory() = File("build/reports/previews")
     private fun clearInsightPreviews() { previewDirectory().listFiles()?.filter { it.name.startsWith("insights-") }?.forEach { it.delete() } }
     private fun assertOnlyExpectedPreviews() {
-        val expected = setOf("insights-monthly-hero-trend-cream-forest.png", "insights-monthly-coffee-breakdown-cream-forest.png", "insights-monthly-brand-breakdown-cream-forest.png", "insights-monthly-highlights-cream-forest.png", "insights-yearly-hero-trend-cream-forest.png", "insights-yearly-coffee-breakdown-cream-forest.png", "insights-yearly-brand-breakdown-cream-forest.png", "insights-yearly-highlights-cream-forest.png")
+        val expected = setOf("insights-monthly-hero-cream-forest.png", "insights-monthly-coffee-breakdown-cream-forest.png", "insights-monthly-brand-breakdown-cream-forest.png", "insights-monthly-highlights-cream-forest.png", "insights-yearly-hero-cream-forest.png", "insights-yearly-coffee-breakdown-cream-forest.png", "insights-yearly-brand-breakdown-cream-forest.png", "insights-yearly-highlights-cream-forest.png")
         assertTrue(previewDirectory().listFiles()?.filter { it.name.startsWith("insights-") }?.map { it.name }?.toSet() == expected)
     }
 
