@@ -71,7 +71,7 @@ export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 最终发布矩阵（2026-09-04）：
 
 - `clean testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease --offline --no-daemon`：PASS；383 tests，0 failures / errors / skips；lint 0 errors、8 warnings。
-- 预览测试 fixture 仅位于测试资源，不会打入 APK。八张真实 Compose 总结评审图输出到 `app/build/reports/previews/`：月度/年度分别生成 `hero`、`coffee-breakdown`、`brand-breakdown` 和 `highlights` 图；咖啡类型占比卡先强制滚动至与 hero 不同的视口后捕获，品牌占比卡单独滚动捕获，不再强制两张自适应高度卡同时处于首屏。
+- 预览测试 fixture 仅位于测试资源，不会打入 APK。八张真实 Compose 总结评审图输出到 `app/build/reports/previews/`：月度/年度分别生成 `hero`、`coffee-breakdown`、`brand-breakdown` 和 `highlights` 图；咖啡类型与品牌占比卡均先强制滚动至独立视口后捕获，品牌卡相对咖啡卡视口继续移动；不再强制两张自适应高度卡同时处于首屏。
 - Debug APK：`app/build/outputs/apk/debug/app-debug.apk`，14,314,965 bytes，SHA-256 `b610fab5685b264ce3d9d06f06b99b7a1053762133e7158f2c985df912612f35`；版本 1.0（versionCode 1），Android Debug v1/v2 签名。
 - Release APK（unsigned）：`app/build/outputs/apk/release/app-release-unsigned.apk`，SHA-256 `dd99a6603c000829ca8f8c46cfb5698e9ca249895eabc019eed6b28b2e2ad641`。
 - 合并 Manifest：minSdk 23、targetSdk 36；无 `INTERNET`／相机／定位／宽泛存储权限；`allowBackup`、`fullBackupContent`、`cleartextTraffic` 均为 false，并声明 `dataExtractionRules`。

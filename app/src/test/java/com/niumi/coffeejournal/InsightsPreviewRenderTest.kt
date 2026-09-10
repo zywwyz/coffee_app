@@ -22,6 +22,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
 import com.niumi.coffeejournal.core.database.DrinkRecordEntity
@@ -60,7 +61,7 @@ class InsightsPreviewRenderTest {
         awaitDashboard()
         val monthlyHeroTop = captureHero("insights-monthly-hero-cream-forest.png")
         captureBreakdown("insights-monthly-coffee-breakdown-cream-forest.png", TestTags.InsightsCoffeeTypeDonut, listOf("黑咖 · 3杯 · 38%", "果咖 · 1杯 · 13%", "奶咖 · 3杯 · 38%", "手冲 · 1杯 · 13%"), monthlyHeroTop)
-        captureBreakdown("insights-monthly-brand-breakdown-cream-forest.png", TestTags.InsightsBrandDonut, listOf("MANNER · 3杯 · 38%", "其他 · 1杯 · 13%"))
+        captureBreakdown("insights-monthly-brand-breakdown-cream-forest.png", TestTags.InsightsBrandDonut, listOf("MANNER · 3杯 · 38%", "其他 · 1杯 · 13%"), previousPreviewName = "insights-monthly-coffee-breakdown-cream-forest.png")
         assertRankings(listOf("Top3 品牌 第1名 MANNER 3杯", "Top3 品牌 第2名 瑞幸 2杯", "Top3 品牌 第3名 星巴克 1杯", "Top3 产品 第1名 瑞幸 · 超长名称冷萃咖啡限定风味 2杯", "Top3 产品 第2名 MANNER · 奶油拿铁 2杯", "Top3 产品 第3名 MANNER · 桂花拿铁 1杯"))
         compose.onNodeWithContentDescription("本期最好 MANNER", useUnmergedTree = true)
             .assert(hasStateDescription("品牌图片"))
@@ -77,7 +78,7 @@ class InsightsPreviewRenderTest {
         }
         val yearlyHeroTop = captureHero("insights-yearly-hero-cream-forest.png")
         captureBreakdown("insights-yearly-coffee-breakdown-cream-forest.png", TestTags.InsightsCoffeeTypeDonut, listOf("黑咖 · 3杯 · 30%", "果咖 · 2杯 · 20%", "奶咖 · 4杯 · 40%", "手冲 · 1杯 · 10%"), yearlyHeroTop)
-        captureBreakdown("insights-yearly-brand-breakdown-cream-forest.png", TestTags.InsightsBrandDonut, listOf("MANNER · 4杯 · 40%", "其他 · 1杯 · 10%"))
+        captureBreakdown("insights-yearly-brand-breakdown-cream-forest.png", TestTags.InsightsBrandDonut, listOf("MANNER · 4杯 · 40%", "其他 · 1杯 · 10%"), previousPreviewName = "insights-yearly-coffee-breakdown-cream-forest.png")
         assertRankings(listOf("Top3 品牌 第1名 MANNER 4杯", "Top3 品牌 第2名 库迪 2杯", "Top3 品牌 第3名 瑞幸 2杯", "Top3 产品 第1名 瑞幸 · 超长名称冷萃咖啡限定风味 2杯", "Top3 产品 第2名 MANNER · 奶油拿铁 2杯", "Top3 产品 第3名 MANNER · 桂花拿铁 1杯"))
         captureHighlights("insights-yearly-highlights-cream-forest.png")
         assertOnlyExpectedPreviews()
@@ -100,22 +101,30 @@ class InsightsPreviewRenderTest {
         return heroTop
     }
 
-    private fun captureBreakdown(name: String, donutTag: String, expectedRows: List<String>, heroTop: Float? = null) {
+    private fun captureBreakdown(name: String, donutTag: String, expectedRows: List<String>, heroTop: Float? = null, previousPreviewName: String? = null) {
+        val surface = compose.onNodeWithTag(TestTags.InsightsSurface)
+        surface.performTouchInput { swipeUp() }
         if (donutTag == TestTags.InsightsCoffeeTypeDonut) {
-            compose.onNodeWithTag(TestTags.InsightsSurface).performTouchInput { swipeUp() }
+            surface.performScrollToNode(hasTestTag(donutTag))
+        } else {
+            surface.performScrollToNode(hasTestTag(TestTags.InsightsTopBrands))
+            surface.performTouchInput { swipeDown() }
+            surface.performScrollToNode(hasTestTag(donutTag))
         }
-        compose.onNodeWithTag(TestTags.InsightsSurface).performScrollToNode(hasTestTag(donutTag))
         compose.onNodeWithTag(donutTag).assertIsDisplayed()
         expectedRows.forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed() }
         assertDonutLegendSeparated(donutTag)
+        val donutBounds = compose.onNodeWithTag(donutTag).fetchSemanticsNode().boundsInRoot
+        compose.runOnIdle {
+            assertTrue("$donutTag must be fully visible: bottom=${donutBounds.bottom}, viewport=${compose.activity.window.decorView.height}", donutBounds.bottom <= compose.activity.window.decorView.height)
+        }
         heroTop?.let {
-            val donutBounds = compose.onNodeWithTag(donutTag).fetchSemanticsNode().boundsInRoot
             assertTrue("$donutTag must be captured above the hero viewport position", donutBounds.top < it)
-            compose.runOnIdle {
-                assertTrue("$donutTag must be fully visible", donutBounds.bottom <= compose.activity.window.decorView.height)
-            }
         }
         capture(name)
+        previousPreviewName?.let {
+            assertTrue("$name must not reuse $it", !File(previewDirectory(), name).readBytes().contentEquals(File(previewDirectory(), it).readBytes()))
+        }
     }
 
     private fun assertRankings(expectedRankingRows: List<String>) {
