@@ -21,6 +21,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
 import com.niumi.coffeejournal.core.database.DrinkRecordEntity
 import com.niumi.coffeejournal.core.image.ImageKind
@@ -56,8 +58,8 @@ class InsightsPreviewRenderTest {
 
         compose.onNodeWithTag(TestTags.BottomInsightsTab).performClick()
         awaitDashboard()
-        captureHero("insights-monthly-hero-cream-forest.png")
-        captureBreakdown("insights-monthly-coffee-breakdown-cream-forest.png", TestTags.InsightsCoffeeTypeDonut, listOf("黑咖 · 3杯 · 38%", "果咖 · 1杯 · 13%", "奶咖 · 3杯 · 38%", "手冲 · 1杯 · 13%"))
+        val monthlyHeroTop = captureHero("insights-monthly-hero-cream-forest.png")
+        captureBreakdown("insights-monthly-coffee-breakdown-cream-forest.png", TestTags.InsightsCoffeeTypeDonut, listOf("黑咖 · 3杯 · 38%", "果咖 · 1杯 · 13%", "奶咖 · 3杯 · 38%", "手冲 · 1杯 · 13%"), monthlyHeroTop)
         captureBreakdown("insights-monthly-brand-breakdown-cream-forest.png", TestTags.InsightsBrandDonut, listOf("MANNER · 3杯 · 38%", "其他 · 1杯 · 13%"))
         assertRankings(listOf("Top3 品牌 第1名 MANNER 3杯", "Top3 品牌 第2名 瑞幸 2杯", "Top3 品牌 第3名 星巴克 1杯", "Top3 产品 第1名 瑞幸 · 超长名称冷萃咖啡限定风味 2杯", "Top3 产品 第2名 MANNER · 奶油拿铁 2杯", "Top3 产品 第3名 MANNER · 桂花拿铁 1杯"))
         compose.onNodeWithContentDescription("本期最好 MANNER", useUnmergedTree = true)
@@ -73,8 +75,8 @@ class InsightsPreviewRenderTest {
         compose.waitUntil(10_000) {
             compose.onAllNodesWithTag(TestTags.InsightsCoffeeTypeDonut).fetchSemanticsNodes().isNotEmpty()
         }
-        captureHero("insights-yearly-hero-cream-forest.png")
-        captureBreakdown("insights-yearly-coffee-breakdown-cream-forest.png", TestTags.InsightsCoffeeTypeDonut, listOf("黑咖 · 3杯 · 30%", "果咖 · 2杯 · 20%", "奶咖 · 4杯 · 40%", "手冲 · 1杯 · 10%"))
+        val yearlyHeroTop = captureHero("insights-yearly-hero-cream-forest.png")
+        captureBreakdown("insights-yearly-coffee-breakdown-cream-forest.png", TestTags.InsightsCoffeeTypeDonut, listOf("黑咖 · 3杯 · 30%", "果咖 · 2杯 · 20%", "奶咖 · 4杯 · 40%", "手冲 · 1杯 · 10%"), yearlyHeroTop)
         captureBreakdown("insights-yearly-brand-breakdown-cream-forest.png", TestTags.InsightsBrandDonut, listOf("MANNER · 4杯 · 40%", "其他 · 1杯 · 10%"))
         assertRankings(listOf("Top3 品牌 第1名 MANNER 4杯", "Top3 品牌 第2名 库迪 2杯", "Top3 品牌 第3名 瑞幸 2杯", "Top3 产品 第1名 瑞幸 · 超长名称冷萃咖啡限定风味 2杯", "Top3 产品 第2名 MANNER · 奶油拿铁 2杯", "Top3 产品 第3名 MANNER · 桂花拿铁 1杯"))
         captureHighlights("insights-yearly-highlights-cream-forest.png")
@@ -88,19 +90,31 @@ class InsightsPreviewRenderTest {
         }
     }
 
-    private fun captureHero(name: String) {
+    private fun captureHero(name: String): Float {
         compose.onNodeWithTag(TestTags.RootScreenTitle).performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag(TestTags.InsightsHabitHero).assertIsDisplayed()
         compose.onAllNodesWithTag(TestTags.InsightsTrendChart).assertCountEquals(0)
         compose.onAllNodesWithText("饮用趋势", substring = true).assertCountEquals(0)
+        val heroTop = compose.onNodeWithTag(TestTags.InsightsHabitHero).fetchSemanticsNode().boundsInRoot.top
         capture(name)
+        return heroTop
     }
 
-    private fun captureBreakdown(name: String, donutTag: String, expectedRows: List<String>) {
+    private fun captureBreakdown(name: String, donutTag: String, expectedRows: List<String>, heroTop: Float? = null) {
+        if (donutTag == TestTags.InsightsCoffeeTypeDonut) {
+            compose.onNodeWithTag(TestTags.InsightsSurface).performTouchInput { swipeUp() }
+        }
         compose.onNodeWithTag(TestTags.InsightsSurface).performScrollToNode(hasTestTag(donutTag))
         compose.onNodeWithTag(donutTag).assertIsDisplayed()
         expectedRows.forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed() }
         assertDonutLegendSeparated(donutTag)
+        heroTop?.let {
+            val donutBounds = compose.onNodeWithTag(donutTag).fetchSemanticsNode().boundsInRoot
+            assertTrue("$donutTag must be captured above the hero viewport position", donutBounds.top < it)
+            compose.runOnIdle {
+                assertTrue("$donutTag must be fully visible", donutBounds.bottom <= compose.activity.window.decorView.height)
+            }
+        }
         capture(name)
     }
 
