@@ -314,8 +314,8 @@ internal fun CoffeeBottomNavigation(
                     modifier = Modifier.then(
                         if (selected) Modifier.testTag(TestTags.BottomSelectedCapsule)
                             .clip(RoundedCornerShape(50))
-                            .background(CoffeeVisuals.peach)
-                            .semantics { this[BottomSelectedCapsuleColor] = CoffeeVisuals.peach }
+                            .background(CoffeeVisuals.mint)
+                            .semantics { this[BottomSelectedCapsuleColor] = CoffeeVisuals.mint }
                             .padding(horizontal = 12.dp, vertical = 4.dp)
                         else Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                     ),

@@ -43,6 +43,8 @@ import com.niumi.coffeejournal.core.model.CatalogItem
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.ui.CoffeeVisuals
+import com.niumi.coffeejournal.ui.ScrapbookKicker
+import com.niumi.coffeejournal.ui.scrapbookPaper
 import java.util.Calendar
 import java.util.Locale
 
@@ -76,18 +78,14 @@ fun RecordDrinkScreen(
     var confirmDiscard by remember { mutableStateOf(false) }
     val selectedTime = Calendar.getInstance().apply { timeInMillis = state.consumedAtEpochMillis }
     Column(
-        modifier = Modifier.fillMaxSize().background(CoffeeVisuals.cream).testTag(TestTags.RecordEditorScroll)
+        modifier = Modifier.fillMaxSize().scrapbookPaper().testTag(TestTags.RecordEditorScroll)
             .semantics { this[RecordEditorSurfaceColor] = CoffeeVisuals.cream }
             .verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(onClick = onBack, enabled = !editorBusy) { Text("返回") }
-            Text(
-                if (state.editingRecordId == null) "记录一杯" else "修改记录",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
+            Column { ScrapbookKicker("COFFEE NOTES"); Text(if (state.editingRecordId == null) "记录一杯" else "修改记录", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(

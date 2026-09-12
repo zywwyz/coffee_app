@@ -13,6 +13,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import com.niumi.coffeejournal.TestTags
+import com.niumi.coffeejournal.ui.ScrapbookKicker
+import com.niumi.coffeejournal.ui.scrapbookPaper
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import com.niumi.coffeejournal.backup.BackupManager
@@ -88,11 +90,11 @@ fun SettingsScreen(manager: BackupManager, onBack: () -> Unit = {}, initialValid
     }
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        Modifier.fillMaxSize().scrapbookPaper().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("备份与恢复", style = MaterialTheme.typography.headlineSmall)
+            Column { ScrapbookKicker("COFFEE NOTES"); Text("备份与恢复", style = MaterialTheme.typography.headlineSmall) }
             TextButton(onClick = onBack, modifier = Modifier.testTag(TestTags.SettingsBack)) { Text("返回") }
         }
         Text("备份保存在你选择的位置，包含全部记录、豆库和本地图片。备份未加密，请妥善保管。")

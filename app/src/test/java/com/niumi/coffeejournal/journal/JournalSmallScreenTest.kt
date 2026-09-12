@@ -3,9 +3,10 @@ package com.niumi.coffeejournal.journal
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollTo
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
+import com.niumi.coffeejournal.TestTags
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -24,6 +25,7 @@ class JournalSmallScreenTest {
         }
 
         compose.onNodeWithContentDescription("日期 2026-09-06").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("0 杯").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.MonthSummaryCard).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.MonthlySpend).assertIsDisplayed()
     }
 }

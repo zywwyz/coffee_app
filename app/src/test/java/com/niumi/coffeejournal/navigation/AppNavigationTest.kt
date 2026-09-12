@@ -119,7 +119,7 @@ class AppNavigationTest {
         compose.onNodeWithTag(TestTags.BottomNavigationSurface, useUnmergedTree = true)
             .assert(SemanticsMatcher.expectValue(BottomNavigationBackgroundColor, CoffeeVisuals.white))
         compose.onNodeWithTag(TestTags.BottomSelectedCapsule, useUnmergedTree = true)
-            .assert(SemanticsMatcher.expectValue(BottomSelectedCapsuleColor, CoffeeVisuals.peach))
+            .assert(SemanticsMatcher.expectValue(BottomSelectedCapsuleColor, CoffeeVisuals.mint))
         compose.onNodeWithTag(TestTags.BottomSelectedIconPrefix + "咖啡日历", useUnmergedTree = true)
             .assert(SemanticsMatcher.expectValue(BottomSelectedContentColor, CoffeeVisuals.forest))
         compose.onNodeWithTag(TestTags.BottomSelectedLabelPrefix + "咖啡日历", useUnmergedTree = true)

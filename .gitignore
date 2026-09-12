@@ -1,6 +1,6 @@
 .superpowers/
 .worktrees/
-.local-tools/
+.local-tools
 .gradle/
 .kotlin/
 local.properties

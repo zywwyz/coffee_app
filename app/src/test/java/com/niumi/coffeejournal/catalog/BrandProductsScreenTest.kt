@@ -11,6 +11,11 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.hasText
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.semantics.Role
 import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
@@ -46,7 +51,7 @@ class BrandProductsScreenTest {
         compose.onNodeWithTag(TestTags.BrandProductCardPrefix + "item").assertIsDisplayed()
         compose.onNodeWithTag(TestTags.BrandProductMediaFramePrefix + "item", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
             .assert(SemanticsMatcher.expectValue(CatalogMediaFrameColor, CoffeeVisuals.white))
-            .assert(SemanticsMatcher.expectValue(CatalogMediaFrameOutlineColor, CoffeeVisuals.warmOutline))
+            .assert(SemanticsMatcher.expectValue(CatalogMediaFrameOutlineColor, androidx.compose.ui.graphics.Color.Transparent))
         compose.onNodeWithText("冷萃").assertIsDisplayed()
         compose.onAllNodesWithText("黑咖").assertCountEquals(2)
     }
@@ -96,6 +101,24 @@ class BrandProductsScreenTest {
         compose.onNodeWithText("删除品牌").assertIsDisplayed().performClick()
         compose.onNodeWithText("取消").assertIsDisplayed()
         compose.onNodeWithText("确认删除").assertIsDisplayed()
+    }
+
+    @Test fun `pending filter remains selectable on narrow product page`() {
+        var edited: CatalogItem? = null
+        val pending = CatalogItem("pending", "brand", ItemType.CHAIN_PRODUCT, "待分类产品", null, null, null, null, null, null, ItemStatus.ACTIVE, chainProductKind = ChainProductKind.PENDING)
+        val black = CatalogItem("black", "brand", ItemType.CHAIN_PRODUCT, "黑咖产品", null, null, null, null, null, null, ItemStatus.ACTIVE, chainProductKind = ChainProductKind.BLACK)
+        compose.setContent { CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 1.3f)) { CoffeeTheme { BrandProductsScreen(Brand("brand", BrandType.CHAIN, "品牌", null, MaintenanceMode.MANUAL_ONLY, null), listOf(black, pending), { null }, {}, {}, {}, { edited = it }) } } }
+        compose.onNode(hasText("待分类") and SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.Role, Role.Checkbox)).performScrollTo().performClick()
+        compose.onNodeWithTag(TestTags.BrandProductCardPrefix + "black").assertDoesNotExist()
+        compose.onNodeWithTag(TestTags.BrandProductCardPrefix + "pending").performClick()
+        compose.runOnIdle { org.junit.Assert.assertEquals(pending, edited) }
+    }
+
+    @Test fun `long brand title keeps the back action available`() {
+        var backs = 0
+        compose.setContent { CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 1.3f)) { CoffeeTheme { BrandProductsScreen(Brand("brand", BrandType.CHAIN, "很长很长很长很长很长很长的品牌名称", null, MaintenanceMode.MANUAL_ONLY, null), emptyList(), { null }, { backs++ }, {}, {}, {}) } } }
+        compose.onNodeWithText("返回").assertIsDisplayed().performClick()
+        compose.runOnIdle { org.junit.Assert.assertEquals(1, backs) }
     }
 
 }

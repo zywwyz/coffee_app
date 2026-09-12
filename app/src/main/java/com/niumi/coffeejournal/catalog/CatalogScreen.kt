@@ -1,17 +1,21 @@
 package com.niumi.coffeejournal.catalog
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -22,8 +26,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Tab
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -36,6 +38,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -43,7 +46,12 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items as lazyItems
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -58,6 +66,7 @@ import com.niumi.coffeejournal.core.image.ImportedAssetSelection
 import com.niumi.coffeejournal.core.image.ImagePathResolver
 import com.niumi.coffeejournal.core.image.ResolvedLocalAssetImage
 import com.niumi.coffeejournal.ui.CoffeeVisuals
+import com.niumi.coffeejournal.ui.scrapbookPaper
 
 enum class CatalogAssetKind { BRAND_LOGO, CHAIN_PRODUCT_IMAGE, BEAN_PACKAGE }
 
@@ -132,18 +141,15 @@ fun CatalogScreen(
     Column(
         modifier = Modifier.fillMaxSize()
             .testTag(com.niumi.coffeejournal.TestTags.CatalogSurface)
-            .background(CoffeeVisuals.cream)
+            .scrapbookPaper()
             .semantics { this[CatalogSurfaceColor] = CoffeeVisuals.cream },
     ) {
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("我的咖啡豆库", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(vertical = 16.dp)
-                .testTag(com.niumi.coffeejournal.TestTags.RootScreenTitle))
+        Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Column(Modifier.padding(vertical = 8.dp)) { Text("我的咖啡豆库", style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.testTag(com.niumi.coffeejournal.TestTags.RootScreenTitle)) }
             TextButton(onClick = onOpenSettings, modifier = Modifier.testTag(com.niumi.coffeejournal.TestTags.RootScreenSettings)) { Text("设置") }
         }
-        PrimaryTabRow(selectedTabIndex = state.tab.ordinal) {
-            Tab(state.tab == CatalogTab.CHAINS, { onSelectTab(CatalogTab.CHAINS) }, text = { Text("连锁品牌") })
-            Tab(state.tab == CatalogTab.BEANS, { onSelectTab(CatalogTab.BEANS) }, text = { Text("我的豆子") })
-        }
+        CatalogTabs(state.tab, onSelectTab)
         if (state.tab == CatalogTab.CHAINS) {
             ChainBrandRoot(
                 brands = state.brandOverviews.map { it.brand }, imagePathResolver = imagePathResolver,
@@ -166,8 +172,8 @@ fun CatalogScreen(
             }
 
             if (state.tab == CatalogTab.BEANS && selectedBrand != null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CatalogViewModel.BEAN_FILTERS.forEach { status ->
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    lazyItems(CatalogViewModel.BEAN_FILTERS) { status ->
                         FilterChip(
                             selected = state.beanStatus == status,
                             onClick = { onSelectBeanStatus(status) },
@@ -186,6 +192,7 @@ fun CatalogScreen(
             state.visibleItems.forEach { item ->
                 ItemCard(
                     item = item,
+                    imagePathResolver = imagePathResolver,
                     onEdit = { selectedBrand?.let { onOpenItemEditor(item, it) } },
                     onStatus = { onSetItemStatus(item, it) },
                     enabled = !state.saving,
@@ -227,20 +234,32 @@ fun CatalogScreen(
 }
 
 @Composable
+private fun CatalogTabs(selected: CatalogTab, onSelect: (CatalogTab) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp).clip(RoundedCornerShape(CoffeeVisuals.cornerMedium)).background(CoffeeVisuals.mint).padding(4.dp).selectableGroup()) {
+        listOf(CatalogTab.CHAINS to "连锁品牌", CatalogTab.BEANS to "我的豆子").forEach { (tab, label) ->
+            val active = selected == tab
+            Box(Modifier.weight(1f).heightIn(min = 48.dp).clip(RoundedCornerShape(CoffeeVisuals.cornerSmall)).background(if (active) CoffeeVisuals.white else Color.Transparent).selectable(selected = active, role = Role.Tab, onClick = { onSelect(tab) }).padding(vertical = 10.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                Text(label, color = if (active) CoffeeVisuals.forest else CoffeeVisuals.secondaryText)
+            }
+        }
+    }
+}
+
+@Composable
 private fun ChainBrandRoot(brands: List<Brand>, imagePathResolver: ImagePathResolver, onOpen: (String) -> Unit, onAdd: () -> Unit) {
     LazyVerticalGrid(GridCells.Fixed(3), modifier = Modifier.fillMaxSize().padding(12.dp).testTag(com.niumi.coffeejournal.TestTags.ChainBrandGrid), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         items(brands, key = { it.id }) { brand ->
-            Column(Modifier.testTag(com.niumi.coffeejournal.TestTags.ChainBrandCardPrefix + brand.id).clickable { onOpen(brand.id) }) {
+            Card(Modifier.testTag(com.niumi.coffeejournal.TestTags.ChainBrandCardPrefix + brand.id).clickable { onOpen(brand.id) }, colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = CoffeeVisuals.white)) {
                 val bundled = BUNDLED_CHAIN_BRANDS.firstOrNull { it.brand.id == brand.id }
                 CatalogMediaFrame(Modifier.testTag(com.niumi.coffeejournal.TestTags.ChainBrandMediaFramePrefix + brand.id)) {
                     if (bundled != null) Image(painterResource(bundled.logoRes), "品牌 ${brand.name}", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                     else ResolvedLocalAssetImage(brand.logoAssetId, null, imagePathResolver, "品牌 ${brand.name}", ContentScale.Fit, Modifier.fillMaxSize())
                 }
-                Text(brand.name, maxLines = 1)
+                Text(brand.name, maxLines = 1, modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp), style = MaterialTheme.typography.labelMedium)
             }
         }
-        item {
-            OutlinedButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text("新增品牌") }
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Button(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text("新增品牌") }
         }
     }
 }
@@ -250,9 +269,9 @@ internal fun CatalogMediaFrame(modifier: Modifier = Modifier, image: @Composable
     Box(
         modifier = modifier.fillMaxWidth().aspectRatio(1f).semantics {
             this[CatalogMediaFrameColor] = CoffeeVisuals.white
-            this[CatalogMediaFrameOutlineColor] = CoffeeVisuals.warmOutline
+            this[CatalogMediaFrameOutlineColor] = Color.Transparent
         }.clip(RoundedCornerShape(CoffeeVisuals.cornerMedium))
-            .background(CoffeeVisuals.white).border(1.dp, CoffeeVisuals.warmOutline, RoundedCornerShape(CoffeeVisuals.cornerMedium)).padding(12.dp),
+            .background(CoffeeVisuals.white).padding(12.dp),
     ) { image() }
 }
 
@@ -266,35 +285,42 @@ private fun BrandCard(
             .semantics { contentDescription = "品牌 ${overview.brand.name}" },
         colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = CoffeeVisuals.white),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(overview.brand.name, style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = onEdit, enabled = enabled) { Text("编辑") }
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Text("${overview.itemCount} 个产品", color = CoffeeVisuals.secondaryText, style = MaterialTheme.typography.labelMedium)
+                    TextButton(onClick = onEdit, enabled = enabled) { Text("编辑") }
+                }
             }
-            Text("${overview.itemCount} 个产品", color = CoffeeVisuals.secondaryText)
             if (selected) Text("已展开", color = CoffeeVisuals.forest)
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ItemCard(
     item: CatalogItem,
+    imagePathResolver: ImagePathResolver,
     onEdit: () -> Unit,
     onStatus: (ItemStatus) -> Unit,
     enabled: Boolean,
 ) {
     Card(Modifier.fillMaxWidth(), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = CoffeeVisuals.white)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(item.name, style = MaterialTheme.typography.titleMedium)
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.Top) {
+                if (item.imageAssetId != null) {
+                    ResolvedLocalAssetImage(item.imageAssetId, null, imagePathResolver, "${item.name} 图片", ContentScale.Fit, Modifier.size(64.dp).clip(RoundedCornerShape(CoffeeVisuals.cornerSmall)).background(CoffeeVisuals.cream))
+                }
+                Column(Modifier.weight(1f).padding(start = if (item.imageAssetId != null) 10.dp else 0.dp)) {
+                    Text(item.name, style = MaterialTheme.typography.titleMedium)
+                    Text(if (item.type == ItemType.PERSONAL_BEAN) item.status.beanStatusLabel() else statusLabel(item.status), color = CoffeeVisuals.forest, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 3.dp).background(CoffeeVisuals.mint, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 3.dp))
+                }
+            }
             listOfNotNull(item.origin, item.processing, item.roastLevel, item.flavorNotes).takeIf { it.isNotEmpty() }
-                ?.let { Text(it.joinToString(" · ")) }
-            Text(
-                if (item.type == ItemType.PERSONAL_BEAN) item.status.beanStatusLabel() else statusLabel(item.status),
-                color = CoffeeVisuals.forest,
-                modifier = Modifier.background(CoffeeVisuals.mint, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 3.dp),
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ?.let { Text(it.joinToString(" · "), color = CoffeeVisuals.secondaryText, style = MaterialTheme.typography.bodySmall) }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedButton(onClick = onEdit, enabled = enabled) { Text("编辑") }
                 if (item.status != ItemStatus.ARCHIVED) {
                     OutlinedButton(onClick = { onStatus(ItemStatus.ARCHIVED) }, enabled = enabled) { Text("归档") }

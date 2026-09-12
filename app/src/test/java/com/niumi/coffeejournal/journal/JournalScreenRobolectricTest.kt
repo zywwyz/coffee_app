@@ -17,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.Density
@@ -51,6 +52,72 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35])
 class JournalScreenRobolectricTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun `recent drink selection returns null when displayed month has no records`() {
+        val result = selectMostRecentMonthRecord(
+            year = 2026,
+            month = 8,
+            records = listOf(record("july", "2026-07-31", 300L), record("september", "2026-09-01", 500L)),
+        )
+
+        assertNull(result)
+    }
+
+    @Test
+    fun `recent drink selection filters to displayed month`() {
+        val result = selectMostRecentMonthRecord(
+            year = 2026,
+            month = 8,
+            records = listOf(record("august", "2026-08-31", 100L), record("september", "2026-09-01", 900L)),
+        )
+
+        assertEquals("august", result?.id)
+    }
+
+    @Test
+    fun `recent drink selection uses id as a stable tie breaker`() {
+        val result = selectMostRecentMonthRecord(
+            year = 2026,
+            month = 8,
+            records = listOf(record("a", "2026-08-20", 700L), record("z", "2026-08-20", 700L)),
+        )
+
+        assertEquals("z", result?.id)
+    }
+
+    @Test
+    fun `recent drink note opens the selected record day and resolves its own snapshot image`() {
+        val image = temporaryBitmap("recent")
+        val selected = record("recent", "2026-08-20", 900L).copy(
+            snapshot = DrinkSnapshot("测试品牌", "最近产品", null, null, "recent-image"),
+        )
+        var openedDate: String? = null
+        compose.setContent {
+            CoffeeTheme {
+                JournalScreen(
+                    state = JournalUiState.empty(2026, 8).copy(records = listOf(selected)),
+                    onPreviousMonth = {}, onNextMonth = {}, onDayClick = { openedDate = it }, onRecordDrink = {},
+                    imagePathResolver = { assetId -> if (assetId == "recent-image") image.absolutePath else null },
+                )
+            }
+        }
+
+        compose.onNodeWithTag(TestTags.RecentDrinkNote, useUnmergedTree = true).performScrollTo().assertIsDisplayed().performClick()
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithTag(TestTags.RecentDrinkImage, useUnmergedTree = true).fetchSemanticsNodes()
+                .any { runCatching { it.config[androidx.compose.ui.semantics.SemanticsProperties.StateDescription] }.getOrNull() == "主图片已加载" }
+        }
+        compose.onNodeWithTag(TestTags.RecentDrinkImage, useUnmergedTree = true).assertIsDisplayed()
+        compose.runOnIdle { assertEquals("2026-08-20", openedDate) }
+    }
+
+    @Test
+    fun `september calendar omits the trailing week outside its displayed month`() {
+        compose.setContent { CoffeeTheme { JournalScreen(JournalUiState.empty(2026, 9), {}, {}, {}, {}) } }
+
+        compose.onAllNodesWithTag(TestTags.CalendarDayPrefix + "2026-10-05", useUnmergedTree = true).assertCountEquals(0)
+    }
 
     @Test
     fun `record editor groups date only fields on the cream surface`() {
@@ -178,7 +245,7 @@ class JournalScreenRobolectricTest {
         compose.setContent { CoffeeTheme { JournalScreen(calendarState("2026-08-05", drinkCount = 1), {}, {}, {}, {}) } }
 
         compose.onNodeWithTag("calendar-media-frame-2026-08-05", useUnmergedTree = true)
-            .assert(SemanticsMatcher.expectValue(CalendarMediaInsetDp, 3f))
+            .assert(SemanticsMatcher.expectValue(CalendarMediaInsetDp, 1f))
         compose.onNodeWithTag("calendar-image-2026-08-05", useUnmergedTree = true).assertIsDisplayed()
     }
 
@@ -632,4 +699,17 @@ class JournalScreenRobolectricTest {
             ) else day
         })
     }
+
+    private fun record(id: String, localDate: String, occurredAtEpochMillis: Long) = DrinkRecord(
+        id = id,
+        occurredAtEpochMillis = occurredAtEpochMillis,
+        localDate = localDate,
+        itemType = ItemType.CHAIN_PRODUCT,
+        sourceItemId = "item-$id",
+        brewMethod = null,
+        ratingHalfStars = null,
+        actualPriceFen = null,
+        note = null,
+        snapshot = DrinkSnapshot("品牌$id", "产品$id", null, null, "asset-$id"),
+    )
 }

@@ -34,7 +34,7 @@ class CatalogScreenRobolectricTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun `chain brand card provides a white outlined media frame`() {
+    fun `chain brand card provides a clean white media frame`() {
         compose.setContent { CoffeeTheme {
             CatalogScreen(
                 state = state(), onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {},
@@ -45,7 +45,7 @@ class CatalogScreenRobolectricTest {
         compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.ChainBrandMediaFramePrefix + "brand", useUnmergedTree = true)
             .assertIsDisplayed()
             .assert(SemanticsMatcher.expectValue(CatalogMediaFrameColor, CoffeeVisuals.white))
-            .assert(SemanticsMatcher.expectValue(CatalogMediaFrameOutlineColor, CoffeeVisuals.warmOutline))
+            .assert(SemanticsMatcher.expectValue(CatalogMediaFrameOutlineColor, androidx.compose.ui.graphics.Color.Transparent))
         compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CatalogSurface, useUnmergedTree = true)
             .assert(SemanticsMatcher.expectValue(CatalogSurfaceColor, CoffeeVisuals.cream))
     }

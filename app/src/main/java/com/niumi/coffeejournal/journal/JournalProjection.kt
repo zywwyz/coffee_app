@@ -93,6 +93,17 @@ fun representativeRecords(records: List<DrinkRecord>): List<DrinkRecord> =
         dayRecords.maxWithOrNull(compareBy<DrinkRecord> { it.occurredAtEpochMillis }.thenBy { it.id })
     }
 
+internal fun selectMostRecentMonthRecord(
+    year: Int,
+    month: Int,
+    records: List<DrinkRecord>,
+): DrinkRecord? {
+    val monthPrefix = "%04d-%02d-".format(Locale.ROOT, year, month)
+    return records.asSequence()
+        .filter { it.localDate.startsWith(monthPrefix) }
+        .maxWithOrNull(compareBy<DrinkRecord> { it.occurredAtEpochMillis }.thenBy { it.id })
+}
+
 fun parseYuanToFen(input: String): Long? {
     val normalized = input.trim()
     if (!normalized.matches(Regex("\\d+(?:\\.\\d{0,2})?"))) return null

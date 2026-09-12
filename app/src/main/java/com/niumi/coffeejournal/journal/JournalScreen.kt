@@ -8,11 +8,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -46,6 +48,9 @@ import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.annotation.DrawableRes
@@ -59,6 +64,7 @@ import com.niumi.coffeejournal.catalog.ManualProductEditorViewModel
 import com.niumi.coffeejournal.core.image.ImagePathResolver
 import com.niumi.coffeejournal.core.image.ImageStore
 import com.niumi.coffeejournal.core.image.LocalAssetImage
+import com.niumi.coffeejournal.core.image.ResolvedLocalAssetImage
 import com.niumi.coffeejournal.core.image.CompleteImageContentScale
 import com.niumi.coffeejournal.core.model.DrinkRecord
 import com.niumi.coffeejournal.core.model.ItemType
@@ -66,6 +72,8 @@ import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.core.image.AssetImportRequester
 import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.ui.CoffeeVisuals
+import com.niumi.coffeejournal.ui.ScrapbookNote
+import com.niumi.coffeejournal.ui.scrapbookPaper
 
 internal val CalendarForestGreen = CoffeeVisuals.forest
 internal val CalendarWarmIvory = CoffeeVisuals.cream
@@ -159,6 +167,7 @@ fun JournalFeature(
             onDeleteRecord = journalViewModel::deleteRecord,
             onOpenSettings = onOpenSettings,
             onCalendarDisplayModeChange = journalViewModel::setCalendarDisplayMode,
+            imagePathResolver = imagePathResolver,
         )
     }
 }
@@ -174,19 +183,24 @@ fun JournalScreen(
     onDeleteRecord: (String) -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onCalendarDisplayModeChange: (CalendarDisplayMode) -> Unit = {},
+    imagePathResolver: ImagePathResolver = ImagePathResolver { null },
 ) {
     Scaffold(
         containerColor = CoffeeVisuals.cream,
         topBar = {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("咖啡日历", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.testTag(TestTags.RootScreenTitle))
-                TextButton(onClick = onOpenSettings, modifier = Modifier.testTag(TestTags.RootScreenSettings)) { Text("设置") }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("咖啡日历", style = MaterialTheme.typography.titleLarge, maxLines = 1, modifier = Modifier.weight(1f).testTag(TestTags.RootScreenTitle))
+                CalendarDisplayModeControl(state.calendarDisplayMode, onCalendarDisplayModeChange, Modifier.width(104.dp))
+                TextButton(onClick = onOpenSettings, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp), modifier = Modifier.width(64.dp).height(48.dp).testTag(TestTags.RootScreenSettings)) { Text("设置", maxLines = 1) }
             }
         },
-        floatingActionButton = {
+        bottomBar = {
+            Box(Modifier.fillMaxWidth().background(CoffeeVisuals.cream).padding(vertical = 12.dp)) {
             Button(
                 onClick = onRecordDrink,
                 modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
                     .testTag(TestTags.RecordButton)
                     .semantics {
                         this[RecordButtonContainerColor] = CalendarForestGreen
@@ -198,21 +212,22 @@ fun JournalScreen(
             ) {
                 Text("记录一杯")
             }
+            }
         },
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .scrapbookPaper()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            CalendarDisplayModeControl(state.calendarDisplayMode, onCalendarDisplayModeChange)
             MonthHeader(state.year, state.month, onPreviousMonth, onNextMonth)
             WeekdayHeader()
             Column(Modifier.fillMaxWidth().testTag(TestTags.Calendar)) {
-                state.days.chunked(7).forEach { week ->
+                state.days.chunked(7).filter { week -> week.any { it.inDisplayedMonth } }.forEach { week ->
                     Row(Modifier.fillMaxWidth()) {
                         week.forEach { day ->
                             CalendarDay(
@@ -226,6 +241,11 @@ fun JournalScreen(
                 }
             }
             MonthSummary(state.summary)
+            RecentDrinkNote(
+                record = selectMostRecentMonthRecord(state.year, state.month, state.records),
+                imagePathResolver = imagePathResolver,
+                onClick = { onDayClick(it.localDate) },
+            )
         }
     }
 
@@ -244,13 +264,12 @@ fun JournalScreen(
 private fun CalendarDisplayModeControl(
     selectedMode: CalendarDisplayMode,
     onModeChange: (CalendarDisplayMode) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = modifier
             .clip(RoundedCornerShape(14.dp))
-            .background(CoffeeVisuals.white)
-            .border(BorderStroke(1.dp, CoffeeVisuals.warmOutline), RoundedCornerShape(CoffeeVisuals.cornerMedium))
+            .background(CoffeeVisuals.mint)
             .selectableGroup()
             .testTag(TestTags.CalendarModeIndicator),
     ) {
@@ -261,7 +280,7 @@ private fun CalendarDisplayModeControl(
                     .weight(1f)
                     .defaultMinSize(minHeight = 48.dp)
                     .clip(RoundedCornerShape(CoffeeVisuals.cornerSmall))
-                    .background(if (selected) CoffeeVisuals.forest else CoffeeVisuals.white)
+                    .background(if (selected) CoffeeVisuals.white else Color.Transparent)
                     .selectable(selected = selected, onClick = { onModeChange(mode) }, role = Role.RadioButton)
                     .semantics { this[CalendarModeTouchTargetMinHeight] = 48f }
                     .testTag(
@@ -271,16 +290,18 @@ private fun CalendarDisplayModeControl(
                     .padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, color = if (selected) Color.White else CoffeeVisuals.darkCoffee, fontWeight = FontWeight.Bold)
+                Text(label, color = if (selected) CoffeeVisuals.forest else CoffeeVisuals.secondaryText,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
             }
         }
     }
 }
 
 @Composable
-private fun MonthHeader(year: Int, month: Int, previous: () -> Unit, next: () -> Unit) {
+private fun MonthHeader(year: Int, month: Int, previous: () -> Unit, next: () -> Unit, modifier: Modifier = Modifier) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -291,17 +312,11 @@ private fun MonthHeader(year: Int, month: Int, previous: () -> Unit, next: () ->
                 .semantics { contentDescription = "上一月" }
                 .testTag(TestTags.PreviousMonth),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(RoundedCornerShape(CoffeeVisuals.cornerMedium))
-                    .background(CoffeeVisuals.white)
-                    .border(BorderStroke(1.dp, CoffeeVisuals.warmOutline), RoundedCornerShape(CoffeeVisuals.cornerMedium)),
-                contentAlignment = Alignment.Center,
-            ) { Text("‹", style = MaterialTheme.typography.headlineSmall, color = CoffeeVisuals.forest) }
+            Text("‹", style = MaterialTheme.typography.headlineSmall, color = CoffeeVisuals.forest)
         }
         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-            Text("${year}年${month}月", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 2)
+            Text("${year}年${month}月", style = MaterialTheme.typography.titleMedium, fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Normal, textAlign = TextAlign.Center, maxLines = 2)
         }
         IconButton(
             onClick = next,
@@ -310,14 +325,7 @@ private fun MonthHeader(year: Int, month: Int, previous: () -> Unit, next: () ->
                 .semantics { contentDescription = "下一月" }
                 .testTag(TestTags.NextMonth),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(RoundedCornerShape(CoffeeVisuals.cornerMedium))
-                    .background(CoffeeVisuals.white)
-                    .border(BorderStroke(1.dp, CoffeeVisuals.warmOutline), RoundedCornerShape(CoffeeVisuals.cornerMedium)),
-                contentAlignment = Alignment.Center,
-            ) { Text("›", style = MaterialTheme.typography.headlineSmall, color = CoffeeVisuals.forest) }
+            Text("›", style = MaterialTheme.typography.headlineSmall, color = CoffeeVisuals.forest)
         }
     }
 }
@@ -326,7 +334,8 @@ private fun MonthHeader(year: Int, month: Int, previous: () -> Unit, next: () ->
 private fun WeekdayHeader() {
     Row(Modifier.fillMaxWidth()) {
         listOf("一", "二", "三", "四", "五", "六", "日").forEach {
-            Text(it, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+            Text(it, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelMedium,
+                textAlign = TextAlign.Center, color = CoffeeVisuals.secondaryText)
         }
     }
 }
@@ -344,12 +353,12 @@ private fun CalendarDay(
             .border(BorderStroke(1.dp, CoffeeVisuals.warmOutline), RoundedCornerShape(CoffeeVisuals.cornerSmall))
     } else {
         Modifier
-            .background(Color(0xFFF7F3EC), RoundedCornerShape(CoffeeVisuals.cornerSmall))
+            .background(Color.Transparent, RoundedCornerShape(CoffeeVisuals.cornerSmall))
     }
     Box(
         modifier = modifier
-            .aspectRatio(0.82f)
-            .padding(2.dp)
+            .aspectRatio(0.78f)
+            .padding(0.5.dp)
             .alpha(if (day.inDisplayedMonth) 1f else 0.38f)
             .then(dayCardModifier)
             .clickable(onClick = onClick)
@@ -366,8 +375,8 @@ private fun CalendarDay(
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .padding(3.dp)
-                    .semantics { this[CalendarMediaInsetDp] = 3f }
+                .padding(1.dp)
+                    .semantics { this[CalendarMediaInsetDp] = 1f }
                     .testTag(TestTags.CalendarMediaFramePrefix + day.localDate),
             ) {
                 LocalAssetImage(
@@ -445,35 +454,70 @@ internal fun selectCalendarMedia(
 private fun MonthSummary(summary: MonthSummaryUi) {
     val rating = summary.averageRatingStars?.let { "%.2f 星".format(it) } ?: "暂无评分"
     Row(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 76.dp).testTag(TestTags.MonthSummaryCard),
+        modifier = Modifier.fillMaxWidth().testTag(TestTags.MonthSummaryCard),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        SummaryMetric("${summary.cupCount} 杯", Modifier.weight(1f))
+        SummaryMetric("${summary.cupCount}", "本月杯数", Modifier.weight(1f))
         SummaryMetric(
             "¥${summary.totalSpendFen / 100}.${(summary.totalSpendFen % 100).toString().padStart(2, '0')}",
+            "本月消费",
             Modifier.weight(1f).testTag(TestTags.MonthlySpend),
         )
-        SummaryMetric(rating, Modifier.weight(1f))
+        SummaryMetric(rating, "平均评分", Modifier.weight(1f))
     }
 }
 
 @Composable
-private fun SummaryMetric(value: String, modifier: Modifier = Modifier) {
+private fun SummaryMetric(value: String, label: String, modifier: Modifier = Modifier) {
     Box(modifier) {
-        Card(
-            modifier = Modifier.fillMaxWidth().testTag(TestTags.MonthSummaryMetric),
-            shape = RoundedCornerShape(CoffeeVisuals.cornerSmall),
-            colors = CardDefaults.cardColors(containerColor = CoffeeVisuals.white),
-            border = BorderStroke(1.dp, CoffeeVisuals.warmOutline),
-        ) {
-            Text(
-                value,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp, horizontal = 8.dp),
-                color = CoffeeVisuals.darkCoffee,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-            )
+        Column(Modifier.fillMaxWidth().testTag(TestTags.MonthSummaryMetric), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(value, color = CoffeeVisuals.darkCoffee, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(label, color = CoffeeVisuals.secondaryText, style = MaterialTheme.typography.labelSmall)
         }
+    }
+}
+
+@Composable
+private fun RecentDrinkNote(
+    record: DrinkRecord?,
+    imagePathResolver: ImagePathResolver,
+    onClick: (DrinkRecord) -> Unit,
+) {
+    if (record == null) {
+        Text("本月还没有咖啡记录", color = CoffeeVisuals.secondaryText, modifier = Modifier.padding(bottom = 16.dp))
+        return
+    }
+    ScrapbookNote(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+            .clickable { onClick(record) }.testTag(TestTags.RecentDrinkNote),
+    ) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ResolvedLocalAssetImage(
+            primaryAssetId = record.snapshot.imageAssetId,
+            fallbackAssetId = record.snapshot.brandLogoAssetId,
+            resolver = imagePathResolver,
+            contentDescription = "最近一杯 ${record.snapshot.itemName}",
+            contentScale = CompleteImageContentScale,
+            modifier = Modifier.size(84.dp).clip(RoundedCornerShape(CoffeeVisuals.cornerSmall))
+                .background(CoffeeVisuals.white).testTag(TestTags.RecentDrinkImage),
+            fallbackPainter = bundledBrandLogoRes(record.snapshot.brandName)?.let { painterResource(it) },
+        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text("本月最近一杯", style = MaterialTheme.typography.labelMedium, color = CoffeeVisuals.forest)
+            Text(record.localDate, style = MaterialTheme.typography.labelSmall, color = CoffeeVisuals.secondaryText)
+            Text(record.snapshot.brandName, style = MaterialTheme.typography.labelMedium, color = CoffeeVisuals.secondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(record.snapshot.itemName, style = MaterialTheme.typography.titleMedium, color = CoffeeVisuals.darkCoffee, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            val facts = listOfNotNull(
+                record.actualPriceFen?.let { "¥${it / 100}.${(it % 100).toString().padStart(2, '0')}" },
+                record.ratingHalfStars?.let { "${it / 2.0}★" },
+            )
+            if (facts.isNotEmpty()) Text(facts.joinToString(" · "), color = CoffeeVisuals.secondaryText, style = MaterialTheme.typography.labelMedium)
+            record.note?.takeIf { it.isNotBlank() }?.let { Text(it, color = CoffeeVisuals.secondaryText, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+        }
+    }
     }
 }
 

@@ -8,7 +8,7 @@
 
 ## 当前开发阶段
 
-日历视觉一致性、纯手动连锁豆库、date-only 记录，以及新版月度/年度总结已实现并完成发布矩阵验证；规格状态为 implemented。Debug APK 可供个人侧载试用；未做真机安装或 connected instrumentation 验证。Release APK 尚未配置个人签名。
+A「奶油贴纸簿·实拍版」及试用反馈二轮调整已实现：纸面背景、橄榄绿操作、白色照片贴纸与最近一杯便签统一至各客户端页面。模块单测、原生渲染预览、lint 和 Debug APK 构建通过。未做真机安装或 connected instrumentation 验证；本轮未重新构建 Release。
 
 ## 技术栈与架构
 
@@ -32,6 +32,10 @@
 - 总结支持月度/年度切换：习惯摘要含上期杯数差（月度同日比较、年度同期间比较，年份 1 无基线）；月度与年度均刻意不显示趋势卡；咖啡类型与品牌双 Donut（黑咖/果咖/奶咖/手冲；Top 4 品牌+其他）、Top 3，以及最好/最差记录卡与历史图片回退。Donut 图例与圆环保留 16dp 安全间距；每个图例固定为色点、名称、杯数、分隔符、百分比五列的单行对齐布局，仅名称列可换行，杯数和百分比列跨行对齐。
 - MANNER 使用用户确认来源图生成透明 512px 打包 Logo，并保留来源与输出哈希审计；所有内置品牌 Logo 随包提供。
 - minSdk 23；统计日期相关实现兼容 API 23。
+
+- A 视觉：共享细点纸底与胶带便签；日历按实际月份显示必要周数，空日透明，照片完整显示，摘要为三列数字。最近一杯限定当前月份，按时间与 id 稳定选择真实快照，点击进入原有当天详情。全宽记录按钮位于 Scaffold bottomBar，为小屏滚动内容预留空间。豆库、记录、总结、设置与底栏共享色板；持久层与备份逻辑未变。
+
+- 二轮布局：日历紧凑顶栏同排模式，照片格比例0.78、图片内距1dp；豆库收藏卡、横滑分类、两行产品名与流式豆子操作；总结紧凑模式导航、胶带摘要和分层指标。
 
 ## 关键数据流与决策
 
@@ -57,24 +61,28 @@
 - `README.md` — 安装、使用、离线/隐私说明。
 - `docs/superpowers/specs/2026-09-01-insights-redesign-and-manner-logo-design.md` — 已实施的总结与 MANNER Logo 规格。
 
+- `docs/superpowers/specs/2026-09-11-cream-scrapbook-design.md` — 已实施的 A 视觉规格。
+
 ## 构建与验证
+
+本机 `.local-tools` 链接至旧工作树工具目录，离线依赖复用该工作树缓存。
 
 ```bash
 export JAVA_HOME="$PWD/.local-tools/jdk/Contents/Home"
 export ANDROID_HOME="$PWD/.local-tools/android-sdk"
-export GRADLE_USER_HOME="$PWD/.gradle"
-export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
+export GRADLE_USER_HOME="$PWD/.worktrees/codex-coffee-journal/.gradle"
 
-./.local-tools/gradle-8.13/bin/gradle clean testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease --offline --no-daemon
+./.local-tools/gradle-8.13/bin/gradle testDebugUnitTest lintDebug assembleDebug --offline --no-daemon
 ```
 
-最终发布矩阵（2026-09-04）：
+最终验证（2026-09-12）：
 
-- `clean testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease --offline --no-daemon`：PASS；383 tests，0 failures / errors / skips；lint 0 errors、8 warnings。
-- 预览测试 fixture 仅位于测试资源，不会打入 APK。八张真实 Compose 总结评审图输出到 `app/build/reports/previews/`：月度/年度分别生成 `hero`、`coffee-breakdown`、`brand-breakdown` 和 `highlights` 图；咖啡类型与品牌占比卡均先强制滚动至独立视口后捕获，品牌卡相对咖啡卡视口继续移动；不再强制两张自适应高度卡同时处于首屏。
-- 本次定向验证：`InsightsScreen` 17/17、`ReleaseAcceptance` 1/1、`InsightsPreviewRenderTest` 1/1 均 PASS；预览目录恰有 8 张图，月度与年度均无趋势卡，coffee 与 brand 预览分别在独立视口捕获。
-- Debug APK：`app/build/outputs/apk/debug/app-debug.apk`，14,314,965 bytes，SHA-256 `b610fab5685b264ce3d9d06f06b99b7a1053762133e7158f2c985df912612f35`；版本 1.0（versionCode 1），Android Debug v1/v2 签名。
-- Release APK（unsigned）：`app/build/outputs/apk/release/app-release-unsigned.apk`，SHA-256 `dd99a6603c000829ca8f8c46cfb5698e9ca249895eabc019eed6b28b2e2ad641`。
-- 合并 Manifest：minSdk 23、targetSdk 36；无 `INTERNET`／相机／定位／宽泛存储权限；`allowBackup`、`fullBackupContent`、`cleartextTraffic` 均为 false，并声明 `dataExtractionRules`。
+- `testDebugUnitTest lintDebug assembleDebug --offline --no-daemon`：PASS；395 tests，0 failures / errors / skips；lint 0 errors、8 warnings。
+- `testDebugUnitTest -PcalendarPreview --tests '*CalendarPreviewRenderTest' --offline --no-daemon`：PASS，10 tests；覆盖实拍/品牌、空月/满月、小屏、豆库与记录页。小屏断言便签不与记录按钮重叠。
+- `testDebugUnitTest -PinsightsPreview --tests '*InsightsPreviewRenderTest' --offline --no-daemon`：PASS，1 test，生成月度/年度共 8 张总结图。
+- 20 张真实 Compose 预览与安装包统一保存于 `build/deliverables/scrapbook-a-v2/`。测试照片不会打入 APK。
+- Debug APK：`build/deliverables/scrapbook-a-v2/coffee-journal-scrapbook-a-v2-debug.apk`，14,508,249 bytes，SHA-256 `7c83e5a24f439ee7a13753ee61b4831f6e9d6f05ac17e8b5a272838348d0e6d8`；版本 1.0，Android Debug 签名，`apksigner verify --print-certs` PASS。
+- 二轮 reviewer 发现的产品筛选溢出与长标题挤占返回区域已修复；复审无交付阻塞问题。日历320dp/1.3字体、设置标签完整显示及照片尺寸均有渲染断言。
+- `git diff --check`：PASS。尚未进行真机验证。
 
-最后更新：2026-09-10
+最后更新：2026-09-12

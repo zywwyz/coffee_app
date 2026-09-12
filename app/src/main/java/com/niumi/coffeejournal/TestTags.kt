@@ -22,6 +22,8 @@ object TestTags {
     const val RecordEditorSurface = RecordEditorScroll
     const val RecordEditorSectionPrefix = "record-editor-section-"
     const val MonthlySpend = "monthly-spend"
+    const val RecentDrinkNote = "recent-drink-note"
+    const val RecentDrinkImage = "recent-drink-image"
     const val InsightsSurface = "insights-surface"
     const val InsightsMetricCardPrefix = "insights-metric-card-"
     const val InsightsHabitHero = "insights-habit-hero"

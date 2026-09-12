@@ -47,8 +47,8 @@ class InsightsScreenRobolectricTest {
         compose.setContent { CoffeeTheme { InsightsScreen(state(), { monthly++ }, { yearly++ }, { previous++ }, { next++ }) } }
         compose.onNodeWithText("月度").assertIsDisplayed()
         compose.onNodeWithText("年度").performClick()
-        compose.onNodeWithText("上一周期").performClick()
-        compose.onNodeWithText("下一周期").performClick()
+        compose.onNodeWithContentDescription("上一周期").performClick()
+        compose.onNodeWithContentDescription("下一周期").performClick()
         compose.runOnIdle { assertEquals(0, monthly); assertEquals(1, yearly); assertEquals(1, previous); assertEquals(1, next) }
     }
 
@@ -74,8 +74,9 @@ class InsightsScreenRobolectricTest {
         compose.onNodeWithText("最长连续 3 天", substring = true).assertIsDisplayed()
         compose.onNodeWithText("平均评分 4.5", substring = true).assertIsDisplayed()
         compose.onNodeWithText("杯数较上期 +2", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("总消费 —").assertIsDisplayed()
-        compose.onNodeWithText("杯均 —").assertIsDisplayed()
+        compose.onNodeWithText("总消费").assertIsDisplayed()
+        compose.onNodeWithText("杯均").assertIsDisplayed()
+        compose.onAllNodesWithText("—").assertCountEquals(2)
     }
 
     @Test fun `habit hero renders a negative cup comparison`() {
@@ -253,16 +254,18 @@ class InsightsScreenRobolectricTest {
         }
         repeat(3) { index -> compose.onNodeWithTag("${TestTags.InsightsBrandDonut}-legend-dot-$index", useUnmergedTree = true).assertExists() }
 
+        compose.onNodeWithText(longBrand, useUnmergedTree = true).performScrollTo()
         val brandCard = compose.onNodeWithTag(TestTags.InsightsBrandDonut).fetchSemanticsNode().boundsInRoot
         val brand = compose.onNodeWithText(longBrand, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val brandStats = compose.onNodeWithTag(legendPercentTag(TestTags.InsightsBrandDonut, 0), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val twoLines = with(compose.density) { 36.dp.toPx() }
+        org.junit.Assert.assertTrue(brand.height >= twoLines)
+        listOf(brand, brandStats).forEach { bounds -> assertInside(bounds, brandCard) }
+        compose.onNodeWithText(productName).performScrollTo()
         val productCard = compose.onNodeWithTag(TestTags.InsightsTopProducts).fetchSemanticsNode().boundsInRoot
         val product = compose.onNodeWithText(productName).fetchSemanticsNode().boundsInRoot
         val productStats = compose.onNodeWithContentDescription("Top3 产品 第1名", substring = true).fetchSemanticsNode().boundsInRoot
-        val twoLines = with(compose.density) { 36.dp.toPx() }
-        org.junit.Assert.assertTrue(brand.height >= twoLines)
         org.junit.Assert.assertTrue(product.height >= twoLines)
-        listOf(brand, brandStats).forEach { bounds -> assertInside(bounds, brandCard) }
         listOf(product, productStats).forEach { bounds -> assertInside(bounds, productCard) }
     }
 
