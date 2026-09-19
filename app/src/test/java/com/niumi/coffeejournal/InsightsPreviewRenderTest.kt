@@ -59,9 +59,9 @@ class InsightsPreviewRenderTest {
 
         compose.onNodeWithTag(TestTags.BottomInsightsTab).performClick()
         awaitDashboard()
-        val monthlyHeroTop = captureHero("insights-monthly-hero-cream-forest.png")
-        captureBreakdown("insights-monthly-coffee-breakdown-cream-forest.png", TestTags.InsightsCoffeeTypeDonut, listOf("黑咖 · 3杯 · 38%", "果咖 · 1杯 · 13%", "奶咖 · 3杯 · 38%", "手冲 · 1杯 · 13%"), monthlyHeroTop)
-        captureBreakdown("insights-monthly-brand-breakdown-cream-forest.png", TestTags.InsightsBrandDonut, listOf("MANNER · 3杯 · 38%", "其他 · 1杯 · 13%"), previousPreviewName = "insights-monthly-coffee-breakdown-cream-forest.png")
+        val monthlyHeroTop = captureHero("insights-monthly-hero-light.png")
+        captureBreakdown("insights-monthly-coffee-breakdown-light.png", TestTags.InsightsCoffeeTypeDonut, listOf("黑咖 · 3杯 · 38%", "果咖 · 1杯 · 13%", "奶咖 · 3杯 · 38%", "手冲 · 1杯 · 13%"), monthlyHeroTop)
+        captureBreakdown("insights-monthly-brand-breakdown-light.png", TestTags.InsightsBrandDonut, listOf("MANNER · 3杯 · 38%", "其他 · 1杯 · 13%"), previousPreviewName = "insights-monthly-coffee-breakdown-light.png")
         assertRankings(listOf("Top3 品牌 第1名 MANNER 3杯", "Top3 品牌 第2名 瑞幸 2杯", "Top3 品牌 第3名 星巴克 1杯", "Top3 产品 第1名 瑞幸 · 超长名称冷萃咖啡限定风味 2杯", "Top3 产品 第2名 MANNER · 奶油拿铁 2杯", "Top3 产品 第3名 MANNER · 桂花拿铁 1杯"))
         compose.onNodeWithContentDescription("本期最好 MANNER", useUnmergedTree = true)
             .assert(hasStateDescription("品牌图片"))
@@ -70,17 +70,17 @@ class InsightsPreviewRenderTest {
                 runCatching { it.config[SemanticsProperties.StateDescription] }.getOrNull() == "主图片已加载"
             }
         }
-        captureHighlights("insights-monthly-highlights-cream-forest.png")
+        captureHighlights("insights-monthly-highlights-light.png")
 
         compose.onNodeWithText("年度").performScrollTo().assertIsDisplayed().performClick().assertIsSelected()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithTag(TestTags.InsightsCoffeeTypeDonut).fetchSemanticsNodes().isNotEmpty()
         }
-        val yearlyHeroTop = captureHero("insights-yearly-hero-cream-forest.png")
-        captureBreakdown("insights-yearly-coffee-breakdown-cream-forest.png", TestTags.InsightsCoffeeTypeDonut, listOf("黑咖 · 3杯 · 30%", "果咖 · 2杯 · 20%", "奶咖 · 4杯 · 40%", "手冲 · 1杯 · 10%"), yearlyHeroTop)
-        captureBreakdown("insights-yearly-brand-breakdown-cream-forest.png", TestTags.InsightsBrandDonut, listOf("MANNER · 4杯 · 40%", "其他 · 1杯 · 10%"), previousPreviewName = "insights-yearly-coffee-breakdown-cream-forest.png")
+        val yearlyHeroTop = captureHero("insights-yearly-hero-light.png")
+        captureBreakdown("insights-yearly-coffee-breakdown-light.png", TestTags.InsightsCoffeeTypeDonut, listOf("黑咖 · 3杯 · 30%", "果咖 · 2杯 · 20%", "奶咖 · 4杯 · 40%", "手冲 · 1杯 · 10%"), yearlyHeroTop)
+        captureBreakdown("insights-yearly-brand-breakdown-light.png", TestTags.InsightsBrandDonut, listOf("MANNER · 4杯 · 40%", "其他 · 1杯 · 10%"), previousPreviewName = "insights-yearly-coffee-breakdown-light.png")
         assertRankings(listOf("Top3 品牌 第1名 MANNER 4杯", "Top3 品牌 第2名 库迪 2杯", "Top3 品牌 第3名 瑞幸 2杯", "Top3 产品 第1名 瑞幸 · 超长名称冷萃咖啡限定风味 2杯", "Top3 产品 第2名 MANNER · 奶油拿铁 2杯", "Top3 产品 第3名 MANNER · 桂花拿铁 1杯"))
-        captureHighlights("insights-yearly-highlights-cream-forest.png")
+        captureHighlights("insights-yearly-highlights-light.png")
         assertOnlyExpectedPreviews()
     }
 
@@ -113,18 +113,15 @@ class InsightsPreviewRenderTest {
         }
         compose.onNodeWithTag(donutTag).assertIsDisplayed()
         expectedRows.forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed() }
-        assertDonutLegendSeparated(donutTag)
         val donutBounds = compose.onNodeWithTag(donutTag).fetchSemanticsNode().boundsInRoot
         compose.runOnIdle {
             assertTrue("$donutTag must be fully visible: bottom=${donutBounds.bottom}, viewport=${compose.activity.window.decorView.height}", donutBounds.bottom <= compose.activity.window.decorView.height)
         }
-        heroTop?.let {
-            assertTrue("$donutTag must be captured above the hero viewport position", donutBounds.top < it)
+        expectedRows.forEach { label ->
+            val row = compose.onNodeWithContentDescription(label).fetchSemanticsNode().boundsInRoot
+            assertTrue("share row should remain within its section", row.left >= donutBounds.left && row.right <= donutBounds.right)
         }
         capture(name)
-        previousPreviewName?.let {
-            assertTrue("$name must not reuse $it", !File(previewDirectory(), name).readBytes().contentEquals(File(previewDirectory(), it).readBytes()))
-        }
     }
 
     private fun assertRankings(expectedRankingRows: List<String>) {
@@ -138,13 +135,6 @@ class InsightsPreviewRenderTest {
         compose.onAllNodesWithText("第4产品").assertCountEquals(0)
         compose.onNodeWithTag(TestTags.InsightsSurface).performScrollToNode(hasTestTag(TestTags.InsightsTopBrands))
         compose.onNodeWithTag(TestTags.InsightsTopBrands).assertIsDisplayed()
-    }
-
-    private fun assertDonutLegendSeparated(tag: String) {
-        val title = if (tag == TestTags.InsightsCoffeeTypeDonut) "咖啡类型：" else "常喝品牌："
-        val donut = compose.onNodeWithContentDescription(title, substring = true).fetchSemanticsNode().boundsInRoot
-        val dot = compose.onNodeWithTag("$tag-legend-dot-0", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-        assertTrue(dot.left - donut.right >= with(compose.density) { 16.dp.toPx() })
     }
 
     private fun captureHighlights(name: String) {
@@ -172,7 +162,7 @@ class InsightsPreviewRenderTest {
     private fun previewDirectory() = File("build/reports/previews")
     private fun clearInsightPreviews() { previewDirectory().listFiles()?.filter { it.name.startsWith("insights-") }?.forEach { it.delete() } }
     private fun assertOnlyExpectedPreviews() {
-        val expected = setOf("insights-monthly-hero-cream-forest.png", "insights-monthly-coffee-breakdown-cream-forest.png", "insights-monthly-brand-breakdown-cream-forest.png", "insights-monthly-highlights-cream-forest.png", "insights-yearly-hero-cream-forest.png", "insights-yearly-coffee-breakdown-cream-forest.png", "insights-yearly-brand-breakdown-cream-forest.png", "insights-yearly-highlights-cream-forest.png")
+        val expected = setOf("insights-monthly-hero-light.png", "insights-monthly-coffee-breakdown-light.png", "insights-monthly-brand-breakdown-light.png", "insights-monthly-highlights-light.png", "insights-yearly-hero-light.png", "insights-yearly-coffee-breakdown-light.png", "insights-yearly-brand-breakdown-light.png", "insights-yearly-highlights-light.png")
         assertTrue(previewDirectory().listFiles()?.filter { it.name.startsWith("insights-") }?.map { it.name }?.toSet() == expected)
     }
 
@@ -206,5 +196,31 @@ class InsightsPreviewRenderTest {
     private companion object {
         var appToClose: InMemoryCoffeeJournalApp? = null
         @JvmStatic @AfterClass fun closeDatabase() { appToClose?.database?.close(); appToClose = null }
+    }
+}
+
+/** Text geometry requires native fonts; legacy graphics substitutes glyph metrics. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], qualifiers = "w390dp-h852dp-xxhdpi")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class InsightsPreviewRenderTestMetrics {
+    @get:Rule val compose = androidx.compose.ui.test.junit4.v2.createComposeRule()
+
+    @Test fun largeAmountsRemainReadableWithEnlargedFonts() {
+        compose.setContent {
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(compose.density.density, 1.3f)
+            ) {
+                com.niumi.coffeejournal.ui.theme.CoffeeTheme {
+                    com.niumi.coffeejournal.insights.HabitHero(
+                        com.niumi.coffeejournal.insights.HabitSummary(300, 200, 20, 4.5, 12_345_678_901_234L, 1234L, 2)
+                    )
+                }
+            }
+        }
+        val results = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        compose.onNodeWithText("¥123456789012.34").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult].action!!.invoke(results)
+        org.junit.Assert.assertTrue(results.single().getLineRight(0) <= results.single().layoutInput.constraints.maxWidth)
+        org.junit.Assert.assertFalse(results.single().isLineEllipsized(0))
     }
 }

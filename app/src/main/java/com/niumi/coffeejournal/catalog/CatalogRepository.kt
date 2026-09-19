@@ -19,14 +19,30 @@ import com.niumi.coffeejournal.core.image.ImageKind
 import com.niumi.coffeejournal.core.image.ImageStore
 import android.database.sqlite.SQLiteConstraintException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 interface CatalogRepository {
     fun observeBrands(type: BrandType): Flow<List<Brand>>
     fun observeItems(brandId: String): Flow<List<CatalogItem>>
+    /** A read-only aggregate that also works for repository fakes backed by per-brand flows. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeCatalogItems(type: BrandType): Flow<List<CatalogItem>> =
+        observeBrands(type).flatMapLatest { brands ->
+            if (brands.isEmpty()) flowOf(emptyList())
+            else combine(brands.map { brand -> observeItems(brand.id) }) { lists ->
+                lists.flatMap { it }.filter { item ->
+                    (type == BrandType.CHAIN && item.type == ItemType.CHAIN_PRODUCT) ||
+                        (type == BrandType.ROASTER && item.type == ItemType.PERSONAL_BEAN)
+                }
+            }
+        }
     fun observeBrandOverviews(type: BrandType): Flow<List<BrandOverview>> =
         observeBrands(type).map { brands -> brands.map { BrandOverview(it, 0) } }
     suspend fun getBrand(brandId: String): Brand

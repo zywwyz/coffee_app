@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
@@ -24,6 +25,20 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CatalogViewModelTest {
+    @Test fun `catalog aggregate updates and tab switch replaces prior type`() = runBlocking {
+        val repository = FakeCatalogRepository()
+        val chain = Brand("chain", BrandType.CHAIN, "连锁", null, MaintenanceMode.MANUAL_ONLY, null)
+        val roaster = Brand("roaster", BrandType.ROASTER, "烘焙商", null, MaintenanceMode.MANUAL_ONLY, null)
+        repository.brands.value = listOf(chain, roaster)
+        repository.items.value = listOf(
+            CatalogItem("chain-item", chain.id, ItemType.CHAIN_PRODUCT, "美式", null, null, null, null, null, null, ItemStatus.ACTIVE),
+            CatalogItem("bean-item", roaster.id, ItemType.PERSONAL_BEAN, "花魁", null, null, null, null, null, null, ItemStatus.ACTIVE),
+        )
+        val model = viewModel(repository); yield()
+        assertEquals(listOf("chain-item"), model.uiState.value.allItems.map { it.id })
+        model.selectTab(CatalogTab.BEANS); yield()
+        assertEquals(listOf("bean-item"), model.uiState.value.allItems.map { it.id })
+    }
     @Test
     fun `seed metadata is exactly the bundled chain brands`() {
         assertEquals(
@@ -76,6 +91,7 @@ class CatalogViewModelTest {
     @Test
     fun `archive and status filters never delete items`() = runBlocking {
         val repository = FakeCatalogRepository()
+        repository.brands.value = listOf(Brand("roaster", BrandType.ROASTER, "烘焙商", null, MaintenanceMode.MANUAL_ONLY, null))
         val viewModel = viewModel(repository)
         val bean = item(status = ItemStatus.ACTIVE)
         repository.upsertItem(bean)
@@ -448,7 +464,7 @@ class CatalogViewModelTest {
         var failItemSave = false
         var itemSaveGate: CompletableDeferred<Unit>? = null
         override fun observeBrands(type: BrandType): Flow<List<Brand>> = brands
-        override fun observeItems(brandId: String): Flow<List<CatalogItem>> = items
+        override fun observeItems(brandId: String): Flow<List<CatalogItem>> = items.map { values -> values.filter { it.brandId == brandId } }
         override fun observeBrandOverviews(type: BrandType): Flow<List<BrandOverview>> =
             MutableStateFlow(emptyList())
         override suspend fun getBrand(brandId: String) = brands.value.single { it.id == brandId }

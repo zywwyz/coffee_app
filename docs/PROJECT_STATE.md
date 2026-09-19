@@ -8,7 +8,7 @@
 
 ## 当前开发阶段
 
-A「奶油贴纸簿·实拍版」及试用反馈二轮调整已实现：纸面背景、橄榄绿操作、白色照片贴纸与最近一杯便签统一至各客户端页面。模块单测、原生渲染预览、lint 和 Debug APK 构建通过。未做真机安装或 connected instrumentation 验证；本轮未重新构建 Release。
+日历保留 A「奶油贴纸簿·实拍版」。豆库与总结已改为轻量画布：暖白底、小图列表、跨品牌搜索与筛选，核心数字与占比横条。人工上传图片、离线存储与备份协议保持不变。模块回归及原生预览通过；未做真机验证。
 
 ## 技术栈与架构
 
@@ -25,23 +25,23 @@ A「奶油贴纸簿·实拍版」及试用反馈二轮调整已实现：纸面�
 
 - App 与首 Tab 为“咖啡日历”，无全局顶栏；底部根 Tab 为咖啡日历、豆库、总结。
 - 月历“品牌／咖啡”显示模式持久化；记录以本地中午的 date-only 语义保存，图片导入缩略图上限为 512px，并按三级回退。
-- 12 个预置连锁品牌 Logo，三列品牌网格与双列产品网格；用户可以本地手动维护连锁品牌、产品和产品实拍图。
+- 12 个预置连锁品牌 Logo，横向品牌筛选与 48dp 小缩略图产品列表；用户可以本地手动维护连锁品牌、产品和产品实拍图。
 - 手动新增/编辑/删除自定义连锁品牌与 Logo；手动新增/编辑/删除产品名称、黑咖/果咖/奶咖分类和可选实拍图。个人豆在统计中固定归类为“手冲”。
 - `DrinkSnapshot` 固化 `CoffeeType`：历史记录不受目录后续编辑影响；新建个人豆记录写入 `HAND_BREW`。
 - 备份格式为 v4：v1–v3 恢复时派生历史 `CoffeeType`，v4 恢复严格校验快照类型与领域规则；恢复仍采用 staging 校验与原子替换。
-- 总结支持月度/年度切换：习惯摘要含上期杯数差（月度同日比较、年度同期间比较，年份 1 无基线）；月度与年度均刻意不显示趋势卡；咖啡类型与品牌双 Donut（黑咖/果咖/奶咖/手冲；Top 4 品牌+其他）、Top 3，以及最好/最差记录卡与历史图片回退。Donut 图例与圆环保留 16dp 安全间距；每个图例固定为色点、名称、杯数、分隔符、百分比五列的单行对齐布局，仅名称列可换行，杯数和百分比列跨行对齐。
+- 总结支持月度/年度切换：习惯摘要含上期杯数差（月度同日比较、年度同期间比较，年份 1 无基线）；月度与年度均刻意不显示趋势卡；咖啡类型与品牌占比横条（黑咖/果咖/奶咖/手冲；Top 4 品牌+其他）、Top 3，以及最好/最差记录行与 40dp 历史图片回退。横条同时展示杯数和百分比，并提供完整的无障碍描述。
 - MANNER 使用用户确认来源图生成透明 512px 打包 Logo，并保留来源与输出哈希审计；所有内置品牌 Logo 随包提供。
 - minSdk 23；统计日期相关实现兼容 API 23。
 
 - A 视觉：共享细点纸底与胶带便签；日历按实际月份显示必要周数，空日透明，照片完整显示，摘要为三列数字。最近一杯限定当前月份，按时间与 id 稳定选择真实快照，点击进入原有当天详情。全宽记录按钮位于 Scaffold bottomBar，为小屏滚动内容预留空间。豆库、记录、总结、设置与底栏共享色板；持久层与备份逻辑未变。
 
-- 二轮布局：日历紧凑顶栏同排模式，照片格比例0.78、图片内距1dp；豆库收藏卡、横滑分类、两行产品名与流式豆子操作；总结紧凑模式导航、胶带摘要和分层指标。
+- 二轮布局：日历紧凑顶栏同排模式，照片格比例0.78、图片内距1dp；豆库、总结的收藏卡与胶带摘要已由本次轻量画布替代；品牌管理、豆子喝完/归档和月年导航保持可达。
 
 ## 关键数据流与决策
 
 记录：`JournalViewModel` 持久化草稿 → `JournalRepository` Room 事务写入记录和目录/图片/咖啡类型快照 → 日历及总结 Flow 自动刷新。目录更新不得改写历史快照；只有显式更换产品才产生新快照。
 
-目录：用户在本地选择 Logo/整张实拍图并手动维护。连锁产品仅有黑咖、果咖、奶咖三类；无图回退到品牌 Logo。个人豆记录快照归类为手冲。图片只通过系统 picker 获得单文件授权，原字节保存。
+目录：当前类型的各品牌产品通过只读 Flow 聚合，支持按产品名/品牌名搜索和品牌筛选，切换连锁/个人豆时重置筛选；用户在本地选择 Logo/整张实拍图并手动维护。连锁产品仅有黑咖、果咖、奶咖三类；无图回退到品牌 Logo。个人豆记录快照归类为手冲。图片只通过系统 picker 获得单文件授权，原字节保存。
 
 恢复：备份先在 staging 进行格式、数据库和图片校验，再通过图片协调锁和单一 Room 事务替换数据；失败或取消保持当前数据。ZIP 不加密，卸载或清除数据前必须导出。
 
@@ -75,14 +75,15 @@ export GRADLE_USER_HOME="$PWD/.worktrees/codex-coffee-journal/.gradle"
 ./.local-tools/gradle-8.13/bin/gradle testDebugUnitTest lintDebug assembleDebug --offline --no-daemon
 ```
 
-最终验证（2026-09-12）：
+最终验证（2026-09-17）：
 
-- `testDebugUnitTest lintDebug assembleDebug --offline --no-daemon`：PASS；395 tests，0 failures / errors / skips；lint 0 errors、8 warnings。
-- `testDebugUnitTest -PcalendarPreview --tests '*CalendarPreviewRenderTest' --offline --no-daemon`：PASS，10 tests；覆盖实拍/品牌、空月/满月、小屏、豆库与记录页。小屏断言便签不与记录按钮重叠。
-- `testDebugUnitTest -PinsightsPreview --tests '*InsightsPreviewRenderTest' --offline --no-daemon`：PASS，1 test，生成月度/年度共 8 张总结图。
-- 20 张真实 Compose 预览与安装包统一保存于 `build/deliverables/scrapbook-a-v2/`。测试照片不会打入 APK。
-- Debug APK：`build/deliverables/scrapbook-a-v2/coffee-journal-scrapbook-a-v2-debug.apk`，14,508,249 bytes，SHA-256 `7c83e5a24f439ee7a13753ee61b4831f6e9d6f05ac17e8b5a272838348d0e6d8`；版本 1.0，Android Debug 签名，`apksigner verify --print-certs` PASS。
-- 二轮 reviewer 发现的产品筛选溢出与长标题挤占返回区域已修复；复审无交付阻塞问题。日历320dp/1.3字体、设置标签完整显示及照片尺寸均有渲染断言。
+- `testDebugUnitTest lintDebug assembleDebug --offline --no-daemon`：PASS；394 tests，0 failures / errors / skips；lint 0 errors、8 warnings。
+- 最后指标自适应修改后，14 项定向总结测试、lint 与 Debug APK 重新验证 PASS；原生字体单独检查大金额/1.3 倍字体没有省略且文字在绘制边界内。
+- `testDebugUnitTest -PcalendarPreview --tests '*CalendarPreviewRenderTest' --offline --no-daemon`：PASS，11 tests；包含新豆库、搜索、320dp/1.3 字体、个人豆与产品列表。
+- `testDebugUnitTest -PinsightsPreview --tests '*InsightsPreviewRenderTest*' --offline --no-daemon`：PASS，2 tests；生成月度/年度共 8 张总结图，含原生金额排版检查。
+- 本轮截图与 APK 保存于 `build/deliverables/light-catalog-insights/`；README 的豆库、产品、总结三张真实预览已更新，日历图保持不变。测试照片不会打入 APK。
+- Debug APK：`coffee-journal-light-debug.apk`，14,854,782 bytes；SHA-256 `346f7fa4dc2bdde18e991b94728419b16eaf1c554e564d0cb9ff2ae4a21de16e`；签名验证 PASS。
+- reviewer 检查聚合目录、搜索筛选、目录切换与管理入口，无阻塞 findings；长名称评分已独立展示。
 - `git diff --check`：PASS。尚未进行真机验证。
 
-最后更新：2026-09-12
+最后更新：2026-09-17

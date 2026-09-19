@@ -191,7 +191,8 @@ class AppNavigationTest {
     fun chainBrandOpensChildPageAndHidesRootNavigation() {
         compose.setContent { CoffeeTheme { AppNavigation(FakeJournalRepository, ChainCatalogRepository) } }
         compose.onNodeWithText("豆库").performClick()
-        compose.onNodeWithTag(TestTags.ChainBrandCardPrefix + "custom").performClick()
+        compose.onNodeWithText("自定义连锁").performClick()
+        compose.onNodeWithText("管理品牌").performClick()
         compose.onNodeWithText("自定义连锁").assertIsDisplayed()
         compose.onAllNodesWithTag(TestTags.BottomCatalogTab).assertCountEquals(0)
 
@@ -199,7 +200,7 @@ class AppNavigationTest {
             compose.activity.onBackPressedDispatcher.onBackPressed()
         }
 
-        compose.onNodeWithTag(TestTags.ChainBrandCardPrefix + "custom").assertIsDisplayed()
+        compose.onNodeWithText("自定义连锁").assertIsDisplayed()
         compose.onNodeWithTag(TestTags.BottomCatalogTab).assertIsDisplayed()
     }
 
@@ -220,7 +221,8 @@ class AppNavigationTest {
             }
         }
         compose.onNodeWithText("豆库").performClick()
-        compose.onNodeWithTag(TestTags.ChainBrandCardPrefix + "custom").performClick()
+        compose.onNodeWithText("自定义连锁").performClick()
+        compose.onNodeWithText("管理品牌").performClick()
         compose.onNodeWithText("编辑品牌").performClick()
         compose.onNodeWithText("更换 Logo").performClick()
         compose.onNodeWithText("品牌名称").performTextClearance()
@@ -259,7 +261,8 @@ class AppNavigationTest {
             }
         }
         compose.onNodeWithText("豆库").performClick()
-        compose.onNodeWithTag(TestTags.ChainBrandCardPrefix + "custom").performClick()
+        compose.onNodeWithText("自定义连锁").performClick()
+        compose.onNodeWithText("管理品牌").performClick()
         compose.onNodeWithText("编辑品牌").performClick()
         compose.onNodeWithText("更换 Logo").performClick()
 

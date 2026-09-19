@@ -68,6 +68,9 @@ data class CatalogUiState(
     val brandOverviews: List<BrandOverview> = emptyList(),
     val selectedBrandId: String? = null,
     val items: List<CatalogItem> = emptyList(),
+    val allItems: List<CatalogItem> = emptyList(),
+    val catalogQuery: String = "",
+    val catalogBrandId: String? = null,
     val beanStatus: ItemStatus = ItemStatus.ACTIVE,
     val saving: Boolean = false,
     val errorMessage: String? = null,
@@ -75,7 +78,13 @@ data class CatalogUiState(
     val editorSession: CatalogEditorSession? = null,
 ) {
     val visibleItems: List<CatalogItem>
-        get() = if (tab == CatalogTab.BEANS) items.filter { it.status == beanStatus } else items
+        get() {
+            val source = allItems
+            return source.filter { item ->
+                (tab != CatalogTab.BEANS || item.status == beanStatus) &&
+                    (catalogBrandId == null || item.brandId == catalogBrandId)
+            }
+        }
 }
 
 sealed interface CatalogEditorSession {
@@ -123,6 +132,7 @@ class CatalogViewModel(
     val uiState: StateFlow<CatalogUiState> = mutableState.asStateFlow()
     private var brandsJob: Job? = null
     private var itemsJob: Job? = null
+    private var catalogItemsJob: Job? = null
     private val leaseMutex = Mutex()
     private val assetLeases = mutableMapOf<String, StagedAssetLease>()
 
@@ -137,15 +147,18 @@ class CatalogViewModel(
             }
         }
         observeBrands(BrandType.CHAIN)
+        observeCatalogItems(BrandType.CHAIN)
     }
 
     fun selectTab(tab: CatalogTab) {
         if (mutableState.value.saving || tab == mutableState.value.tab) return
         itemsJob?.cancel()
         mutableState.value = mutableState.value.copy(
-            tab = tab, selectedBrandId = null, items = emptyList(), errorMessage = null,
+            tab = tab, selectedBrandId = null, items = emptyList(), allItems = emptyList(),
+            catalogQuery = "", catalogBrandId = null, errorMessage = null,
         )
         observeBrands(if (tab == CatalogTab.CHAINS) BrandType.CHAIN else BrandType.ROASTER)
+        observeCatalogItems(if (tab == CatalogTab.CHAINS) BrandType.CHAIN else BrandType.ROASTER)
     }
 
     fun selectBrand(brandId: String) {
@@ -162,6 +175,14 @@ class CatalogViewModel(
 
     fun selectBeanStatus(status: ItemStatus) {
         if (status in BEAN_FILTERS) mutableState.value = mutableState.value.copy(beanStatus = status)
+    }
+
+    fun updateCatalogQuery(query: String) {
+        mutableState.value = mutableState.value.copy(catalogQuery = query)
+    }
+
+    fun selectCatalogBrand(brandId: String?) {
+        mutableState.value = mutableState.value.copy(catalogBrandId = brandId)
     }
 
     fun saveBrand(editor: BrandEditor) = saveAction {
@@ -384,6 +405,15 @@ class CatalogViewModel(
         brandsJob = scope.launch {
             repository.observeBrandOverviews(type).collect { overviews ->
                 mutableState.value = mutableState.value.copy(brandOverviews = overviews)
+            }
+        }
+    }
+
+    private fun observeCatalogItems(type: BrandType) {
+        catalogItemsJob?.cancel()
+        catalogItemsJob = scope.launch {
+            repository.observeCatalogItems(type).collect { items ->
+                mutableState.value = mutableState.value.copy(allItems = items)
             }
         }
     }

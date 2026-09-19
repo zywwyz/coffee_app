@@ -32,7 +32,7 @@ class MainActivityAppNavigationTest {
     fun custom_bottom_navigation_switches_exact_roots_and_restores_them_from_settings() {
         val roots = listOf(
             Triple(TestTags.BottomCalendarTab, "咖啡日历", "咖啡日历"),
-            Triple(TestTags.BottomCatalogTab, "豆库", "我的咖啡豆库"),
+            Triple(TestTags.BottomCatalogTab, "豆库", "豆库"),
             Triple(TestTags.BottomInsightsTab, "总结", "总结"),
         )
 
@@ -74,19 +74,20 @@ class MainActivityAppNavigationTest {
     @Test
     fun bundled_chain_brand_hides_navigation_until_back_returns_to_catalog_root() {
         val tabs = listOf(TestTags.BottomCalendarTab, TestTags.BottomCatalogTab, TestTags.BottomInsightsTab)
-        val brandTag = TestTags.ChainBrandCardPrefix + BUNDLED_CHAIN_BRANDS.first().brand.id
+        val brandName = BUNDLED_CHAIN_BRANDS.first().brand.name
 
         compose.onNodeWithTag(TestTags.BottomCatalogTab).performClick().assertIsSelected()
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithTag(brandTag).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithText(brandName).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithTag(brandTag).performClick()
+        compose.onNodeWithText(brandName).performClick()
+        compose.onNodeWithText("管理品牌").performClick()
         tabs.forEach { compose.onAllNodesWithTag(it).assertCountEquals(0) }
 
         compose.activity.runOnUiThread {
             compose.activity.onBackPressedDispatcher.onBackPressed()
         }
-        compose.onNodeWithTag(TestTags.RootScreenTitle).assertTextEquals("我的咖啡豆库")
+        compose.onNodeWithTag(TestTags.RootScreenTitle).assertTextEquals("豆库")
         compose.onNodeWithTag(TestTags.BottomCatalogTab).assertIsDisplayed().assertIsSelected()
         compose.onAllNodesWithTag(TestTags.BottomSelectedCapsule, useUnmergedTree = true).assertCountEquals(1)
     }

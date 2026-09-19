@@ -48,6 +48,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.AnnotatedString
@@ -63,14 +65,14 @@ import com.niumi.coffeejournal.journal.Clock
 import com.niumi.coffeejournal.journal.JournalRepository
 import com.niumi.coffeejournal.journal.SystemClock
 import com.niumi.coffeejournal.ui.CoffeeVisuals
-import com.niumi.coffeejournal.ui.ScrapbookNote
-import com.niumi.coffeejournal.ui.scrapbookPaper
 import java.math.BigInteger
 import java.util.Locale
 
 internal val InsightsSurfaceColor = SemanticsPropertyKey<Color>("InsightsSurfaceColor")
 internal val InsightsMetricCardColor = SemanticsPropertyKey<Color>("InsightsMetricCardColor")
 private val donutColors = listOf(CoffeeVisuals.forest, CoffeeVisuals.peach, CoffeeVisuals.mint, CoffeeVisuals.warmOutline)
+private val insightsCanvas = Color(0xFFFFFCF6)
+private val sage = Color(0xFF72856A)
 
 @Composable
 fun InsightsFeature(
@@ -95,8 +97,8 @@ fun InsightsScreen(
 ) {
     val report = if (state.mode == InsightsMode.MONTHLY) state.monthly?.let { it.period to Dashboard(it.habit, it.coffeeTypeShares, it.brandShares, it.topBrands, it.topProducts, it.best, it.worst) }
     else state.yearly?.let { it.period to Dashboard(it.habit, it.coffeeTypeShares, it.brandShares, it.topBrands, it.topProducts, it.best, it.worst) }
-    Column(Modifier.fillMaxSize().scrapbookPaper().testTag(TestTags.InsightsSurface)
-        .semantics { this[InsightsSurfaceColor] = CoffeeVisuals.cream }.verticalScroll(rememberScrollState()).padding(16.dp),
+    Column(Modifier.fillMaxSize().background(insightsCanvas).testTag(TestTags.InsightsSurface)
+        .semantics { this[InsightsSurfaceColor] = insightsCanvas }.verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("总结", style = MaterialTheme.typography.titleLarge, color = CoffeeVisuals.darkCoffee, modifier = Modifier.weight(1f).testTag(TestTags.RootScreenTitle))
@@ -132,8 +134,8 @@ private data class Dashboard(val habit: HabitSummary, val types: List<ShareValue
 
 @Composable private fun DashboardContent(data: Dashboard, resolver: ImagePathResolver, onOpenRecord: (String) -> Unit) {
     HabitHero(data.habit)
-    DonutCard("咖啡类型", data.types, TestTags.InsightsCoffeeTypeDonut, Modifier.fillMaxWidth())
-    DonutCard("常喝品牌", data.brands, TestTags.InsightsBrandDonut, Modifier.fillMaxWidth())
+    ShareBars("咖啡类型", data.types, TestTags.InsightsCoffeeTypeDonut, Modifier.fillMaxWidth())
+    ShareBars("常喝品牌", data.brands, TestTags.InsightsBrandDonut, Modifier.fillMaxWidth())
     RankingCard("Top3 品牌", data.topBrands, TestTags.InsightsTopBrands, Modifier.fillMaxWidth())
     RankingCard("Top3 产品", data.topProducts, TestTags.InsightsTopProducts, Modifier.fillMaxWidth())
     data.best?.let { HighlightCard("本期最好", it, TestTags.InsightsBestCard, resolver, onOpenRecord) }
@@ -142,48 +144,43 @@ private data class Dashboard(val habit: HabitSummary, val types: List<ShareValue
     else Text("本期暂无评分记录", color = CoffeeVisuals.secondaryText)
 }
 
-@Composable private fun HabitHero(habit: HabitSummary) = ScrapbookNote(Modifier.fillMaxWidth().testTag(TestTags.InsightsHabitHero).semantics { this[InsightsMetricCardColor] = CoffeeVisuals.white }) {
-    Text("本期饮用习惯", color = CoffeeVisuals.forest)
-    Row(verticalAlignment = Alignment.Bottom) { Text("${habit.cups}", style = MaterialTheme.typography.displayLarge, color = CoffeeVisuals.forest); Text("杯", color = CoffeeVisuals.secondaryText, modifier = Modifier.padding(start = 4.dp, bottom = 9.dp)) }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Column(Modifier.weight(1f)) { Text("总消费", color = CoffeeVisuals.secondaryText, style = MaterialTheme.typography.labelSmall); Text(habit.totalSpendFen?.let(::formatFen) ?: "—", color = CoffeeVisuals.darkCoffee, style = MaterialTheme.typography.titleSmall) }
-        Column(Modifier.weight(1f)) { Text("杯均", color = CoffeeVisuals.secondaryText, style = MaterialTheme.typography.labelSmall); Text(habit.averagePriceFen?.let(::formatFen) ?: "—", color = CoffeeVisuals.darkCoffee, style = MaterialTheme.typography.titleSmall) }
+@Composable internal fun HabitHero(habit: HabitSummary) = Column(Modifier.fillMaxWidth().testTag(TestTags.InsightsHabitHero).semantics { this[InsightsMetricCardColor] = insightsCanvas }, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Text("本期饮用习惯", color = sage, style = MaterialTheme.typography.labelLarge)
+    androidx.compose.foundation.layout.BoxWithConstraints {
+        val values = listOf("杯数" to "${habit.cups}杯", "总消费" to (habit.totalSpendFen?.let(::formatFen) ?: "—"), "杯均" to (habit.averagePriceFen?.let(::formatFen) ?: "—"), "平均评分" to (habit.averageRating?.let { String.format(Locale.ROOT, "%.1f", it) } ?: "—"))
+        val measurer = rememberTextMeasurer()
+        val density = LocalDensity.current
+        val labelStyle = MaterialTheme.typography.labelSmall
+        val valueStyle = MaterialTheme.typography.titleMedium
+        val widths = values.map { (label, value) -> with(density) { maxOf(measurer.measure(AnnotatedString(label), labelStyle).size.width, measurer.measure(AnnotatedString(value), valueStyle).size.width).toDp() } }
+        val gap = 8.dp
+        val columns = when {
+            widths.max() * 4 + gap * 3 <= maxWidth -> 4
+            widths.max() * 2 + gap <= maxWidth -> 2
+            else -> 1
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { values.chunked(columns).forEach { row -> MetricRow(row) } }
     }
-    Text("饮用天数 ${habit.drinkingDays} 天", color = CoffeeVisuals.secondaryText)
-    Text("最长连续 ${habit.longestStreak} 天 · 平均评分 ${habit.averageRating?.let { String.format(Locale.ROOT, "%.1f", it) } ?: "—"}", color = CoffeeVisuals.secondaryText)
-    Text("杯数较上期 ${habit.cupDelta?.let { if (it >= 0) "+$it" else "$it" } ?: "—"}", color = CoffeeVisuals.secondaryText)
+    Text("饮用天数 ${habit.drinkingDays} 天 · 最长连续 ${habit.longestStreak} 天", color = CoffeeVisuals.secondaryText, style = MaterialTheme.typography.bodySmall)
+    Text("杯数较上期 ${habit.cupDelta?.let { if (it >= 0) "+$it" else "$it" } ?: "—"}", color = CoffeeVisuals.secondaryText, style = MaterialTheme.typography.bodySmall)
 }
 
-@Composable private fun DonutCard(title: String, shares: List<ShareValue>, tag: String, modifier: Modifier) = CoffeeCard(modifier.testTag(tag)) {
-    Text(title, color = CoffeeVisuals.forest)
-    val textMeasurer = rememberTextMeasurer()
-    val valueTextStyle = LocalTextStyle.current
-    val density = LocalDensity.current
-    fun widestValueWidth(values: List<String>) = with(density) {
-        values.maxOf { value -> textMeasurer.measure(AnnotatedString(value), style = valueTextStyle, maxLines = 1).size.width }.toDp() + 2.dp
-    }
-    val cupsColumnWidth = remember(shares, valueTextStyle, density.density, density.fontScale) { widestValueWidth(shares.map { "${it.cups}杯" }) }
-    val percentColumnWidth = remember(shares, valueTextStyle, density.density, density.fontScale) { widestValueWidth(shares.map(::percent)) }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(96.dp), contentAlignment = Alignment.Center) { Canvas(Modifier.size(90.dp).semantics { contentDescription = "$title：" + shares.joinToString { "${donutLabel(it.label)} ${it.cups}杯 ${percent(it)}" } }) { var start = -90f; shares.forEachIndexed { i, s -> val sweep = (s.fraction * 360f).toFloat(); drawArc(donutColors[i % donutColors.size], start, sweep, false, style = Stroke(16.dp.toPx())); start += sweep } }; Text("${shares.sumOf { it.cups }}\n杯", color = CoffeeVisuals.forest) }
-        Column(Modifier.weight(1f)) {
-            shares.forEachIndexed { index, share ->
-                val label = donutLabel(share.label)
-                Row(Modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = "$label · ${share.cups}杯 · ${percent(share)}" }) {
-                    Box(Modifier.padding(top = 4.dp).size(8.dp).background(donutColors[index % donutColors.size], CircleShape).testTag("$tag-legend-dot-$index"))
-                    Text(label, Modifier.weight(1f).padding(start = 6.dp).alignByBaseline().testTag("$tag-legend-label-$index"), color = CoffeeVisuals.secondaryText)
-                    Text("${share.cups}杯", Modifier.width(cupsColumnWidth).alignByBaseline().testTag("$tag-legend-cups-$index"), color = CoffeeVisuals.secondaryText, maxLines = 1, textAlign = TextAlign.End)
-                    Text("·", Modifier.width(14.dp).alignByBaseline(), color = CoffeeVisuals.secondaryText, maxLines = 1, textAlign = TextAlign.Center)
-                    Text(percent(share), Modifier.width(percentColumnWidth).alignByBaseline().testTag("$tag-legend-percent-$index"), color = CoffeeVisuals.secondaryText, maxLines = 1, textAlign = TextAlign.End)
-                }
-            }
+@Composable private fun MetricRow(values: List<Pair<String, String>>) = Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { values.forEach { (label, value) -> Column(Modifier.weight(1f)) { Text(label, color = CoffeeVisuals.secondaryText, style = MaterialTheme.typography.labelSmall); Text(value, color = CoffeeVisuals.darkCoffee, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) } } }
+
+@Composable private fun ShareBars(title: String, shares: List<ShareValue>, tag: String, modifier: Modifier) = Column(modifier.testTag(tag), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Text(title, color = sage, style = MaterialTheme.typography.titleMedium)
+    if (shares.isEmpty()) Text("—", color = CoffeeVisuals.secondaryText)
+    shares.forEachIndexed { index, share ->
+        val label = donutLabel(share.label)
+        Column(Modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = "$label · ${share.cups}杯 · ${percent(share)}" }, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Row(Modifier.fillMaxWidth()) { Text(label, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, color = CoffeeVisuals.darkCoffee); Text("${share.cups}杯 · ${percent(share)}", color = CoffeeVisuals.secondaryText, style = MaterialTheme.typography.bodySmall) }
+            Box(Modifier.fillMaxWidth().height(8.dp).background(CoffeeVisuals.mint, RoundedCornerShape(99.dp))) { Box(Modifier.fillMaxWidth(share.fraction.coerceIn(0.0, 1.0).toFloat()).height(8.dp).background(if (index % 2 == 0) sage else CoffeeVisuals.peach, RoundedCornerShape(99.dp)).testTag("$tag-bar-$index").semantics { progressBarRangeInfo = ProgressBarRangeInfo(share.fraction.coerceIn(0.0, 1.0).toFloat(), 0f..1f) }) }
         }
     }
 }
-@Composable private fun RankingCard(title: String, values: List<RankedValue>, tag: String, modifier: Modifier) = CoffeeCard(modifier.testTag(tag)) { Text(title, color = CoffeeVisuals.forest); values.take(3).forEachIndexed { i, value -> Row(Modifier.fillMaxWidth().semantics { contentDescription = "$title 第${i + 1}名 ${value.name} ${value.cups}杯" }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(24.dp).background(CoffeeVisuals.peach, CircleShape), contentAlignment = Alignment.Center) { Text("${i + 1}", color = CoffeeVisuals.darkCoffee) }; Text(value.name, Modifier.weight(1f).padding(horizontal = 8.dp)); Text("${value.cups}杯", color = CoffeeVisuals.secondaryText) } }; if (values.isEmpty()) Text("—", color = CoffeeVisuals.secondaryText) }
-@Composable private fun HighlightCard(title: String, item: HighlightRecord, tag: String, resolver: ImagePathResolver, onOpen: (String) -> Unit) = CoffeeCard(Modifier.fillMaxWidth().testTag(tag).clickable { onOpen(item.recordId) }) { Row(verticalAlignment = Alignment.CenterVertically) { val logo = bundledBrandLogoRes(item.brandName); val fallbackPainter = logo?.let { painterResource(it) }; val imageTag = if (tag == TestTags.InsightsBestCard) TestTags.InsightsBestImage else TestTags.InsightsWorstImage; ResolvedLocalAssetImage(item.imageAssetId, item.brandLogoAssetId, resolver, "$title ${item.brandName}", ContentScale.Fit, Modifier.size(88.dp).testTag(imageTag).border(1.dp, CoffeeVisuals.warmOutline, RoundedCornerShape(CoffeeVisuals.cornerSmall)), fallbackPainter); Column(Modifier.weight(1f).padding(start = 12.dp)) { Text(title, color = CoffeeVisuals.forest); Text(item.brandName, color = CoffeeVisuals.secondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(item.itemName, maxLines = 1, overflow = TextOverflow.Ellipsis); Text("${item.ratingHalfStars / 2.0}★", color = CoffeeVisuals.forest); if (item.tiedProductCount > 0) Text("另有 ${item.tiedProductCount} 款并列", color = CoffeeVisuals.secondaryText) } } }
-@Composable private fun CoffeeCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) = Card(modifier.semantics { this[InsightsMetricCardColor] = CoffeeVisuals.white }, shape = RoundedCornerShape(CoffeeVisuals.cornerMedium), colors = CardDefaults.cardColors(containerColor = CoffeeVisuals.white)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp), content = content) }
-@Composable private fun EmptyCard(title: String) = CoffeeCard(Modifier.fillMaxWidth()) { Text(title, color = CoffeeVisuals.forest); Text("下一杯会从这里开始留下痕迹", color = CoffeeVisuals.secondaryText) }
+@Composable private fun RankingCard(title: String, values: List<RankedValue>, tag: String, modifier: Modifier) = Column(modifier.testTag(tag), verticalArrangement = Arrangement.spacedBy(4.dp)) { Text(title, color = sage, style = MaterialTheme.typography.titleMedium); values.take(3).forEachIndexed { i, value -> Row(Modifier.fillMaxWidth().semantics { contentDescription = "$title 第${i + 1}名 ${value.name} ${value.cups}杯" }.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) { Text("${i + 1}", Modifier.size(24.dp).background(CoffeeVisuals.peach, CircleShape).padding(top = 2.dp), color = CoffeeVisuals.darkCoffee, textAlign = TextAlign.Center); Text(value.name, Modifier.weight(1f).padding(horizontal = 8.dp), maxLines = 1, overflow = TextOverflow.Ellipsis); Text("${value.cups}杯", color = CoffeeVisuals.secondaryText) } }; if (values.isEmpty()) Text("—", color = CoffeeVisuals.secondaryText) }
+@Composable private fun HighlightCard(title: String, item: HighlightRecord, tag: String, resolver: ImagePathResolver, onOpen: (String) -> Unit) = Row(Modifier.fillMaxWidth().testTag(tag).clickable { onOpen(item.recordId) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) { val logo = bundledBrandLogoRes(item.brandName); val fallbackPainter = logo?.let { painterResource(it) }; val imageTag = if (tag == TestTags.InsightsBestCard) TestTags.InsightsBestImage else TestTags.InsightsWorstImage; ResolvedLocalAssetImage(item.imageAssetId, item.brandLogoAssetId, resolver, "$title ${item.brandName}", ContentScale.Fit, Modifier.size(40.dp).testTag(imageTag).background(CoffeeVisuals.white, RoundedCornerShape(CoffeeVisuals.cornerSmall)), fallbackPainter); Column(Modifier.weight(1f).padding(start = 10.dp)) { Text(title, color = sage, style = MaterialTheme.typography.labelMedium); Text(item.brandName, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(item.itemName, maxLines = 1, overflow = TextOverflow.Ellipsis); if (item.tiedProductCount > 0) Text("另有 ${item.tiedProductCount} 款并列", color = CoffeeVisuals.secondaryText, style = MaterialTheme.typography.bodySmall) }; Text("${item.ratingHalfStars / 2.0}★", color = sage, maxLines = 1) }
+@Composable private fun EmptyCard(title: String) = Column(Modifier.fillMaxWidth().padding(vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) { Text(title, color = sage); Text("下一杯会从这里开始留下痕迹", color = CoffeeVisuals.secondaryText) }
 private fun percent(share: ShareValue) = String.format(Locale.ROOT, "%.0f%%", share.fraction * 100)
 private fun donutLabel(label: String) = when (label) { "BLACK" -> "黑咖"; "FRUIT" -> "果咖"; "MILK" -> "奶咖"; "HAND_BREW" -> "手冲"; "OTHER" -> "其他"; else -> label }
 internal fun formatFen(fen: Long): String = "¥${fenWithoutSymbol(fen)}"

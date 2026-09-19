@@ -8,6 +8,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -30,6 +34,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performScrollTo
 import com.niumi.coffeejournal.catalog.BrandOverview
 import com.niumi.coffeejournal.catalog.CatalogScreen
@@ -160,26 +166,60 @@ class CalendarPreviewRenderTest {
         }
         compose.onNodeWithTag(TestTags.BrandProductGrid).assertIsDisplayed()
         compose.onNodeWithText("桂花燕麦拿铁秋日限定超长产品名称").assertIsDisplayed()
-        capture("catalog-products-scrapbook.png")
+        capture("catalog-products-light.png")
     }
 
     @Test
-    fun `renders scrapbook brand collection`() {
-        compose.setContent {
-            CoffeeTheme {
-                Scaffold(bottomBar = { CoffeeBottomNavigation(com.niumi.coffeejournal.navigation.Catalog, {}) }) { padding ->
-                    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.padding(padding)) {
+    fun `renders light catalog with mixed real photos logos and placeholders`() {
+        setLightCatalog()
+        compose.onNodeWithTag(TestTags.CatalogProductList).assertIsDisplayed()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithContentDescription("经典冰拿铁 图片", useUnmergedTree = true).fetchSemanticsNodes().any {
+                runCatching { it.config[SemanticsProperties.StateDescription] }.getOrNull() == "主图片已加载"
+            }
+        }
+        val photo = compose.onNodeWithTag(TestTags.CatalogProductImagePrefix + "light-0", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        with(compose.density) { assertTrue("catalog photo must remain a small thumbnail", photo.width <= 49.dp.toPx() && photo.height <= 49.dp.toPx()) }
+        capture("catalog-light.png")
+        compose.onNodeWithText("搜索品牌或产品").performTextInput("桂花")
+        compose.onNodeWithText("桂花拿铁").assertIsDisplayed()
+        compose.onNodeWithText("经典冰拿铁").assertDoesNotExist()
+        capture("catalog-search-light.png")
+    }
+
+    @Test
+    @Config(sdk = [35], qualifiers = "w320dp-h640dp-xhdpi")
+    fun `renders light catalog with enlarged fonts on narrow display`() {
+        setLightCatalog(fontScale = 1.3f)
+        compose.onNodeWithText("经典冰拿铁").assertIsDisplayed()
+        compose.onNodeWithTag(TestTags.BottomCatalogTab).assertIsDisplayed()
+        capture("catalog-narrow-light.png")
+    }
+
+    private fun setLightCatalog(fontScale: Float = 1f) {
+        val brands = BUNDLED_CHAIN_BRANDS.take(3).map { it.brand } + Brand("custom-preview", BrandType.CHAIN, "街角咖啡", null, MaintenanceMode.MANUAL_ONLY, null)
+        val products = listOf("经典冰拿铁", "桂花拿铁", "燕麦拿铁", "手作美式", "冷萃咖啡", "柚子美式").mapIndexed { index, name ->
+            CatalogItem("light-$index", brands[index % brands.size].id, ItemType.CHAIN_PRODUCT, name,
+                if (index == 0 || index == 4) "preview-photo" else null, null, null, null, null, null, ItemStatus.ACTIVE,
+                chainProductKind = if (index < 3) ChainProductKind.MILK else ChainProductKind.BLACK)
+        }
+        compose.setContent { CoffeeTheme {
+            Scaffold(bottomBar = { CoffeeBottomNavigation(com.niumi.coffeejournal.navigation.Catalog, {}) }) { padding ->
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.padding(padding)) {
+                    CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) {
+                        var catalogState by remember { mutableStateOf(CatalogUiState(brandOverviews = brands.map { brand -> BrandOverview(brand, products.count { it.brandId == brand.id }) }, allItems = products)) }
                         CatalogScreen(
-                            state = CatalogUiState(brandOverviews = BUNDLED_CHAIN_BRANDS.map { BrandOverview(it.brand, 0) }),
+                            state = catalogState,
+                            onUpdateCatalogQuery = { catalogState = catalogState.copy(catalogQuery = it) },
+                            onSelectCatalogBrand = { catalogState = catalogState.copy(catalogBrandId = it) },
                             onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {}, onSaveBrand = {},
                             onSaveItem = {}, onSetItemStatus = { _, _ -> }, onClearError = {},
+                            imagePathResolver = { if (it == "preview-photo") previewProductImage().absolutePath else null },
                         )
                     }
                 }
             }
-        }
-        compose.onNodeWithTag(TestTags.ChainBrandGrid).assertIsDisplayed()
-        capture("catalog-scrapbook.png")
+        } }
     }
 
     @Test
@@ -189,12 +229,12 @@ class CalendarPreviewRenderTest {
         compose.setContent { CoffeeTheme {
             Scaffold(bottomBar = { CoffeeBottomNavigation(com.niumi.coffeejournal.navigation.Catalog, {}) }) { padding ->
                 androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.padding(padding)) {
-                    CatalogScreen(CatalogUiState(tab = CatalogTab.BEANS, brandOverviews = listOf(BrandOverview(brand, 1)), selectedBrandId = brand.id, items = listOf(bean)), {}, {}, {}, {}, {}, { _, _ -> }, {})
+                    CatalogScreen(CatalogUiState(tab = CatalogTab.BEANS, brandOverviews = listOf(BrandOverview(brand, 1)), selectedBrandId = brand.id, items = listOf(bean), allItems = listOf(bean)), {}, {}, {}, {}, {}, { _, _ -> }, {})
                 }
             }
         } }
         compose.onNodeWithText(bean.name).performScrollTo().assertIsDisplayed()
-        capture("catalog-beans-scrapbook.png")
+        capture("catalog-beans-light.png")
     }
 
     @Test

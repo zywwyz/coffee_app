@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items as columnItems
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedButton
@@ -28,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.Image
@@ -65,29 +69,20 @@ fun BrandProductsScreen(brand: Brand, items: List<CatalogItem>, imagePathResolve
             if (items.any { it.chainProductKind == ChainProductKind.PENDING }) FilterChip(filter == ChainProductKind.PENDING, { filter = ChainProductKind.PENDING }, label = { Text("待分类") })
         }
         if (shown.isEmpty()) Column(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.Center) { Text("暂无产品"); Button(onClick = onAddProduct) { Text("新增产品") } }
-        else LazyVerticalGrid(GridCells.Fixed(2), modifier = Modifier.weight(1f).testTag(TestTags.BrandProductGrid), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(shown, key = { it.id }) { item -> androidx.compose.material3.Card(Modifier.testTag(TestTags.BrandProductCardPrefix + item.id).clickable { onEditProduct(item) }, colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = CoffeeVisuals.white)) { Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                val bundled = BUNDLED_CHAIN_BRANDS.firstOrNull { it.brand.id == brand.id }
-                CatalogMediaFrame(Modifier.testTag(TestTags.BrandProductMediaFramePrefix + item.id)) {
-                    ResolvedLocalAssetImage(
-                        primaryAssetId = item.imageAssetId,
-                        fallbackAssetId = brand.logoAssetId,
-                        resolver = imagePathResolver,
-                        fallbackPainter = bundled?.let { painterResource(it.logoRes) },
-                        contentDescription = "${item.name} 图片",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+        else LazyColumn(modifier = Modifier.weight(1f).testTag(TestTags.BrandProductGrid), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            columnItems(shown, key = { it.id }) { item ->
+                Row(Modifier.fillMaxWidth().testTag(TestTags.BrandProductCardPrefix + item.id).clickable { onEditProduct(item) }.padding(vertical = 7.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    val bundled = BUNDLED_CHAIN_BRANDS.firstOrNull { it.brand.id == brand.id }
+                    androidx.compose.foundation.layout.Box(Modifier.size(48.dp).background(CoffeeVisuals.white, RoundedCornerShape(CoffeeVisuals.cornerSmall)).semantics { this[CatalogMediaFrameColor] = CoffeeVisuals.white; this[CatalogMediaFrameOutlineColor] = androidx.compose.ui.graphics.Color.Transparent }.testTag(TestTags.BrandProductMediaFramePrefix + item.id)) {
+                        ResolvedLocalAssetImage(item.imageAssetId, brand.logoAssetId, imagePathResolver, "${item.name} 图片", ContentScale.Fit, Modifier.fillMaxSize().padding(4.dp), bundled?.let { painterResource(it.logoRes) })
+                    }
+                    Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                        Text(item.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+                        Text(item.chainProductKind?.let(::publicKindLabel) ?: "待分类", color = CoffeeVisuals.secondaryText, style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (custom) TextButton(onClick = { deletingProduct = item }) { Text("删除") }
                 }
-                Text(item.name, maxLines = 2, style = MaterialTheme.typography.titleSmall)
-                Text(
-                    item.chainProductKind?.let(::publicKindLabel) ?: "待分类",
-                    color = CoffeeVisuals.forest,
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.background(CoffeeVisuals.mint, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 3.dp),
-                )
-                if (custom) TextButton(onClick = { deletingProduct = item }) { Text("删除") }
-            } } }
+            }
         }
         OutlinedButton(onClick = onAddProduct, modifier = Modifier.fillMaxWidth()) { Text("新增产品") }
     }

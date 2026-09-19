@@ -1,5 +1,6 @@
 package com.niumi.coffeejournal.catalog
 
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -17,6 +18,8 @@ import androidx.compose.runtime.mutableStateOf
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.ItemStatus
+import com.niumi.coffeejournal.core.model.ItemType
+import com.niumi.coffeejournal.core.model.CatalogItem
 import com.niumi.coffeejournal.core.model.MaintenanceMode
 import com.niumi.coffeejournal.ui.theme.CoffeeTheme
 import com.niumi.coffeejournal.ui.CoffeeVisuals
@@ -33,25 +36,33 @@ import org.robolectric.annotation.Config
 class CatalogScreenRobolectricTest {
     @get:Rule val compose = createComposeRule()
 
-    @Test
-    fun `chain brand card provides a clean white media frame`() {
-        compose.setContent { CoffeeTheme {
-            CatalogScreen(
-                state = state(), onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {},
-                onSaveBrand = {}, onSaveItem = {}, onSetItemStatus = { _, _ -> }, onClearError = {},
-            )
-        } }
-
-        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.ChainBrandMediaFramePrefix + "brand", useUnmergedTree = true)
-            .assertIsDisplayed()
-            .assert(SemanticsMatcher.expectValue(CatalogMediaFrameColor, CoffeeVisuals.white))
-            .assert(SemanticsMatcher.expectValue(CatalogMediaFrameOutlineColor, androidx.compose.ui.graphics.Color.Transparent))
-        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CatalogSurface, useUnmergedTree = true)
-            .assert(SemanticsMatcher.expectValue(CatalogSurfaceColor, CoffeeVisuals.cream))
+    @Test fun `root list searches product and brand names across brands`() {
+        val first = Brand("first", BrandType.CHAIN, "瑞幸", null, MaintenanceMode.MANUAL_ONLY, null)
+        val second = Brand("second", BrandType.CHAIN, "MANNER", null, MaintenanceMode.MANUAL_ONLY, null)
+        val latte = CatalogItem("latte", "first", ItemType.CHAIN_PRODUCT, "生椰拿铁", null, null, null, null, null, null, ItemStatus.ACTIVE)
+        val americano = CatalogItem("americano", "second", ItemType.CHAIN_PRODUCT, "冰美式", null, null, null, null, null, null, ItemStatus.ACTIVE)
+        val screen = mutableStateOf(CatalogUiState(brandOverviews = listOf(BrandOverview(first, 1), BrandOverview(second, 1)), allItems = listOf(latte, americano)))
+        compose.setContent { CoffeeTheme { CatalogScreen(screen.value, {}, {}, {}, onUpdateCatalogQuery = { screen.value = screen.value.copy(catalogQuery = it) }, onSelectCatalogBrand = { screen.value = screen.value.copy(catalogBrandId = it) }, onSaveBrand = {}, onSaveItem = {}, onSetItemStatus = { _, _ -> }, onClearError = {}) } }
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CatalogProductRowPrefix + "latte").assertIsDisplayed()
+        compose.onNodeWithText("搜索品牌或产品").performTextInput("MANNER")
+        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CatalogProductRowPrefix + "americano").assertIsDisplayed()
     }
 
     @Test
-    fun `chain catalog shows compact brand grid without legacy metadata`() {
+    fun `catalog product row keeps a forty eight dp fit media frame`() {
+        val item = CatalogItem("product", "brand", ItemType.CHAIN_PRODUCT, "美式", null, null, null, null, null, null, ItemStatus.ACTIVE)
+        compose.setContent { CoffeeTheme {
+            CatalogScreen(
+                state = state().copy(allItems = listOf(item)), onSelectTab = {}, onSelectBrand = {}, onSelectBeanStatus = {},
+                onSaveBrand = {}, onSaveItem = {}, onSetItemStatus = { _, _ -> }, onClearError = {},
+            )
+        } }
+        val image = compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.CatalogProductImagePrefix + "product", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        org.junit.Assert.assertEquals(with(compose.density) { 48.dp.toPx() }, image.width, 1f)
+    }
+
+    @Test
+    fun `chain catalog exposes search tabs and add menu`() {
         compose.setContent {
             CoffeeTheme {
                 CatalogScreen(
@@ -63,10 +74,10 @@ class CatalogScreenRobolectricTest {
 
         compose.onNodeWithText("连锁品牌").assertIsDisplayed()
         compose.onNodeWithText("我的豆子").assertIsDisplayed()
-        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.ChainBrandGrid).assertIsDisplayed()
-        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.ChainBrandCardPrefix + "brand").assertIsDisplayed()
-        compose.onNodeWithTag(com.niumi.coffeejournal.TestTags.ChainBrandMediaFramePrefix + "brand", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("搜索品牌或产品").assertIsDisplayed()
+        compose.onNodeWithText("新增").performClick()
         compose.onNodeWithText("新增品牌").assertIsDisplayed()
+        compose.onNodeWithText("新增产品").assertIsDisplayed()
     }
 
     @Test
@@ -131,7 +142,8 @@ class CatalogScreenRobolectricTest {
                 )
             }
         }
-        compose.onNodeWithText("新增烘焙品牌").performClick()
+        compose.onNodeWithText("新增").performClick()
+        compose.onNodeWithText("新增品牌").performClick()
         compose.onNodeWithText("选择 Logo").performClick()
         compose.runOnIdle { org.junit.Assert.assertTrue(assetRequested) }
         compose.runOnIdle { screenState.value = screenState.value.copy(saving = true) }
@@ -143,6 +155,7 @@ class CatalogScreenRobolectricTest {
         var saves = 0
         val screenState = mutableStateOf(state())
         compose.setContent { CoffeeTheme { CatalogScreen(screenState.value, {}, {}, {}, { saves++ }, {}, { _, _ -> }, {}, onOpenBrandEditor = { initial, type -> openBrandSession(screenState, initial, type) }, onUpdateBrandDraft = { update -> updateBrandDraft(screenState, update) }) } }
+        compose.onNodeWithText("新增").performClick()
         compose.onNodeWithText("新增品牌").performClick()
         compose.onNodeWithText("品牌名称").performTextInput("自定义")
         compose.onNodeWithText("保存").performClick()
@@ -165,7 +178,7 @@ class CatalogScreenRobolectricTest {
             }
         }
 
-        compose.onNodeWithText("新增豆子").performScrollTo().performClick()
+        compose.onNodeWithText("新增豆子").performClick()
         compose.onNodeWithText("产地（可选）").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("默认冲煮方式（可选）").performScrollTo().assertIsDisplayed()
     }
@@ -184,7 +197,8 @@ class CatalogScreenRobolectricTest {
                 )
             }
         }
-        compose.onNodeWithText("新增烘焙品牌").performClick()
+        compose.onNodeWithText("新增").performClick()
+        compose.onNodeWithText("新增品牌").performClick()
         compose.onNodeWithText("品牌名称").performTextInput("重复品牌")
         compose.onNodeWithText("保存").performClick()
 
@@ -213,7 +227,7 @@ class CatalogScreenRobolectricTest {
                 )
             }
         }
-        compose.onNodeWithText("新增豆子").performScrollTo().performClick()
+        compose.onNodeWithText("新增豆子").performClick()
         compose.onNodeWithText("名称").performTextInput("澳白")
         compose.onNodeWithText("产地（可选）").performTextInput("云南")
         compose.onNodeWithText("保存").performClick()
@@ -237,7 +251,8 @@ class CatalogScreenRobolectricTest {
                 )
             }
         }
-        compose.onNodeWithText("新增烘焙品牌").performClick()
+        compose.onNodeWithText("新增").performClick()
+        compose.onNodeWithText("新增品牌").performClick()
         compose.onNodeWithText("新增品牌").assertIsDisplayed()
         compose.onNodeWithText("品牌名称").performTextInput("成功品牌")
         compose.onNodeWithText("保存").performClick()
@@ -262,7 +277,7 @@ class CatalogScreenRobolectricTest {
                 )
             }
         }
-        compose.onNodeWithText("新增豆子").performScrollTo().performClick()
+        compose.onNodeWithText("新增豆子").performClick()
         compose.onNodeWithText("名称").performTextInput("澳白")
         compose.onNodeWithText("保存").performClick()
         compose.waitForIdle()
@@ -294,7 +309,7 @@ class CatalogScreenRobolectricTest {
                 )
             }
         }
-        compose.onNodeWithText("新增豆子").performScrollTo().performClick()
+        compose.onNodeWithText("新增豆子").performClick()
         compose.onNodeWithText("选择图片").performScrollTo().performClick()
         compose.onNodeWithText("保存").performClick()
 

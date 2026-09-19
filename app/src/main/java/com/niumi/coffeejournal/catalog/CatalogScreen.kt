@@ -18,6 +18,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -51,6 +53,8 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items as columnItems
 import androidx.compose.foundation.lazy.items as lazyItems
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
@@ -89,6 +93,8 @@ fun CatalogFeature(
     onOpenSettings: () -> Unit = {},
     onOpenChainBrand: (String) -> Unit = {},
 ) {
+    var showAddMenu by remember { mutableStateOf(false) }
+    var choosingProductBrand by remember { mutableStateOf(false) }
     val catalogViewModel: CatalogViewModel = viewModel(factory = CatalogViewModel.factory(repository, imageStore))
     val state by catalogViewModel.uiState.collectAsStateWithLifecycle()
     CatalogScreen(
@@ -96,6 +102,8 @@ fun CatalogFeature(
         onSelectTab = catalogViewModel::selectTab,
         onSelectBrand = catalogViewModel::selectBrand,
         onSelectBeanStatus = catalogViewModel::selectBeanStatus,
+        onUpdateCatalogQuery = catalogViewModel::updateCatalogQuery,
+        onSelectCatalogBrand = catalogViewModel::selectCatalogBrand,
         onSaveBrand = catalogViewModel::saveBrand,
         onSaveItem = catalogViewModel::saveItem,
         onSetItemStatus = catalogViewModel::setItemStatus,
@@ -135,68 +143,48 @@ fun CatalogScreen(
     onOpenSettings: () -> Unit = {},
     onOpenChainBrand: (String) -> Unit = {},
     imagePathResolver: ImagePathResolver = ImagePathResolver { null },
+    onUpdateCatalogQuery: (String) -> Unit = {},
+    onSelectCatalogBrand: (String?) -> Unit = {},
 ) {
-    val selectedBrand = state.brandOverviews.firstOrNull { it.brand.id == state.selectedBrandId }?.brand
+    var showAddMenu by remember { mutableStateOf(false) }
+    var choosingProductBrand by remember { mutableStateOf(false) }
+    val brands = state.brandOverviews.map(BrandOverview::brand)
+    val selectedBrand = brands.firstOrNull { it.id == state.selectedBrandId }
+    val visibleProducts = state.visibleItems.filter { item ->
+        val brandName = brands.firstOrNull { it.id == item.brandId }?.name.orEmpty()
+        state.catalogQuery.trim().let { query -> query.isEmpty() || brandName.contains(query, ignoreCase = true) || item.name.contains(query, ignoreCase = true) }
+    }
 
     Column(
         modifier = Modifier.fillMaxSize()
             .testTag(com.niumi.coffeejournal.TestTags.CatalogSurface)
-            .scrapbookPaper()
-            .semantics { this[CatalogSurfaceColor] = CoffeeVisuals.cream },
+            .background(Color(0xFFFFFCF6))
+            .semantics { this[CatalogSurfaceColor] = Color(0xFFFFFCF6) },
     ) {
-        Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Column(Modifier.padding(vertical = 8.dp)) { Text("我的咖啡豆库", style = MaterialTheme.typography.titleLarge,
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Column(Modifier.padding(vertical = 6.dp)) { Text("豆库", style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.testTag(com.niumi.coffeejournal.TestTags.RootScreenTitle)) }
-            TextButton(onClick = onOpenSettings, modifier = Modifier.testTag(com.niumi.coffeejournal.TestTags.RootScreenSettings)) { Text("设置") }
+            Row { TextButton(onClick = onOpenSettings, modifier = Modifier.testTag(com.niumi.coffeejournal.TestTags.RootScreenSettings)) { Text("设置") }; Box { TextButton(onClick = { showAddMenu = true }) { Text("新增") }; DropdownMenu(showAddMenu, { showAddMenu = false }) { DropdownMenuItem({ Text("新增品牌") }, { showAddMenu = false; onOpenBrandEditor(null, if (state.tab == CatalogTab.CHAINS) BrandType.CHAIN else BrandType.ROASTER) }); DropdownMenuItem({ Text("新增产品") }, { showAddMenu = false; choosingProductBrand = true }) } } }
         }
         CatalogTabs(state.tab, onSelectTab)
-        if (state.tab == CatalogTab.CHAINS) {
-            ChainBrandRoot(
-                brands = state.brandOverviews.map { it.brand }, imagePathResolver = imagePathResolver,
-                onOpen = onOpenChainBrand, onAdd = { onOpenBrandEditor(null, BrandType.CHAIN) },
-            )
-        } else Column(
-            modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Button(onClick = { onOpenBrandEditor(null, BrandType.ROASTER) }, enabled = !state.saving, modifier = Modifier.fillMaxWidth()) { Text("新增烘焙品牌") }
-
-            state.brandOverviews.forEach { overview ->
-                BrandCard(
-                    overview = overview,
-                    selected = overview.brand.id == state.selectedBrandId,
-                    enabled = !state.saving,
-                    onOpen = { onSelectBrand(overview.brand.id) },
-                    onEdit = { onOpenBrandEditor(overview.brand, overview.brand.type) },
-                )
-            }
-
-            if (state.tab == CatalogTab.BEANS && selectedBrand != null) {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    lazyItems(CatalogViewModel.BEAN_FILTERS) { status ->
-                        FilterChip(
-                            selected = state.beanStatus == status,
-                            onClick = { onSelectBeanStatus(status) },
-                            label = { Text(status.beanStatusLabel()) },
-                        )
-                    }
-                }
-            }
-
-            if (selectedBrand != null) {
-                Button(
-                    onClick = { onOpenItemEditor(null, selectedBrand) }, enabled = !state.saving,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(if (state.tab == CatalogTab.CHAINS) "新增连锁产品" else "新增豆子") }
-            }
-            state.visibleItems.forEach { item ->
-                ItemCard(
-                    item = item,
-                    imagePathResolver = imagePathResolver,
-                    onEdit = { selectedBrand?.let { onOpenItemEditor(item, it) } },
-                    onStatus = { onSetItemStatus(item, it) },
-                    enabled = !state.saving,
-                )
+        OutlinedTextField(value = state.catalogQuery, onValueChange = onUpdateCatalogQuery, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), singleLine = true, label = { Text("搜索品牌或产品") })
+        LazyRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            item { FilterChip(state.catalogBrandId == null, { onSelectCatalogBrand(null) }, label = { Text("全部") }) }
+            lazyItems(brands, key = { it.id }) { brand -> FilterChip(state.catalogBrandId == brand.id, { onSelectCatalogBrand(brand.id) }, label = { Text(brand.name) }) }
+        }
+        if (state.tab == CatalogTab.BEANS) LazyRow(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            lazyItems(CatalogViewModel.BEAN_FILTERS) { status -> FilterChip(state.beanStatus == status, { onSelectBeanStatus(status) }, label = { Text(status.beanStatusLabel()) }) }
+        }
+        val filterBrand = brands.firstOrNull { it.id == state.catalogBrandId } ?: selectedBrand
+        if (filterBrand != null) TextButton(onClick = { if (filterBrand.type == BrandType.CHAIN) onOpenChainBrand(filterBrand.id) else onOpenBrandEditor(filterBrand, BrandType.ROASTER) }, modifier = Modifier.padding(horizontal = 16.dp)) { Text("管理品牌") }
+        if (filterBrand != null) TextButton(onClick = { onOpenItemEditor(null, filterBrand) }, enabled = !state.saving, modifier = Modifier.padding(horizontal = 16.dp)) { Text(if (state.tab == CatalogTab.CHAINS) "为 ${filterBrand.name} 新增产品" else "新增豆子") }
+        else if (brands.isNotEmpty()) Text("选择一个品牌后即可新增${if (state.tab == CatalogTab.CHAINS) "产品" else "豆子"}", Modifier.padding(horizontal = 16.dp), color = CoffeeVisuals.secondaryText, style = MaterialTheme.typography.bodySmall)
+        if (brands.isEmpty()) Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) { Text("还没有${if (state.tab == CatalogTab.CHAINS) "品牌" else "烘焙商"}"); Button(onClick = { onOpenBrandEditor(null, if (state.tab == CatalogTab.CHAINS) BrandType.CHAIN else BrandType.ROASTER) }) { Text("新增品牌") } }
+        else if (visibleProducts.isEmpty()) Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) { Text(if (state.catalogQuery.isNotBlank()) "没有匹配的产品" else "这个分类还没有产品") }
+        else LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp).testTag(com.niumi.coffeejournal.TestTags.CatalogProductList), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            columnItems(visibleProducts, key = { it.id }) { item ->
+                val brand = brands.firstOrNull { it.id == item.brandId } ?: return@columnItems
+                CompactCatalogProductRow(item, brand, imagePathResolver, onClick = { onOpenItemEditor(item, brand) }, onStatus = { onSetItemStatus(item, it) }, enabled = !state.saving)
             }
         }
     }
@@ -230,6 +218,21 @@ fun CatalogScreen(
             confirmButton = { TextButton(onClick = onClearError) { Text("知道了") } },
             title = { Text("无法保存") }, text = { Text(message) },
         )
+    }
+    if (choosingProductBrand) AlertDialog(onDismissRequest = { choosingProductBrand = false }, title = { Text("选择品牌") }, text = { Column { brands.forEach { brand -> TextButton(onClick = { choosingProductBrand = false; onSelectCatalogBrand(brand.id); onOpenItemEditor(null, brand) }) { Text(brand.name) } } } }, confirmButton = {})
+}
+
+@Composable
+private fun CompactCatalogProductRow(item: CatalogItem, brand: Brand, resolver: ImagePathResolver, onClick: () -> Unit, onStatus: (ItemStatus) -> Unit, enabled: Boolean) {
+    Row(Modifier.fillMaxWidth().testTag(com.niumi.coffeejournal.TestTags.CatalogProductRowPrefix + item.id).clickable(enabled = enabled, onClick = onClick).padding(vertical = 7.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        val bundled = BUNDLED_CHAIN_BRANDS.firstOrNull { it.brand.id == brand.id }
+        Box(Modifier.size(48.dp).clip(RoundedCornerShape(CoffeeVisuals.cornerSmall)).background(CoffeeVisuals.white).testTag(com.niumi.coffeejournal.TestTags.CatalogProductImagePrefix + item.id)) {
+            ResolvedLocalAssetImage(item.imageAssetId, brand.logoAssetId, resolver, "${item.name} 图片", ContentScale.Fit, Modifier.fillMaxSize().padding(4.dp), bundled?.let { painterResource(it.logoRes) })
+        }
+        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) { Text(item.name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall); Text("${brand.name} · ${item.chainProductKind?.let(::publicKindLabel) ?: if (item.type == ItemType.PERSONAL_BEAN) item.status.beanStatusLabel() else "待分类"}", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, color = CoffeeVisuals.secondaryText, style = MaterialTheme.typography.bodySmall) }
+        if (item.type == ItemType.PERSONAL_BEAN) {
+            TextButton(onClick = { onStatus(if (item.status == ItemStatus.ACTIVE) ItemStatus.DISCONTINUED else ItemStatus.ARCHIVED) }, enabled = enabled) { Text(if (item.status == ItemStatus.ACTIVE) "喝完" else "归档") }
+        }
     }
 }
 
