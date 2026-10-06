@@ -11,6 +11,9 @@ import com.niumi.coffeejournal.core.model.ChainProductKind
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
+import com.niumi.coffeejournal.journal.Clock
+import com.niumi.coffeejournal.journal.SystemClock
+import java.util.Calendar
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -72,6 +75,8 @@ data class CatalogUiState(
     val catalogQuery: String = "",
     val catalogBrandId: String? = null,
     val beanStatus: ItemStatus = ItemStatus.ACTIVE,
+    val todayLocalDate: String = "",
+    val personalBeanAverageRatings: Map<String, Double> = emptyMap(),
     val saving: Boolean = false,
     val errorMessage: String? = null,
     val saveCompletedToken: Long = 0,
@@ -81,8 +86,10 @@ data class CatalogUiState(
         get() {
             val source = allItems
             return source.filter { item ->
-                (tab != CatalogTab.BEANS || item.status == beanStatus) &&
+                (tab != CatalogTab.BEANS || item.status == beanStatus || (beanStatus == ItemStatus.ACTIVE && item.status == ItemStatus.NEEDS_IMAGE)) &&
                     (catalogBrandId == null || item.brandId == catalogBrandId)
+            }.let { items ->
+                if (tab == CatalogTab.BEANS && beanStatus == ItemStatus.DISCONTINUED) items.sortedWith(compareByDescending<CatalogItem> { personalBeanAverageRatings[it.id] }.thenBy { it.name }.thenBy { it.id }) else items
             }
         }
 }
@@ -126,6 +133,7 @@ class CatalogViewModel(
     coroutineScope: CoroutineScope? = null,
     private val leaseCleanupScope: CoroutineScope = DEFAULT_LEASE_CLEANUP_SCOPE,
     private val idGenerator: () -> String = { UUID.randomUUID().toString() },
+    private val clock: Clock = SystemClock,
 ) : ViewModel() {
     private val scope = coroutineScope ?: viewModelScope
     private val mutableState = MutableStateFlow(CatalogUiState())
@@ -148,6 +156,8 @@ class CatalogViewModel(
         }
         observeBrands(BrandType.CHAIN)
         observeCatalogItems(BrandType.CHAIN)
+        scope.launch { repository.observePersonalBeanAverageRatings().collect { ratings -> mutableState.value = mutableState.value.copy(personalBeanAverageRatings = ratings) } }
+        scope.launch { mutableState.value = mutableState.value.copy(todayLocalDate = clock.read().localDate) }
     }
 
     fun selectTab(tab: CatalogTab) {
@@ -175,6 +185,10 @@ class CatalogViewModel(
 
     fun selectBeanStatus(status: ItemStatus) {
         if (status in BEAN_FILTERS) mutableState.value = mutableState.value.copy(beanStatus = status)
+    }
+
+    fun refreshToday() {
+        mutableState.value = mutableState.value.copy(todayLocalDate = clock.read().localDate)
     }
 
     fun updateCatalogQuery(query: String) {
@@ -211,6 +225,7 @@ class CatalogViewModel(
         val name = editor.name.trim()
         if (name.isEmpty()) throw InvalidCatalogNameException(editor.name)
         val existing = editor.id?.let { repository.getItem(it) }
+        validateItemStatus(editor.type, editor.status, editor.roastDate, clock.read().localDate)
         val item = CatalogItem(
             id = editor.id ?: idGenerator(), brandId = editor.brandId, type = editor.type,
             name = name, imageAssetId = editor.imageAssetId, origin = editor.origin.clean(),
@@ -248,6 +263,7 @@ class CatalogViewModel(
     }
 
     fun setItemStatus(item: CatalogItem, status: ItemStatus) = saveAction {
+        validateItemStatus(item.type, status, item.roastDate, clock.read().localDate)
         repository.upsertItem(item.copy(status = status))
     }
 
@@ -447,7 +463,7 @@ class CatalogViewModel(
     }
 
     companion object {
-        val BEAN_FILTERS = listOf(ItemStatus.ACTIVE, ItemStatus.DISCONTINUED, ItemStatus.ARCHIVED)
+        val BEAN_FILTERS = listOf(ItemStatus.ACTIVE, ItemStatus.DISCONTINUED, ItemStatus.RESTING)
 
         private val DEFAULT_LEASE_CLEANUP_SCOPE = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -473,6 +489,20 @@ fun ItemStatus.beanStatusLabel(): String = when (this) {
     ItemStatus.ACTIVE, ItemStatus.NEEDS_IMAGE -> "正在喝"
     ItemStatus.DISCONTINUED -> "已喝完"
     ItemStatus.ARCHIVED -> "归档"
+    ItemStatus.RESTING -> "养豆中"
+}
+
+internal fun isValidRestingRoastDate(value: String?, today: String): Boolean =
+    value != null && Regex("\\d{4}-\\d{2}-\\d{2}").matches(value) && value <= today && runCatching {
+        val parts = value.split('-').map(String::toInt)
+        require(parts.size == 3)
+        Calendar.getInstance().apply { isLenient = false; set(parts[0], parts[1] - 1, parts[2]); timeInMillis }.timeInMillis
+    }.isSuccess
+
+private fun validateItemStatus(type: ItemType, status: ItemStatus, roastDate: String?, today: String) {
+    require(!(type == ItemType.CHAIN_PRODUCT && status == ItemStatus.RESTING)) { "连锁产品不支持养豆状态" }
+    require(!(type == ItemType.PERSONAL_BEAN && status == ItemStatus.ARCHIVED)) { "个人豆不支持归档状态" }
+    require(status != ItemStatus.RESTING || isValidRestingRoastDate(roastDate, today)) { "养豆中需要有效且不晚于今天的烘焙日期" }
 }
 
 sealed interface CaffeineInput {

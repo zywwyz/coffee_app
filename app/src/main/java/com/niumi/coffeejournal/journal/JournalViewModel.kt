@@ -46,6 +46,7 @@ class JournalViewModel(
     private var brandJob: Job? = null
     private var itemJob: Job? = null
     private var selectionJob: Job? = null
+    private var restoreJob: Job? = null
     private var selectionGeneration = 0L
     private var monthGeneration = 0L
     private var brandGeneration = 0L
@@ -215,8 +216,9 @@ class JournalViewModel(
         editDraft { it.copy(consumedAtEpochMillis = epochMillis) }
     }
 
-    fun editRecord(recordId: String) {
-        if (mutableState.value.editor.saving) return
+    fun editRecord(recordId: String, onFailure: (String) -> Unit = {}, onOpened: () -> Unit = {}) {
+        val editor = mutableState.value.editor
+        if (editor.saving || editor.selecting || editor.attachingImage) return
         val generation = ++selectionGeneration
         selectionJob?.cancel()
         mutableState.value = mutableState.value.copy(editor = mutableState.value.editor.copy(selecting = true))
@@ -225,10 +227,68 @@ class JournalViewModel(
                 val draft = journalRepository.editDraft(recordId)
                 if (generation != selectionGeneration) return@launch
                 applyRestoredDraft(draft, generation)
+                if (generation == selectionGeneration) onOpened()
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
-                if (generation == selectionGeneration) setEditorError("无法打开这条记录")
+                if (generation == selectionGeneration) {
+                    mutableState.value = mutableState.value.copy(
+                        editor = mutableState.value.editor.copy(selecting = false, errorMessage = "无法打开这条记录"),
+                    )
+                    onFailure("无法打开这条记录，请重试")
+                }
+            }
+        }
+    }
+
+    fun leaveEditor(onFailure: (String) -> Unit = {}, onExited: () -> Unit) {
+        val draft = currentDraft
+        val editor = mutableState.value.editor
+        if (editor.saving || editor.selecting || editor.attachingImage) return
+        val pendingRestore = restoreJob
+        if (pendingRestore?.isCompleted == false) {
+            mutableState.value = mutableState.value.copy(editor = editor.copy(selecting = true))
+            scope.launch {
+                pendingRestore.join()
+                mutableState.value = mutableState.value.copy(
+                    editor = mutableState.value.editor.copy(selecting = false),
+                )
+                leaveEditor(onFailure, onExited)
+            }
+            return
+        }
+        if (draft == null) {
+            selectionGeneration++
+            selectionJob?.cancel()
+            onExited()
+            return
+        }
+        if (draft.editingRecordId == null) { onExited(); return }
+        val generation = ++selectionGeneration
+        selectionJob?.cancel()
+        mutableState.value = mutableState.value.copy(editor = editor.copy(selecting = true, errorMessage = null))
+        selectionJob = scope.launch {
+            try {
+                val discarded = journalRepository.discardDraft(draft.revisionId)
+                if (generation != selectionGeneration || currentDraft?.revisionId != draft.revisionId) return@launch
+                if (discarded) {
+                    clearCurrentDraft()
+                    onExited()
+                } else {
+                    mutableState.value = mutableState.value.copy(
+                        editor = mutableState.value.editor.copy(selecting = false, errorMessage = "草稿已变更，请重试"),
+                    )
+                    onFailure("草稿已变更，请重试")
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                if (generation == selectionGeneration && currentDraft?.revisionId == draft.revisionId) {
+                    mutableState.value = mutableState.value.copy(
+                        editor = mutableState.value.editor.copy(selecting = false, errorMessage = "放弃草稿失败，请重试"),
+                    )
+                    onFailure("放弃草稿失败，请重试")
+                }
             }
         }
     }
@@ -433,7 +493,7 @@ class JournalViewModel(
 
     private fun restoreDraft() {
         val generation = selectionGeneration
-        scope.launch {
+        restoreJob = scope.launch {
             val restored = try {
                 journalRepository.restoreDraft()
             } catch (error: CancellationException) {

@@ -6,6 +6,7 @@ import com.niumi.coffeejournal.core.database.CoffeeDatabase
 import com.niumi.coffeejournal.core.database.DataIntegrityException
 import com.niumi.coffeejournal.core.database.DraftRecordEntity
 import com.niumi.coffeejournal.core.database.DrinkRecordEntity
+import com.niumi.coffeejournal.core.image.ImageMutationCoordinator
 import com.niumi.coffeejournal.core.model.DrinkDraft
 import com.niumi.coffeejournal.core.model.DrinkRecord
 import com.niumi.coffeejournal.core.model.DrinkSnapshot
@@ -17,6 +18,7 @@ import java.util.TimeZone
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.withLock
 
 interface JournalRepository {
     fun observeMonth(year: Int, month: Int): Flow<List<DrinkRecord>>
@@ -32,6 +34,8 @@ interface JournalRepository {
     suspend fun save(draft: DrinkDraft): String
     suspend fun saveDraft(draft: DrinkDraft): Boolean
     suspend fun discardDraft(revisionId: String): Boolean = false
+    fun photoUpdateToken(): Long = 0
+    suspend fun updateRecordSnapshotImage(recordId: String, assetId: String, expectedRevision: Int, restoreGeneration: Long): Boolean = false
     suspend fun delete(recordId: String)
 }
 
@@ -57,6 +61,7 @@ interface DrinkStore {
     suspend fun get(recordId: String): DrinkRecord? = null
     suspend fun saveRecordAndClearDraft(record: DrinkRecord, revisionId: String)
     suspend fun update(record: DrinkRecord, expectedRevision: Int, draftRevisionId: String): Boolean = false
+    suspend fun updateSnapshotImage(recordId: String, assetId: String, expectedRevision: Int, restoreGeneration: Long): Boolean = false
     suspend fun saveDraft(draft: DrinkDraft): Boolean
     suspend fun discardDraft(revisionId: String): Boolean = false
     suspend fun delete(recordId: String)
@@ -148,6 +153,30 @@ class RoomDrinkStore(
         changed
     }
 
+    override suspend fun updateSnapshotImage(
+        recordId: String,
+        assetId: String,
+        expectedRevision: Int,
+        restoreGeneration: Long,
+    ): Boolean = ImageMutationCoordinator.mutex.withLock {
+        if (restoreGeneration != ImageMutationCoordinator.currentRestoreGeneration()) return@withLock false
+        database.withTransaction {
+            val record = database.drinkDao().get(recordId) ?: return@withTransaction false
+            if (record.revision != expectedRevision) return@withTransaction false
+            val updatedAt = maxOf(clock.read().epochMillis, record.updatedAtEpochMillis.saturatingIncrement())
+            database.drinkDao().updateSnapshotImageIfRevision(
+                id = recordId,
+                snapshotImageAssetId = assetId,
+                expectedRevision = expectedRevision,
+                updatedAtEpochMillis = updatedAt,
+                newRevision = Math.incrementExact(expectedRevision),
+            ) == 1
+        }
+    }
+
+    suspend fun updateSnapshotImage(recordId: String, assetId: String, expectedRevision: Int): Boolean =
+        updateSnapshotImage(recordId, assetId, expectedRevision, ImageMutationCoordinator.currentRestoreGeneration())
+
     override suspend fun saveDraft(draft: DrinkDraft): Boolean = database.withTransaction {
         val current = database.draftDao().get(CURRENT_DRAFT_ID)
         if (current?.revisionId != draft.revisionId) return@withTransaction false
@@ -223,7 +252,7 @@ class DefaultJournalRepository(
             revisionId = UUID.randomUUID().toString(),
             itemType = item.type,
             sourceItemId = item.id,
-            brewMethod = item.brewMethod,
+            brewMethod = item.brewMethod.takeUnless { item.type == ItemType.PERSONAL_BEAN },
             ratingHalfStars = null,
             actualPriceFen = catalogRepository.lastPriceFen(item.id),
             note = "",
@@ -311,6 +340,15 @@ class DefaultJournalRepository(
     override suspend fun saveDraft(draft: DrinkDraft): Boolean = drinkStore.saveDraft(draft)
 
     override suspend fun discardDraft(revisionId: String): Boolean = drinkStore.discardDraft(revisionId)
+
+    override fun photoUpdateToken(): Long = ImageMutationCoordinator.currentRestoreGeneration()
+
+    override suspend fun updateRecordSnapshotImage(
+        recordId: String,
+        assetId: String,
+        expectedRevision: Int,
+        restoreGeneration: Long,
+    ): Boolean = drinkStore.updateSnapshotImage(recordId, assetId, expectedRevision, restoreGeneration)
 
     override suspend fun delete(recordId: String) = drinkStore.delete(recordId)
 }

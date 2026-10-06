@@ -16,8 +16,8 @@ android {
         applicationId = "com.niumi.coffeejournal"
         minSdk = 23
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 3
+        versionName = "1.1.1"
 
         testInstrumentationRunner = "com.niumi.coffeejournal.AcceptanceTestRunner"
     }

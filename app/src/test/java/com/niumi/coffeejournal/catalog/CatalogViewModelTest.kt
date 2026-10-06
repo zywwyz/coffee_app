@@ -25,6 +25,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CatalogViewModelTest {
+    @Test fun `resting date requires canonical past or today date`() {
+        assertTrue(isValidRestingRoastDate("2026-09-19", "2026-09-19"))
+        assertTrue(isValidRestingRoastDate("2026-09-18", "2026-09-19"))
+        assertFalse(isValidRestingRoastDate("2026-09-20", "2026-09-19"))
+        assertFalse(isValidRestingRoastDate("2026-09-1", "2026-09-19"))
+        assertFalse(isValidRestingRoastDate("2026-02-29", "2026-09-19"))
+    }
+
+    @Test fun `resting days use calendar dates across DST`() {
+        assertEquals(9, restingDays("2026-09-10", "2026-09-19"))
+        assertEquals(1, restingDays("2025-03-09", "2025-03-10"))
+    }
+
+    @Test fun `discontinued beans sort rated first by rating then stable name and id`() {
+        val state = CatalogUiState(tab = CatalogTab.BEANS, beanStatus = ItemStatus.DISCONTINUED,
+            personalBeanAverageRatings = mapOf("b" to 4.5, "a" to 4.5, "c" to 3.5),
+            allItems = listOf(item(ItemStatus.DISCONTINUED).copy(id = "z", name = "未评分"), item(ItemStatus.DISCONTINUED).copy(id = "b", name = "B"), item(ItemStatus.DISCONTINUED).copy(id = "a", name = "A"), item(ItemStatus.DISCONTINUED).copy(id = "c", name = "C")))
+        assertEquals(listOf("a", "b", "c", "z"), state.visibleItems.map { it.id })
+    }
     @Test fun `catalog aggregate updates and tab switch replaces prior type`() = runBlocking {
         val repository = FakeCatalogRepository()
         val chain = Brand("chain", BrandType.CHAIN, "连锁", null, MaintenanceMode.MANUAL_ONLY, null)
@@ -104,11 +123,11 @@ class CatalogViewModelTest {
         viewModel.selectBeanStatus(ItemStatus.DISCONTINUED)
         assertEquals(listOf("bean"), viewModel.uiState.value.visibleItems.map { it.id })
 
-        viewModel.setItemStatus(repository.items.value.single(), ItemStatus.ARCHIVED)
+        viewModel.setItemStatus(repository.items.value.single().copy(roastDate = "2026-08-01"), ItemStatus.RESTING)
         yield()
         assertEquals(1, repository.items.value.size)
-        viewModel.selectBeanStatus(ItemStatus.ARCHIVED)
-        assertEquals(ItemStatus.ARCHIVED, viewModel.uiState.value.visibleItems.single().status)
+        viewModel.selectBeanStatus(ItemStatus.RESTING)
+        assertEquals(ItemStatus.RESTING, viewModel.uiState.value.visibleItems.single().status)
     }
 
     @Test

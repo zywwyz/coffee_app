@@ -8,6 +8,7 @@ import com.niumi.coffeejournal.core.database.CatalogItemDao
 import com.niumi.coffeejournal.core.database.CatalogItemEntity
 import com.niumi.coffeejournal.core.database.DataIntegrityException
 import com.niumi.coffeejournal.core.database.DrinkDao
+import com.niumi.coffeejournal.core.database.PersonalBeanRatingRow
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.CatalogItem
@@ -52,6 +53,7 @@ interface CatalogRepository {
     suspend fun deleteCustomBrand(brandId: String): CatalogDeleteResult = CatalogDeleteResult.NotFound
     suspend fun deleteCustomItem(itemId: String): CatalogDeleteResult = CatalogDeleteResult.NotFound
     suspend fun lastPriceFen(itemId: String): Long?
+    fun observePersonalBeanAverageRatings(): Flow<Map<String, Double>> = flowOf(emptyMap())
     suspend fun ensureSeedBrands() = Unit
 }
 
@@ -176,6 +178,9 @@ class RoomCatalogRepository(
 
     override suspend fun lastPriceFen(itemId: String): Long? =
         drinkDao.lastActualPriceFen(itemId)
+
+    override fun observePersonalBeanAverageRatings(): Flow<Map<String, Double>> =
+        drinkDao.observePersonalBeanAverageRatings().map { rows -> rows.associate { it.sourceItemId to it.averageRating } }
 
     override suspend fun ensureSeedBrands() {
         seedMutex.withLock {

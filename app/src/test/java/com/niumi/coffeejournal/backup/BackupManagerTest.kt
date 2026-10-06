@@ -25,6 +25,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import com.niumi.coffeejournal.core.image.LocalImageStore
+import com.niumi.coffeejournal.core.image.ImageMutationCoordinator
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -49,6 +50,50 @@ class BackupManagerTest {
     }
 
     @After fun tearDown() { database.close() }
+
+    @Test fun `v4 archived personal bean restores discontinued while chain archive and record image remain`() = runBlocking {
+        val image = File(context.filesDir, "images/legacy.png").also { writeTestPng(it, 0xff00ff00.toInt()) }
+        val imageHash = sha256(image)
+        database.imageAssetDao().upsert(ImageAssetEntity("image", image.path, imageHash, "BEAN_PACKAGE", 1))
+        database.brandDao().upsert(BrandEntity("brand", "ROASTER", "烘焙商", "烘焙商", null, "MANUAL_ONLY", null))
+        database.catalogItemDao().upsert(CatalogItemEntity("bean", "brand", "PERSONAL_BEAN", "豆", "豆", "image", status = "DISCONTINUED"))
+        database.catalogItemDao().upsert(CatalogItemEntity("chain", "brand", "CHAIN_PRODUCT", "链", "链", status = "ARCHIVED", chainProductKind = "BLACK"))
+        database.drinkDao().insert(DrinkRecordEntity("record", 1, "2026-01-01", "PERSONAL_BEAN", "bean", snapshotBrandName = "烘焙商", snapshotItemName = "豆", snapshotImageAssetId = "image", snapshotCoffeeType = "HAND_BREW"))
+        val archive = File(context.cacheDir, "legacy-${System.nanoTime()}.zip")
+        manager.export(Uri.fromFile(archive))
+        val decoded = SafeBackupArchiveCodec().decode(archive, File(context.cacheDir, "legacy-unpack-${System.nanoTime()}"))
+        SQLiteDatabase.openDatabase(decoded.databaseFile.path, null, SQLiteDatabase.OPEN_READWRITE).use { it.execSQL("UPDATE catalog_items SET status='ARCHIVED' WHERE id='bean'"); it.execSQL("PRAGMA user_version=4") }
+        val v4 = File(context.cacheDir, "legacy-v4-${System.nanoTime()}.zip")
+        SafeBackupArchiveCodec().encode(v4, decoded.databaseFile, decoded.images, decoded.manifest.counts, 4, 1)
+        database.openHelper.writableDatabase.execSQL("DELETE FROM drink_records"); database.openHelper.writableDatabase.execSQL("DELETE FROM catalog_items")
+        val restoreGeneration = ImageMutationCoordinator.currentRestoreGeneration()
+        manager.restore(manager.validate(Uri.fromFile(v4)))
+        assertEquals(restoreGeneration + 1, ImageMutationCoordinator.currentRestoreGeneration())
+        assertEquals("DISCONTINUED", database.catalogItemDao().get("bean")?.status)
+        assertEquals("ARCHIVED", database.catalogItemDao().get("chain")?.status)
+        assertEquals("image", database.drinkDao().get("record")?.snapshotImageAssetId)
+        assertEquals(imageHash, database.imageAssetDao().get("image")?.sha256)
+    }
+
+    @Test fun `v5 resting bean round trips`() = runBlocking {
+        database.brandDao().upsert(BrandEntity("brand", "ROASTER", "烘焙商", "烘焙商", null, "MANUAL_ONLY", null))
+        database.catalogItemDao().upsert(CatalogItemEntity("bean", "brand", "PERSONAL_BEAN", "豆", "豆", status = "RESTING", roastDate = "2026-09-01"))
+        val archive = File(context.cacheDir, "resting-${System.nanoTime()}.zip")
+        manager.export(Uri.fromFile(archive)); val validated = manager.validate(Uri.fromFile(archive))
+        database.openHelper.writableDatabase.execSQL("DELETE FROM catalog_items")
+        manager.restore(validated)
+        assertEquals("RESTING", database.catalogItemDao().get("bean")?.status)
+    }
+
+    @Test fun `invalid resting state domains reject before active writes`() = runBlocking {
+        listOf(
+            Triple("v4-resting", 4, "INSERT INTO catalog_items (id,brandId,type,name,normalizedName,status) VALUES ('bean','brand','PERSONAL_BEAN','豆','豆','RESTING')"),
+            Triple("chain-resting", 5, "INSERT INTO catalog_items (id,brandId,type,name,normalizedName,status,chainProductKind) VALUES ('chain','brand','CHAIN_PRODUCT','链','链','RESTING','BLACK')"),
+            Triple("bean-archived", 5, "INSERT INTO catalog_items (id,brandId,type,name,normalizedName,status) VALUES ('bean','brand','PERSONAL_BEAN','豆','豆','ARCHIVED')"),
+            Triple("resting-no-date", 5, "INSERT INTO catalog_items (id,brandId,type,name,normalizedName,status) VALUES ('bean','brand','PERSONAL_BEAN','豆','豆','RESTING')"),
+            Triple("resting-bad-date", 5, "INSERT INTO catalog_items (id,brandId,type,name,normalizedName,status,roastDate) VALUES ('bean','brand','PERSONAL_BEAN','豆','豆','RESTING','2026-09-1')"),
+        ).forEach { (name, version, sql) -> assertRejectedWithoutWrites(name, manifestVersion = version, manifestCounts = BackupCounts(1, 1, 0, 0, 0, 0)) { if (version == 4) execSQL("PRAGMA user_version=4"); execSQL("INSERT INTO brands (id,type,name,normalizedName,maintenanceMode) VALUES ('brand','ROASTER','烘焙商','烘焙商','MANUAL_ONLY')"); execSQL(sql) } }
+    }
 
     @Test fun `round trip preserves all six tables dual snapshot images and rewrites paths`() = runBlocking {
         val imageDir = File(context.filesDir, "images").apply { mkdirs() }
@@ -103,7 +148,7 @@ class BackupManagerTest {
             legacy.execSQL("PRAGMA user_version=3")
         }
         val migrated = Room.databaseBuilder(context, CoffeeDatabase::class.java, name)
-            .addMigrations(CoffeeDatabase.MIGRATION_3_4)
+            .addMigrations(CoffeeDatabase.MIGRATION_3_4, CoffeeDatabase.MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
         try {
@@ -443,7 +488,9 @@ class BackupManagerTest {
         val extension = validated.manifest.images.single().entry.substringAfterLast('.')
         val collision = File(imageDir, "$hash.$extension").apply { writeText("corrupt") }
 
+        val restoreGeneration = ImageMutationCoordinator.currentRestoreGeneration()
         assertThrows(BackupValidationException::class.java) { runBlocking { manager.restore(validated) } }
+        assertEquals(restoreGeneration, ImageMutationCoordinator.currentRestoreGeneration())
 
         assertNotNull(database.imageAssetDao().get("asset"))
         assertTrue(sourceFile.isFile)
@@ -607,7 +654,7 @@ class BackupManagerTest {
     }
     private suspend fun assertRejectedWithoutWrites(
         name: String,
-        manifestVersion: Int = 4,
+        manifestVersion: Int = 5,
         manifestCounts: BackupCounts? = null,
         expectedMessage: String? = null,
         mutate: SQLiteDatabase.() -> Unit,

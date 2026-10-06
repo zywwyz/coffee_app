@@ -37,6 +37,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performClick
 import com.niumi.coffeejournal.catalog.BrandOverview
 import com.niumi.coffeejournal.catalog.CatalogScreen
 import com.niumi.coffeejournal.catalog.CatalogUiState
@@ -235,6 +236,39 @@ class CalendarPreviewRenderTest {
         } }
         compose.onNodeWithText(bean.name).performScrollTo().assertIsDisplayed()
         capture("catalog-beans-light.png")
+    }
+
+    @Test
+    @Config(sdk = [35], qualifiers = "w320dp-h740dp-xhdpi")
+    fun `renders resting days and rated finished beans`() {
+        val brand = Brand("roaster", BrandType.ROASTER, "日常烘焙", null, MaintenanceMode.MANUAL_ONLY, null)
+        val resting = CatalogItem("resting", brand.id, ItemType.PERSONAL_BEAN, "埃塞俄比亚 · 花香水洗", null, "埃塞俄比亚", "水洗", "浅烘焙", null, null, ItemStatus.RESTING, roastDate = "2026-09-10")
+        val active = resting.copy(id = "active", name = "云南 · 日晒花香", status = ItemStatus.ACTIVE)
+        val lower = resting.copy(id = "lower", name = "巴西 · 坚果巧克力", status = ItemStatus.DISCONTINUED)
+        val higher = resting.copy(id = "higher", name = "肯尼亚 · 黑醋栗", status = ItemStatus.DISCONTINUED)
+        compose.setContent { CoffeeTheme {
+            Scaffold(bottomBar = { CoffeeBottomNavigation(com.niumi.coffeejournal.navigation.Catalog, {}) }) { padding ->
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.padding(padding)) {
+                    CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 1.3f)) {
+                        var state by remember { mutableStateOf(CatalogUiState(tab = CatalogTab.BEANS,
+                            beanStatus = ItemStatus.RESTING, brandOverviews = listOf(BrandOverview(brand, 4)),
+                            allItems = listOf(resting, active, lower, higher), todayLocalDate = "2026-09-19",
+                            personalBeanAverageRatings = mapOf("lower" to 3.5, "higher" to 4.5))) }
+                        CatalogScreen(state, {}, {}, { state = state.copy(beanStatus = it) }, {}, {}, { _, _ -> }, {})
+                    }
+                }
+            }
+        } }
+        compose.onNodeWithText("9天", substring = true).assertIsDisplayed()
+        capture("beans-resting.png")
+        compose.onNodeWithText("正在喝").performClick()
+        compose.onNodeWithText("9天").assertIsDisplayed()
+        capture("beans-drinking.png")
+        compose.onNodeWithText("已喝完").performClick()
+        val high = compose.onNodeWithTag(TestTags.CatalogProductRowPrefix + higher.id).fetchSemanticsNode().boundsInRoot
+        val low = compose.onNodeWithTag(TestTags.CatalogProductRowPrefix + lower.id).fetchSemanticsNode().boundsInRoot
+        assertTrue("higher ratings must sort first", high.top < low.top)
+        capture("beans-finished.png")
     }
 
     @Test

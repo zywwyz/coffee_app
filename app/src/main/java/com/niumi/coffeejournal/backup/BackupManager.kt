@@ -17,6 +17,8 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.GregorianCalendar
+import java.util.TimeZone
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -169,6 +171,7 @@ class LocalBackupManager(
                     withContext(operationContext) { beforeRestoreCommit() }
                     check()
                 } }
+                ImageMutationCoordinator.advanceRestoreGeneration()
                 committed = true
                 committedResult = RestoreSummary(backup.manifest.counts)
                 afterRestoreCommitted()
@@ -274,7 +277,10 @@ class LocalBackupManager(
         db.rawQuery("SELECT ratingHalfStars,actualPriceFen FROM drink_records UNION ALL SELECT ratingHalfStars,actualPriceFen FROM draft_records", null).use { c -> while(c.moveToNext()){ check(); if(!c.isNull(0) && c.getInt(0) !in 1..10) throw BackupValidationException("评分字段无效"); if(!c.isNull(1) && c.getLong(1)<0) throw BackupValidationException("金额字段无效") } }
         db.rawQuery("SELECT informationCompleteness FROM catalog_items", null).use { c -> while(c.moveToNext()) { check(); if(c.getInt(0) !in 0..100) throw BackupValidationException("完整度字段无效") } }
         if (exists(db, "SELECT 1 FROM brands WHERE id='' OR name='' OR normalizedName='' OR type NOT IN ('CHAIN','ROASTER') OR maintenanceMode NOT IN ('PUBLIC_SOURCE','MANUAL_ONLY') LIMIT 1")) throw BackupValidationException("品牌字段无效")
-        if (exists(db, "SELECT 1 FROM catalog_items WHERE id='' OR brandId='' OR name='' OR normalizedName='' OR type NOT IN ('CHAIN_PRODUCT','PERSONAL_BEAN') OR status NOT IN ('ACTIVE','NEEDS_IMAGE','DISCONTINUED','ARCHIVED') LIMIT 1")) throw BackupValidationException("产品字段无效")
+        val validStatuses = if (databaseVersion(db) >= 5) "'ACTIVE','NEEDS_IMAGE','DISCONTINUED','ARCHIVED','RESTING'" else "'ACTIVE','NEEDS_IMAGE','DISCONTINUED','ARCHIVED'"
+        if (exists(db, "SELECT 1 FROM catalog_items WHERE id='' OR brandId='' OR name='' OR normalizedName='' OR type NOT IN ('CHAIN_PRODUCT','PERSONAL_BEAN') OR status NOT IN ($validStatuses) LIMIT 1")) throw BackupValidationException("产品字段无效")
+        if (databaseVersion(db) >= 5 && exists(db, "SELECT 1 FROM catalog_items WHERE (type='CHAIN_PRODUCT' AND status='RESTING') OR (type='PERSONAL_BEAN' AND status='ARCHIVED') LIMIT 1")) throw BackupValidationException("产品状态无效")
+        if (databaseVersion(db) >= 5) db.rawQuery("SELECT roastDate FROM catalog_items WHERE type='PERSONAL_BEAN' AND status='RESTING'", null).use { cursor -> while (cursor.moveToNext()) { if (cursor.isNull(0) || !isCanonicalDate(cursor.getString(0))) throw BackupValidationException("养豆日期无效") } }
         if (exists(db, "SELECT 1 FROM drink_records WHERE id='' OR sourceItemId='' OR snapshotBrandName='' OR snapshotItemName='' OR itemType NOT IN ('CHAIN_PRODUCT','PERSONAL_BEAN') LIMIT 1")) throw BackupValidationException("记录字段无效")
         if (exists(db, "SELECT 1 FROM image_assets WHERE id='' OR sha256 GLOB '*[^0-9a-f]*' OR length(sha256)!=64 OR kind NOT IN ('PRODUCT','BRAND_LOGO','BEAN_PACKAGE','RECORD_SNAPSHOT') LIMIT 1")) throw BackupValidationException("图片资产字段无效")
         if (exists(db, "SELECT 1 FROM draft_records WHERE id='' OR revisionId='' OR (itemType IS NOT NULL AND itemType NOT IN ('CHAIN_PRODUCT','PERSONAL_BEAN')) LIMIT 1")) throw BackupValidationException("草稿字段无效")
@@ -284,6 +290,11 @@ class LocalBackupManager(
         }
         if (databaseVersion(db) >= 3) validateCatalogDomains(db)
         if (databaseVersion(db) >= 4 && exists(db, "SELECT 1 FROM drink_records WHERE snapshotCoffeeType NOT IN ('BLACK','FRUIT','MILK','HAND_BREW') OR (itemType='PERSONAL_BEAN' AND snapshotCoffeeType!='HAND_BREW') OR (itemType='CHAIN_PRODUCT' AND snapshotCoffeeType='HAND_BREW') LIMIT 1")) throw BackupValidationException("记录咖啡类型字段无效")
+    }
+
+    private fun isCanonicalDate(value: String): Boolean {
+        if (!Regex("\\d{4}-\\d{2}-\\d{2}").matches(value)) return false
+        return runCatching { val (year, month, day) = value.split('-').map(String::toInt); GregorianCalendar(TimeZone.getTimeZone("UTC")).apply { isLenient = false; clear(); set(year, month - 1, day); timeInMillis } }.isSuccess
     }
 
     private fun databaseVersion(db: SQLiteDatabase): Int =
@@ -388,7 +399,9 @@ class LocalBackupManager(
             while (cursor.moveToNext()) {
                 check()
                 val values = CATALOG_ITEM_COLUMNS.map { column ->
-                    if (column == "chainProductKind" && sourceVersion < 3) {
+                    if (column == "status" && sourceVersion < 5 && cursor.getString(cursor.getColumnIndexOrThrow("type")) == "PERSONAL_BEAN" && cursor.getString(cursor.getColumnIndexOrThrow("status")) == "ARCHIVED") {
+                        "DISCONTINUED"
+                    } else if (column == "chainProductKind" && sourceVersion < 3) {
                         if (cursor.getString(cursor.getColumnIndexOrThrow("type")) == "CHAIN_PRODUCT") legacyChainProductKind(cursor.getString(cursor.getColumnIndexOrThrow("name")), cursor.getString(cursor.getColumnIndexOrThrow("category"))).name else null
                     } else cursorValue(cursor, cursor.getColumnIndexOrThrow(column))
                 }.toTypedArray()

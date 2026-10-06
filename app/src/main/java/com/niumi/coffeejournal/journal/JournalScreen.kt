@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -111,6 +112,7 @@ fun JournalFeature(
         factory = ManualProductEditorViewModel.factory(catalogRepository, imageStore),
     )
     var editorOpen by remember { mutableStateOf(false) }
+    var entryError by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(state.saveCompletedToken) {
         if (state.saveCompletedToken > 0) editorOpen = false
     }
@@ -122,6 +124,15 @@ fun JournalFeature(
                 }
             }
         }
+    }
+
+    entryError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { entryError = null },
+            title = { Text("操作未完成") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = { entryError = null }) { Text("关闭") } },
+        )
     }
 
     if (editorOpen) {
@@ -139,7 +150,7 @@ fun JournalFeature(
             onConsumedAtChange = journalViewModel::setConsumedAt,
             onSave = journalViewModel::save,
             onDiscardDraft = journalViewModel::discardDraft,
-            onBack = { editorOpen = false },
+            onBack = { journalViewModel.leaveEditor { editorOpen = false } },
             onSelectImage = {
                 val previousAssetId = state.items.firstOrNull { it.id == state.editor.selectedItemId }?.imageAssetId
                 assetImportRequester(ImageKind.PRODUCT, previousAssetId) { selection ->
@@ -158,16 +169,23 @@ fun JournalFeature(
             onPreviousMonth = journalViewModel::previousMonth,
             onNextMonth = journalViewModel::nextMonth,
             onDayClick = journalViewModel::selectDate,
-            onRecordDrink = { editorOpen = true },
+            onRecordDrink = { journalViewModel.leaveEditor(onFailure = { entryError = it }) { editorOpen = true } },
             onEditRecord = { recordId ->
-                journalViewModel.selectDate(null)
-                journalViewModel.editRecord(recordId)
-                editorOpen = true
+                journalViewModel.editRecord(recordId, onFailure = { entryError = it }) {
+                    journalViewModel.selectDate(null)
+                    editorOpen = true
+                }
             },
             onDeleteRecord = journalViewModel::deleteRecord,
             onOpenSettings = onOpenSettings,
             onCalendarDisplayModeChange = journalViewModel::setCalendarDisplayMode,
             imagePathResolver = imagePathResolver,
+            onChangeRecordPhoto = { record ->
+                val restoreGeneration = journalRepository.photoUpdateToken()
+                assetImportRequester(ImageKind.RECORD_SNAPSHOT, record.snapshot.imageAssetId) { selection ->
+                    journalRepository.updateRecordSnapshotImage(record.id, selection.assetId, record.revision, restoreGeneration)
+                }
+            },
         )
     }
 }
@@ -184,6 +202,7 @@ fun JournalScreen(
     onOpenSettings: () -> Unit = {},
     onCalendarDisplayModeChange: (CalendarDisplayMode) -> Unit = {},
     imagePathResolver: ImagePathResolver = ImagePathResolver { null },
+    onChangeRecordPhoto: (DrinkRecord) -> Unit = {},
 ) {
     Scaffold(
         containerColor = CoffeeVisuals.cream,
@@ -256,6 +275,8 @@ fun JournalScreen(
             onDismiss = { onDayClick(null) },
             onEdit = onEditRecord,
             onDelete = onDeleteRecord,
+            onChangePhoto = onChangeRecordPhoto,
+            imagePathResolver = imagePathResolver,
         )
     }
 }
@@ -528,26 +549,48 @@ private fun DayDetailDialog(
     onDismiss: () -> Unit,
     onEdit: (String) -> Unit,
     onDelete: (String) -> Unit,
+    onChangePhoto: (DrinkRecord) -> Unit,
+    imagePathResolver: ImagePathResolver,
 ) {
     var deleteCandidate by remember { mutableStateOf<DrinkRecord?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(localDate) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 if (records.isEmpty()) Text("当天没有咖啡记录")
                 records.forEach { record ->
                     Column {
-                        Text("${record.snapshot.brandName} · ${record.snapshot.itemName}", fontWeight = FontWeight.Bold)
-                        Text(
-                            listOfNotNull(
-                                record.brewMethod,
-                                record.ratingHalfStars?.let { "${it / 2.0} 星" },
-                                record.actualPriceFen?.let { "¥${it / 100}.${(it % 100).toString().padStart(2, '0')}" },
-                            ).joinToString(" · "),
-                        )
-                        record.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            ResolvedLocalAssetImage(
+                                primaryAssetId = record.snapshot.imageAssetId,
+                                fallbackAssetId = record.snapshot.brandLogoAssetId,
+                                resolver = imagePathResolver,
+                                contentDescription = "当天实拍图 ${record.snapshot.itemName}",
+                                contentScale = CompleteImageContentScale,
+                                modifier = Modifier.size(92.dp).clip(RoundedCornerShape(CoffeeVisuals.cornerSmall))
+                                    .background(CoffeeVisuals.white),
+                                fallbackPainter = bundledBrandLogoRes(record.snapshot.brandName)?.let { painterResource(it) },
+                            )
+                            Column(Modifier.weight(1f)) {
+                                Text("${record.snapshot.brandName} · ${record.snapshot.itemName}", fontWeight = FontWeight.Bold)
+                                Text(
+                                    listOfNotNull(
+                                        record.brewMethod,
+                                        record.ratingHalfStars?.let { "${it / 2.0} 星" },
+                                        record.actualPriceFen?.let { "¥${it / 100}.${(it % 100).toString().padStart(2, '0')}" },
+                                    ).joinToString(" · "),
+                                )
+                                record.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                            }
+                        }
                         Row {
+                            TextButton(onClick = { onChangePhoto(record) }) {
+                                Text(if (record.snapshot.imageAssetId == null) "添加图片" else "更换图片")
+                            }
                             TextButton(onClick = { onEdit(record.id) }) { Text("编辑") }
                             TextButton(onClick = { deleteCandidate = record }) { Text("删除") }
                         }

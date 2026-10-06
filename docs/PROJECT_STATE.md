@@ -8,12 +8,14 @@
 
 ## 当前开发阶段
 
-日历保留 A「奶油贴纸簿·实拍版」。豆库与总结已改为轻量画布：暖白底、小图列表、跨品牌搜索与筛选，核心数字与占比横条。人工上传图片、离线存储与备份协议保持不变。模块回归及原生预览通过；未做真机验证。
+个人豆管理改进已完成：处理法/烘焙度下拉、日期日历选择、养豆中与天数、已喝完平均评分排序；用户已确认旧归档并入已喝完。豆库图片是否自动同步到历史记录仍待用户决定，保留快照机制；1.1 新增当天详情逐条显示实拍图与手动换图，保留评分/价格。
+
+上一轮轻量画布豆库与总结已在 main 发布（5e4539a），日历保留 A 风格。人工上传照片与离线原则不变。
 
 ## 技术栈与架构
 
 - Kotlin、Jetpack Compose、Material 3；ViewModel + StateFlow；Room / SQLite；本地 Bitmap 缩略图加载。
-- Room 数据库为 v4，包含 v1→v2、v2→v3、v3→v4 迁移；schema 已导出。
+- Room 数据库为 v5，包含 v1→v2→v3→v4→v5 迁移；schema 已导出。
 - `journal`：记录、草稿、日历显示模式、详情与不可变快照。
 - `catalog`：12 个内置 Logo、连锁品牌/产品的手动 CRUD、个人豆库。
 - `core/image`：本地原始图片字节、引用、产品图→Logo→占位图回退及变更协调。
@@ -28,18 +30,21 @@
 - 12 个预置连锁品牌 Logo，横向品牌筛选与 48dp 小缩略图产品列表；用户可以本地手动维护连锁品牌、产品和产品实拍图。
 - 手动新增/编辑/删除自定义连锁品牌与 Logo；手动新增/编辑/删除产品名称、黑咖/果咖/奶咖分类和可选实拍图。个人豆在统计中固定归类为“手冲”。
 - `DrinkSnapshot` 固化 `CoffeeType`：历史记录不受目录后续编辑影响；新建个人豆记录写入 `HAND_BREW`。
-- 备份格式为 v4：v1–v3 恢复时派生历史 `CoffeeType`，v4 恢复严格校验快照类型与领域规则；恢复仍采用 staging 校验与原子替换。
+- 备份数据库版本为 v5（ZIP manifest formatVersion 仍为1）：接受旧v1–v4；v1–v3派生历史CoffeeType，v4–v5严格校验快照类型。v4→v5升级及旧备份恢复仅将个人豆ARCHIVED改为DISCONTINUED，链产品状态、图片与记录不变；恢复保持staging校验与原子替换。RESTING仅v5个人豆可用，日期必须严格有效；恢复不按当前时间拒绝未来日期，避免设备时区或时钟变化破坏合法旧备份。
 - 总结支持月度/年度切换：习惯摘要含上期杯数差（月度同日比较、年度同期间比较，年份 1 无基线）；月度与年度均刻意不显示趋势卡；咖啡类型与品牌占比横条（黑咖/果咖/奶咖/手冲；Top 4 品牌+其他）、Top 3，以及最好/最差记录行与 40dp 历史图片回退。横条同时展示杯数和百分比，并提供完整的无障碍描述。
 - MANNER 使用用户确认来源图生成透明 512px 打包 Logo，并保留来源与输出哈希审计；所有内置品牌 Logo 随包提供。
 - minSdk 23；统计日期相关实现兼容 API 23。
 
 - A 视觉：共享细点纸底与胶带便签；日历按实际月份显示必要周数，空日透明，照片完整显示，摘要为三列数字。最近一杯限定当前月份，按时间与 id 稳定选择真实快照，点击进入原有当天详情。全宽记录按钮位于 Scaffold bottomBar，为小屏滚动内容预留空间。豆库、记录、总结、设置与底栏共享色板；持久层与备份逻辑未变。
 
-- 二轮布局：日历紧凑顶栏同排模式，照片格比例0.78、图片内距1dp；豆库、总结的收藏卡与胶带摘要已由本次轻量画布替代；品牌管理、豆子喝完/归档和月年导航保持可达。
+- 二轮布局：日历紧凑顶栏同排模式，照片格比例0.78、图片内距1dp；豆库、总结的收藏卡与胶带摘要已由本次轻量画布替代；品牌管理、豆子开始喝/喝完和月年导航保持可达。
+
+- 个人豆：处理法/烘焙度可选常见值并保留自定义，日期用系统日历且可清除；不再输入默认冲煮方式，新个人豆饮用草稿不继承旧目录默认值，已有历史冲煮数据保留。
+- 状态：正在喝（含旧NEEDS_IMAGE）、已喝完、养豆中。保存/状态写入口校验RESTING的烘焙日期有效且不晚于本地今日，禁止个人ARCHIVED/链RESTING。正在喝和养豆中均显示烘焙距今天数，按UTC归一化日历日差计算避免DST影响，页面ON_RESUME及每分钟刷新日期；异常旧日期显示待补充。已喝完按PERSONAL_BEAN的sourceItemId全部非空评分均值降序、无评分最后、同分名称/id稳定排序，Room Flow实时更新。
 
 ## 关键数据流与决策
 
-记录：`JournalViewModel` 持久化草稿 → `JournalRepository` Room 事务写入记录和目录/图片/咖啡类型快照 → 日历及总结 Flow 自动刷新。目录更新不得改写历史快照；只有显式更换产品才产生新快照。
+记录：`JournalViewModel` 持久化草稿 → `JournalRepository` Room 事务写入记录和目录/图片/咖啡类型快照 → 日历及总结 Flow 自动刷新。目录更新不得改写历史快照；显式更换产品产生新快照，当天详情换图仅更新该条记录的图片、更新时间和 revision，不更改其他字段或清理编辑草稿。
 
 目录：当前类型的各品牌产品通过只读 Flow 聚合，支持按产品名/品牌名搜索和品牌筛选，切换连锁/个人豆时重置筛选；用户在本地选择 Logo/整张实拍图并手动维护。连锁产品仅有黑咖、果咖、奶咖三类；无图回退到品牌 Logo。个人豆记录快照归类为手冲。图片只通过系统 picker 获得单文件授权，原字节保存。
 
@@ -52,7 +57,7 @@
 
 ## 重要文件
 
-- `app/src/main/java/com/niumi/coffeejournal/core/database/CoffeeDatabase.kt` — Room v4 与迁移。
+- `app/src/main/java/com/niumi/coffeejournal/core/database/CoffeeDatabase.kt` — Room v5 与迁移。
 - `app/src/main/java/com/niumi/coffeejournal/catalog/BundledBrandCatalog.kt` — 12 个内置品牌 Logo。
 - `app/src/main/java/com/niumi/coffeejournal/catalog` — 手动连锁目录与个人豆库。
 - `app/src/main/java/com/niumi/coffeejournal/journal` — 记录、草稿、日历与显示偏好。
@@ -75,15 +80,30 @@ export GRADLE_USER_HOME="$PWD/.worktrees/codex-coffee-journal/.gradle"
 ./.local-tools/gradle-8.13/bin/gradle testDebugUnitTest lintDebug assembleDebug --offline --no-daemon
 ```
 
-最终验证（2026-09-17）：
+最终验证（2026-09-20）：
 
-- `testDebugUnitTest lintDebug assembleDebug --offline --no-daemon`：PASS；394 tests，0 failures / errors / skips；lint 0 errors、8 warnings。
-- 最后指标自适应修改后，14 项定向总结测试、lint 与 Debug APK 重新验证 PASS；原生字体单独检查大金额/1.3 倍字体没有省略且文字在绘制边界内。
-- `testDebugUnitTest -PcalendarPreview --tests '*CalendarPreviewRenderTest' --offline --no-daemon`：PASS，11 tests；包含新豆库、搜索、320dp/1.3 字体、个人豆与产品列表。
-- `testDebugUnitTest -PinsightsPreview --tests '*InsightsPreviewRenderTest*' --offline --no-daemon`：PASS，2 tests；生成月度/年度共 8 张总结图，含原生金额排版检查。
-- 本轮截图与 APK 保存于 `build/deliverables/light-catalog-insights/`；README 的豆库、产品、总结三张真实预览已更新，日历图保持不变。测试照片不会打入 APK。
-- Debug APK：`coffee-journal-light-debug.apk`，14,854,782 bytes；SHA-256 `346f7fa4dc2bdde18e991b94728419b16eaf1c554e564d0cb9ff2ae4a21de16e`；签名验证 PASS。
-- reviewer 检查聚合目录、搜索筛选、目录切换与管理入口，无阻塞 findings；长名称评分已独立展示。
-- `git diff --check`：PASS。尚未进行真机验证。
+- `testDebugUnitTest lintDebug assembleDebug --offline --no-daemon`：PASS；405 tests，0 failures/errors/skips；lint 0 errors、8 warnings。
+- 覆盖下拉选择与自定义输入、日历选择/重开/清除、养豆日期/跨DST日差、评分Flow新增/修改/删除及无评分/连锁记录排除；v4归档恢复保留图片与记录，v5养豆备份往返、非法状态/日期拒绝。
+- 养豆与已喝完列表：320dp/1.3倍字体原生渲染通过，检查9天独立可见及评分排序；截图/安装包位于 `build/deliverables/bean-management/`。
+- 弹窗原生截图存在Robolectric AppNotIdle限制；以未改动的品牌弹窗复现确认。未保留无法运行的截图探针；真实表单交互由普通Compose测试覆盖，弹窗外观仍待真机确认。
+- critical reviewer：PASS，无阻塞问题。`git diff --check`：PASS。未做真机安装，本轮未提交或推送。
 
-最后更新：2026-09-17
+补充验证（正在喝显示烘焙天数）：原生定向渲染与 assembleDebug PASS，320dp/1.3倍字体显示9天；新版包与截图位于 `build/deliverables/bean-management-v2/`。
+
+1.1 验证（2026-09-23）：
+
+- 当天详情提供逐条92dp完整图片、添加/更换图片、评分/价格与编辑删除；操作栏独立，详情可滚动，320dp/1.5倍字体及多记录末项已验证。
+- 照片更新捕获记录revision及恢复世代；在图片协调锁内核验世代并执行条件更新。成功恢复在同锁内推进世代，使恢复前的换图请求失效；冲突与失败由现有导入器清理未引用新图，共享旧图保留。
+- `testDebugUnitTest lintDebug assembleDebug --offline --no-daemon`：PASS，410 tests，0 failures/errors/skips；lint 0 errors、8 warnings。
+- critical复审：PASS，无剩余Critical/High/Medium；`git diff --check`：PASS。
+- APK：`build/deliverables/v1.1/coffee-journal-1.1-debug.apk`；versionName=1.1，versionCode=2，包名不变；签名校验通过且SHA-256证书与此前bean-management-v2包相同，符合覆盖升级条件。未做真机安装；未提交/推送。
+
+1.1.1 历史编辑退出修复（2026-09-25）：
+
+- 页面返回与系统返回：历史编辑草稿按 revision 删除成功后再清内存并退出，未保存修改不写历史；普通新增草稿仍保留。新增入口先等初始化恢复完成，再清理残留历史编辑草稿，避免误把新增保存回历史。
+- busy期间拦截系统返回；退出失败留页可重试，日历中新建失败显示错误；历史编辑仅成功加载后才开页，加载失败不会暴露此前残留记录。
+- 真实Room+JournalFeature回归覆盖无修改页面返回和修改后系统返回，再新增保存成第二条，原历史整体相等。旧返回路径已确认测试失败，修复后通过。VM覆盖延迟恢复、新增草稿保留、失败重试和加载失败不打开编辑。
+- `testDebugUnitTest lintDebug assembleDebug --offline --no-daemon`：PASS，418 tests，0 failures/errors/skips；lint 0 errors、8 warnings；critical reviewer PASS；`git diff --check` PASS。
+- 安装包：`build/deliverables/v1.1.1/coffee-journal-1.1.1-debug.apk`，versionCode=3，包名与签名保持同1.1，支持覆盖升级；尚未真机安装，本轮未提交或推送。
+
+最后更新：2026-09-25

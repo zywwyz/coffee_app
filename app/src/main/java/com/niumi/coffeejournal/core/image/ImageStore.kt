@@ -14,6 +14,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -30,6 +31,11 @@ interface ImageStore {
 /** Serializes all mutations of managed image files with their image_assets rows. */
 internal object ImageMutationCoordinator {
     val mutex = Mutex()
+    private val restoreGeneration = AtomicLong()
+
+    fun currentRestoreGeneration(): Long = restoreGeneration.get()
+
+    fun advanceRestoreGeneration(): Long = restoreGeneration.incrementAndGet()
 }
 
 internal interface WholeImportHooks {

@@ -22,6 +22,7 @@ import kotlinx.coroutines.yield
 import kotlinx.coroutines.async
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -243,6 +244,137 @@ class JournalViewModelTest {
     }
 
     @Test
+    fun `leaving an edit discards its draft before opening a new record`() = runBlocking {
+        val journal = FakeJournalRepository().apply {
+            editDraft = DrinkDraft(
+                "edit-revision", ItemType.CHAIN_PRODUCT, "item", null, 8, 1_280, "未保存",
+                editingRecordId = "record", expectedRecordRevision = 0,
+            )
+        }
+        val viewModel = JournalViewModel(
+            journal, FakeCatalogRepository(), 2026, 8, CoroutineScope(Job() + Dispatchers.Unconfined),
+        )
+        var exited = false
+        viewModel.editRecord("record")
+        yield()
+
+        viewModel.leaveEditor { exited = true }
+        yield()
+        viewModel.selectItem(ItemType.CHAIN_PRODUCT, "item")
+        yield()
+        viewModel.save()
+        yield()
+
+        assertTrue(exited)
+        assertEquals(listOf("edit-revision"), journal.discardedRevisions)
+        assertNull(viewModel.uiState.value.editor.editingRecordId)
+        assertEquals(1, journal.saveCalls)
+        assertNull(journal.savedDraft?.editingRecordId)
+    }
+
+    @Test
+    fun `new record waits for restored edit and discards it before entry`() = runBlocking {
+        val journal = FakeJournalRepository().apply {
+            restoreGate = CompletableDeferred()
+            restoredDraft = DrinkDraft(
+                "restored-edit", ItemType.CHAIN_PRODUCT, "item", null, 8, 1_280, "历史草稿",
+                editingRecordId = "record", expectedRecordRevision = 0,
+            )
+        }
+        val viewModel = JournalViewModel(
+            journal, FakeCatalogRepository(), 2026, 8, CoroutineScope(Job() + Dispatchers.Unconfined),
+        )
+        var entered = false
+
+        viewModel.leaveEditor { entered = true }
+        assertFalse(entered)
+        journal.restoreGate!!.complete(Unit)
+        yield()
+
+        assertTrue(entered)
+        assertEquals(listOf("restored-edit"), journal.discardedRevisions)
+        assertNull(viewModel.uiState.value.editor.editingRecordId)
+    }
+
+    @Test
+    fun `editing another record is rejected while current editor selects a product`() = runBlocking {
+        val journal = FakeJournalRepository().apply {
+            editDraft = DrinkDraft("edit", ItemType.CHAIN_PRODUCT, "item", null, 8, 1_280, "", editingRecordId = "old", expectedRecordRevision = 0)
+            newDraftGate = CompletableDeferred()
+        }
+        val viewModel = JournalViewModel(
+            journal, FakeCatalogRepository(), 2026, 8, CoroutineScope(Job() + Dispatchers.Unconfined),
+        )
+        viewModel.selectItem(ItemType.CHAIN_PRODUCT, "item")
+        assertTrue(viewModel.uiState.value.editor.selecting)
+        viewModel.editRecord("old")
+        assertNull(viewModel.uiState.value.editor.editingRecordId)
+        journal.newDraftGate!!.complete(Unit)
+        Unit
+    }
+
+    @Test
+    fun `new draft survives a return while initial restoration is pending`() = runBlocking {
+        val draft = DrinkDraft("restored-new", ItemType.CHAIN_PRODUCT, "item", null, 8, 1_280, "保留新增草稿")
+        val journal = FakeJournalRepository().apply {
+            restoreGate = CompletableDeferred()
+            restoredDraft = draft
+        }
+        val viewModel = JournalViewModel(journal, FakeCatalogRepository(), 2026, 8, CoroutineScope(Job() + Dispatchers.Unconfined))
+        var entered = false
+        viewModel.leaveEditor { entered = true }
+        assertFalse(entered)
+        journal.restoreGate!!.complete(Unit)
+        yield()
+        assertTrue(entered)
+        assertTrue(journal.discardedRevisions.isEmpty())
+        assertEquals(draft.note, viewModel.uiState.value.editor.note)
+        viewModel.leaveEditor { }
+        viewModel.save()
+        yield()
+        assertEquals(draft, journal.savedDraft)
+    }
+
+    @Test
+    fun `failed edit discard keeps editor open and allows retry`() = runBlocking {
+        val journal = FakeJournalRepository().apply {
+            editDraft = DrinkDraft("edit", ItemType.CHAIN_PRODUCT, "item", null, 8, 1_280, "", editingRecordId = "original", expectedRecordRevision = 0)
+            discardAccepted = false
+        }
+        val viewModel = JournalViewModel(journal, FakeCatalogRepository(), 2026, 8, CoroutineScope(Job() + Dispatchers.Unconfined))
+        viewModel.editRecord("original")
+        var exited = false
+        viewModel.leaveEditor { exited = true }
+        yield()
+        assertFalse(exited)
+        assertEquals("original", viewModel.uiState.value.editor.editingRecordId)
+        assertFalse(viewModel.uiState.value.editor.selecting)
+        assertNotNull(viewModel.uiState.value.editor.errorMessage)
+        journal.discardAccepted = true
+        viewModel.leaveEditor { exited = true }
+        yield()
+        assertTrue(exited)
+        assertNull(viewModel.uiState.value.editor.editingRecordId)
+    }
+
+    @Test
+    fun `failed history load does not open an editor containing another record`() = runBlocking {
+        val journal = FakeJournalRepository().apply {
+            restoredDraft = DrinkDraft("restored-A", ItemType.CHAIN_PRODUCT, "item", null, 8, 1_280, "A", editingRecordId = "A", expectedRecordRevision = 0)
+            editError = IllegalStateException("B was deleted")
+        }
+        val viewModel = JournalViewModel(journal, FakeCatalogRepository(), 2026, 8, CoroutineScope(Job() + Dispatchers.Unconfined))
+        var opened = false
+        var error: String? = null
+        viewModel.editRecord("B", onFailure = { error = it }) { opened = true }
+        yield()
+        assertFalse(opened)
+        assertNotNull(error)
+        assertFalse(viewModel.uiState.value.editor.selecting)
+        assertEquals(0, journal.saveCalls)
+    }
+
+    @Test
     fun `discarding a draft clears the editor only after repository accepts its revision`() = runBlocking {
         val journal = FakeJournalRepository()
         val viewModel = JournalViewModel(
@@ -432,12 +564,19 @@ class JournalViewModelTest {
         var savedDraft: DrinkDraft? = null
         var saveGate: CompletableDeferred<Unit>? = null
         var saveError: Exception? = null
+        var editError: Exception? = null
         var editDraft: DrinkDraft? = null
+        var restoreGate: CompletableDeferred<Unit>? = null
+        var restoredDraft: DrinkDraft? = null
+        var newDraftGate: CompletableDeferred<Unit>? = null
         val deletedRecords = mutableListOf<String>()
+        var discardAccepted = true
         val discardedRevisions = mutableListOf<String>()
 
         override fun observeMonth(year: Int, month: Int): Flow<List<DrinkRecord>> = this.month
-        override suspend fun newDraft(type: ItemType, itemId: String) = DrinkDraft(
+        override suspend fun newDraft(type: ItemType, itemId: String): DrinkDraft {
+            newDraftGate?.await()
+            return DrinkDraft(
             revisionId = "revision",
             itemType = type,
             sourceItemId = itemId,
@@ -446,6 +585,7 @@ class JournalViewModelTest {
             actualPriceFen = 990,
             note = "",
         )
+        }
 
         override suspend fun save(draft: DrinkDraft): String {
             saveCalls++
@@ -460,10 +600,17 @@ class JournalViewModelTest {
             return true
         }
 
-        override suspend fun editDraft(recordId: String): DrinkDraft = requireNotNull(editDraft)
+        override suspend fun editDraft(recordId: String): DrinkDraft {
+            editError?.let { throw it }
+            return requireNotNull(editDraft)
+        }
+        override suspend fun restoreDraft(): DrinkDraft? {
+            restoreGate?.await()
+            return restoredDraft
+        }
         override suspend fun discardDraft(revisionId: String): Boolean {
             discardedRevisions += revisionId
-            return true
+            return discardAccepted
         }
         override suspend fun delete(recordId: String) { deletedRecords += recordId }
     }

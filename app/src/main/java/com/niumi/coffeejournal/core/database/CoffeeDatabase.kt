@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CatalogUpdateEntity::class,
         DraftRecordEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class CoffeeDatabase : RoomDatabase() {
@@ -40,7 +40,7 @@ abstract class CoffeeDatabase : RoomDatabase() {
                 context.applicationContext,
                 CoffeeDatabase::class.java,
                 DATABASE_NAME,
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(database: SupportSQLiteDatabase) {
@@ -87,6 +87,13 @@ abstract class CoffeeDatabase : RoomDatabase() {
                       ELSE 'BLACK' END
                 """.trimIndent())
                 database.execSQL("PRAGMA user_version = 4")
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("UPDATE catalog_items SET status = 'DISCONTINUED' WHERE type = 'PERSONAL_BEAN' AND status = 'ARCHIVED'")
+                database.execSQL("PRAGMA user_version = 5")
             }
         }
     }

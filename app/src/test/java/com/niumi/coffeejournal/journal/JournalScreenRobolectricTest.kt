@@ -674,6 +674,57 @@ class JournalScreenRobolectricTest {
         compose.runOnIdle { assertEquals("r", deleted) }
     }
 
+    @Test
+    fun `day detail shows snapshot photo and sends its record to change photo action`() {
+        val image = temporaryBitmap("day-detail")
+        val record = DrinkRecord(
+            "r", 1, "2026-08-05", ItemType.CHAIN_PRODUCT, "item", null, 8, 1_280, null,
+            DrinkSnapshot("品牌", "产品", null, null, "record-photo"), revision = 7,
+        )
+        var selected: DrinkRecord? = null
+        compose.setContent {
+            CoffeeTheme {
+                JournalScreen(
+                    JournalUiState.empty(2026, 8).copy(records = listOf(record), selectedDate = "2026-08-05"),
+                    {}, {}, {}, {},
+                    imagePathResolver = { if (it == "record-photo") image.absolutePath else null },
+                    onChangeRecordPhoto = { selected = it },
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("当天实拍图 产品").assertIsDisplayed()
+        compose.onNodeWithText("更换图片").performClick()
+        compose.runOnIdle { assertEquals(record, selected) }
+        compose.onNodeWithText("4.0 星 · ¥12.80").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h480dp")
+    fun `day detail photo actions remain reachable on narrow screen with large text`() {
+        val record = DrinkRecord(
+            "r", 1, "2026-08-05", ItemType.CHAIN_PRODUCT, "item", null, 8, 1_280, "长备注用于验证详情可滚动",
+            DrinkSnapshot("很长的品牌名称", "很长的咖啡产品名称", null, null, null),
+        )
+        val lastRecord = record.copy(id = "last", snapshot = record.snapshot.copy(itemName = "最后一条咖啡"))
+        var selected: DrinkRecord? = null
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 1.5f)) {
+                CoffeeTheme {
+                    JournalScreen(
+                        JournalUiState.empty(2026, 8).copy(records = listOf(record, lastRecord), selectedDate = "2026-08-05"),
+                        {}, {}, {}, {},
+                        onChangeRecordPhoto = { selected = it },
+                    )
+                }
+            }
+        }
+
+        compose.onAllNodesWithText("添加图片")[1].performScrollTo().assertIsDisplayed().performClick()
+        compose.onAllNodesWithText("删除")[1].performScrollTo().assertIsDisplayed()
+        compose.runOnIdle { assertEquals(lastRecord, selected) }
+    }
+
     private fun temporaryBitmap(prefix: String): File {
         val file = File.createTempFile(prefix, ".png")
         file.deleteOnExit()

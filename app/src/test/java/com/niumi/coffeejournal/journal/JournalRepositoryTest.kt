@@ -6,6 +6,8 @@ import androidx.room.Room
 import com.niumi.coffeejournal.catalog.CatalogItemNotFoundException
 import com.niumi.coffeejournal.catalog.CatalogRepository
 import com.niumi.coffeejournal.core.database.CoffeeDatabase
+import com.niumi.coffeejournal.core.database.ImageAssetEntity
+import com.niumi.coffeejournal.core.image.ImageMutationCoordinator
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.CatalogItem
@@ -37,6 +39,15 @@ import org.robolectric.annotation.Config
 import java.util.TimeZone
 
 class JournalRepositoryTest {
+    @Test fun `new personal bean drink does not inherit an old catalog default brew`() = runBlocking {
+        val bean = item().copy(type = ItemType.PERSONAL_BEAN, chainProductKind = null, brewMethod = "手冲")
+        val catalog = FakeCatalogRepository(bean, null)
+        val repository = DefaultJournalRepository(catalog, FakeDrinkStore(), FixedClock())
+        val draft = repository.newDraft(ItemType.PERSONAL_BEAN, bean.id)
+        assertNull(draft.brewMethod)
+        assertEquals("手冲", catalog.getItem(bean.id).brewMethod)
+    }
+
     @Test
     fun `save snapshots personal beans as hand brew and chain products by catalog kind`() = runBlocking {
         val cases = listOf(
@@ -583,6 +594,74 @@ class RoomDrinkStoreTest {
     }
 
     @Test
+    fun `updating record snapshot image only changes image timestamp and revision`() = runBlocking {
+        val original = record().copy(
+            ratingHalfStars = 8,
+            actualPriceFen = 1_280,
+            note = "保留这条备注",
+            snapshot = record().snapshot.copy(imageAssetId = "shared-old"),
+            updatedAtEpochMillis = 10,
+            revision = 3,
+        )
+        val sharedRecord = original.copy(id = "record-2", note = "另一条记录")
+        database.imageAssetDao().upsert(imageAsset("shared-old"))
+        database.imageAssetDao().upsert(imageAsset("new-photo"))
+        store.saveRecordAndClearDraft(original, "missing-draft")
+        store.saveRecordAndClearDraft(sharedRecord, "missing-draft")
+        val editingDraft = requireNotNull(store.startEditDraft(original.id, "editing-draft"))
+
+        assertTrue(store.updateSnapshotImage(original.id, "new-photo", expectedRevision = 3))
+
+        val updated = store.get(original.id)
+        assertEquals(
+            original.copy(
+                snapshot = original.snapshot.copy(imageAssetId = "new-photo"),
+                updatedAtEpochMillis = 11L,
+                revision = 4,
+            ),
+            updated,
+        )
+        assertEquals(sharedRecord, store.get(sharedRecord.id))
+        assertEquals(1, database.imageAssetDao().referenceCount("shared-old"))
+        assertFalse(
+            store.update(
+                original.copy(ratingHalfStars = 10, updatedAtEpochMillis = 12L, revision = 4),
+                expectedRevision = editingDraft.expectedRecordRevision!!,
+                draftRevisionId = editingDraft.revisionId,
+            ),
+        )
+        assertEquals("new-photo", store.get(original.id)?.snapshot?.imageAssetId)
+        val restoredDraft = store.restoreDraft()
+        assertEquals(editingDraft.revisionId, restoredDraft?.revisionId)
+    }
+
+    @Test
+    fun `updating record snapshot image returns false after deletion or revision conflict`() = runBlocking {
+        val original = record().copy(revision = 2)
+        store.saveRecordAndClearDraft(original, "missing-draft")
+
+        assertFalse(store.updateSnapshotImage(original.id, "new-photo", expectedRevision = 1))
+        store.delete(original.id)
+        assertFalse(store.updateSnapshotImage(original.id, "new-photo", expectedRevision = 2))
+    }
+
+    @Test
+    fun `stale photo request cannot overwrite a restored record with matching id and revision`() = runBlocking {
+        database.imageAssetDao().upsert(imageAsset("restored-photo"))
+        database.imageAssetDao().upsert(imageAsset("late-photo"))
+        val restored = record().copy(
+            snapshot = record().snapshot.copy(imageAssetId = "restored-photo"),
+            revision = 3,
+        )
+        store.saveRecordAndClearDraft(restored, "missing-draft")
+        val staleToken = ImageMutationCoordinator.currentRestoreGeneration()
+        ImageMutationCoordinator.advanceRestoreGeneration()
+
+        assertFalse(store.updateSnapshotImage(restored.id, "late-photo", expectedRevision = 3, restoreGeneration = staleToken))
+        assertEquals(restored, store.get(restored.id))
+    }
+
+    @Test
     fun `late autosave after successful save cannot recreate draft`() = runBlocking {
         val oldDraft = draft("revision-old")
         store.startDraft(oldDraft)
@@ -687,6 +766,14 @@ class RoomDrinkStoreTest {
             snapshotRoastLevel = snapshot.roastLevel,
             snapshotFlavorNotes = snapshot.flavorNotes,
         )
+
+    private fun imageAsset(id: String) = ImageAssetEntity(
+        id = id,
+        localPath = "/private/$id.jpg",
+        sha256 = id.padEnd(64, '0'),
+        kind = "RECORD_SNAPSHOT",
+        createdAtEpochMillis = 1,
+    )
 
     private object FixedStoreClock : Clock {
         override fun read() = ClockReading(1, "2026-08-01")

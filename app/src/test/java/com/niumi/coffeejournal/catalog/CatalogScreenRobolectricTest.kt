@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -35,6 +36,55 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], qualifiers = "w320dp-h480dp")
 class CatalogScreenRobolectricTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun `bean dropdowns allow suggestions and custom processing without default brew`() {
+        val screen = mutableStateOf(beanState())
+        val brand = screen.value.brandOverviews.single().brand
+        screen.value = screen.value.copy(editorSession = CatalogEditorSession.Item(null, brand, "lease", null))
+        compose.setContent { CoffeeTheme {
+            CatalogScreen(screen.value, {}, {}, {}, {}, {}, { _, _ -> }, {},
+                onUpdateItemDraft = { updateItemDraft(screen, it) })
+        } }
+        compose.onNodeWithContentDescription("展开处理法选项").performScrollTo().performClick()
+        compose.onNodeWithText("日晒").performClick()
+        compose.onNodeWithText("处理法（可选）").performTextReplacement("双重厌氧水洗")
+        compose.onNodeWithContentDescription("展开烘焙度选项").performScrollTo().performClick()
+        compose.onNodeWithText("中深烘焙").performClick()
+        compose.runOnIdle {
+            val draft = (screen.value.editorSession as CatalogEditorSession.Item).draft
+            org.junit.Assert.assertEquals("双重厌氧水洗", draft.processing)
+            org.junit.Assert.assertEquals("中深烘焙", draft.roastLevel)
+        }
+        org.junit.Assert.assertTrue(compose.onAllNodesWithText("默认冲煮方式（可选）").fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test fun `bean dates select reopen and clear without typing`() {
+        val screen = mutableStateOf(beanState())
+        screen.value = screen.value.copy(editorSession = CatalogEditorSession.Item(null, screen.value.brandOverviews.single().brand, "lease", null))
+        compose.setContent { CoffeeTheme {
+            CatalogScreen(screen.value, {}, {}, {}, {}, {}, { _, _ -> }, {},
+                onUpdateItemDraft = { updateItemDraft(screen, it) })
+        } }
+        listOf("购买" to "2026-09-18", "烘焙" to "2026-09-10").forEach { (kind, date) ->
+            val day = date.takeLast(2).toInt()
+            compose.onNodeWithText("选择${kind}日期").performScrollTo().performClick()
+            compose.runOnIdle {
+                val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as android.app.DatePickerDialog
+                dialog.datePicker.updateDate(2026, 8, day)
+                dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick()
+            }
+            compose.onNodeWithText(date).assertIsDisplayed().performClick()
+            compose.runOnIdle {
+                val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as android.app.DatePickerDialog
+                org.junit.Assert.assertEquals(2026, dialog.datePicker.year)
+                org.junit.Assert.assertEquals(8, dialog.datePicker.month)
+                org.junit.Assert.assertEquals(day, dialog.datePicker.dayOfMonth)
+                dialog.dismiss()
+            }
+            compose.onNodeWithContentDescription("清除${kind}日期").performClick()
+            compose.onNodeWithText("选择${kind}日期").assertIsDisplayed()
+        }
+    }
 
     @Test fun `root list searches product and brand names across brands`() {
         val first = Brand("first", BrandType.CHAIN, "瑞幸", null, MaintenanceMode.MANUAL_ONLY, null)
@@ -180,7 +230,7 @@ class CatalogScreenRobolectricTest {
 
         compose.onNodeWithText("新增豆子").performClick()
         compose.onNodeWithText("产地（可选）").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("默认冲煮方式（可选）").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("选择烘焙日期").performScrollTo().assertIsDisplayed()
     }
 
     @Test

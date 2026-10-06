@@ -21,6 +21,10 @@ import com.niumi.coffeejournal.core.model.ChainProductKind
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.model.MaintenanceMode
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -39,6 +43,32 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class CatalogRepositoryTest {
+    @Test fun `personal bean rating flow ignores unrated and chain records and updates after edits`() = runBlocking {
+        val values = Channel<Map<String, Double>>(Channel.UNLIMITED)
+        val collector = launch(Dispatchers.Default) { repository.observePersonalBeanAverageRatings().collect { values.send(it) } }
+        suspend fun awaitRatings(expected: Map<String, Double>) = withTimeout(5_000) {
+            var actual = values.receive()
+            while (actual != expected) actual = values.receive()
+            assertEquals(expected, actual)
+        }
+        try {
+            awaitRatings(emptyMap())
+            val first = record("bean-one", 1, null).copy(itemType = "PERSONAL_BEAN", ratingHalfStars = 8)
+            database.drinkDao().insert(first)
+            awaitRatings(mapOf(ITEM_ID to 4.0))
+            val second = first.copy(id = "bean-two", ratingHalfStars = 6)
+            database.drinkDao().insert(second)
+            awaitRatings(mapOf(ITEM_ID to 3.5))
+            database.drinkDao().insert(first.copy(id = "unrated", ratingHalfStars = null))
+            database.drinkDao().insert(first.copy(id = "chain", itemType = "CHAIN_PRODUCT", ratingHalfStars = 1))
+            assertEquals(mapOf(ITEM_ID to 3.5), repository.observePersonalBeanAverageRatings().first())
+            database.drinkDao().update(second.copy(ratingHalfStars = 10))
+            awaitRatings(mapOf(ITEM_ID to 4.5))
+            database.drinkDao().delete(first)
+            awaitRatings(mapOf(ITEM_ID to 5.0))
+        } finally { collector.cancel(); values.close() }
+    }
+
     @Test fun `rejects invalid chain product kinds and personal bean kinds on save`() = runBlocking {
         val chain = item("类型").copy(type = ItemType.CHAIN_PRODUCT)
         repository.upsertBrand(brand())

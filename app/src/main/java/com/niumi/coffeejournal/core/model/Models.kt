@@ -63,6 +63,7 @@ enum class ItemStatus {
     NEEDS_IMAGE,
     DISCONTINUED,
     ARCHIVED,
+    RESTING,
 }
 
 @Serializable

@@ -175,6 +175,23 @@ interface DrinkDao {
         newRevision: Int,
     ): Int
 
+    @Query(
+        """
+        UPDATE drink_records SET
+          snapshotImageAssetId=:snapshotImageAssetId,
+          updatedAtEpochMillis=:updatedAtEpochMillis,
+          revision=:newRevision
+        WHERE id=:id AND revision=:expectedRevision
+        """,
+    )
+    suspend fun updateSnapshotImageIfRevision(
+        id: String,
+        snapshotImageAssetId: String,
+        expectedRevision: Int,
+        updatedAtEpochMillis: Long,
+        newRevision: Int,
+    ): Int
+
     @Delete
     suspend fun delete(record: DrinkRecordEntity)
 
@@ -191,6 +208,9 @@ interface DrinkDao {
     )
     suspend fun lastActualPriceFen(sourceItemId: String): Long?
 
+    @Query("SELECT sourceItemId, AVG(ratingHalfStars) / 2.0 AS averageRating FROM drink_records WHERE itemType = 'PERSONAL_BEAN' AND ratingHalfStars IS NOT NULL GROUP BY sourceItemId")
+    fun observePersonalBeanAverageRatings(): Flow<List<PersonalBeanRatingRow>>
+
     @Query(
         """
         SELECT * FROM drink_records
@@ -203,6 +223,8 @@ interface DrinkDao {
         endLocalDate: String,
     ): Flow<List<DrinkRecordEntity>>
 }
+
+data class PersonalBeanRatingRow(val sourceItemId: String, val averageRating: Double)
 
 @Dao
 interface ImageAssetDao {

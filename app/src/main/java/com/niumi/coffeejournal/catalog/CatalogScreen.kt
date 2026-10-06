@@ -1,5 +1,6 @@
 package com.niumi.coffeejournal.catalog
 
+import android.app.DatePickerDialog
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -31,16 +32,19 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -59,6 +63,9 @@ import androidx.compose.foundation.lazy.items as lazyItems
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.BrandType
@@ -71,6 +78,8 @@ import com.niumi.coffeejournal.core.image.ImagePathResolver
 import com.niumi.coffeejournal.core.image.ResolvedLocalAssetImage
 import com.niumi.coffeejournal.ui.CoffeeVisuals
 import com.niumi.coffeejournal.ui.scrapbookPaper
+import kotlinx.coroutines.delay
+import java.util.Locale
 
 enum class CatalogAssetKind { BRAND_LOGO, CHAIN_PRODUCT_IMAGE, BEAN_PACKAGE }
 
@@ -97,6 +106,13 @@ fun CatalogFeature(
     var choosingProductBrand by remember { mutableStateOf(false) }
     val catalogViewModel: CatalogViewModel = viewModel(factory = CatalogViewModel.factory(repository, imageStore))
     val state by catalogViewModel.uiState.collectAsStateWithLifecycle()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) catalogViewModel.refreshToday() }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(Unit) { while (true) { delay(60_000); catalogViewModel.refreshToday() } }
     CatalogScreen(
         state = state,
         onSelectTab = catalogViewModel::selectTab,
@@ -184,7 +200,7 @@ fun CatalogScreen(
         else LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp).testTag(com.niumi.coffeejournal.TestTags.CatalogProductList), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             columnItems(visibleProducts, key = { it.id }) { item ->
                 val brand = brands.firstOrNull { it.id == item.brandId } ?: return@columnItems
-                CompactCatalogProductRow(item, brand, imagePathResolver, onClick = { onOpenItemEditor(item, brand) }, onStatus = { onSetItemStatus(item, it) }, enabled = !state.saving)
+                CompactCatalogProductRow(item, brand, state.todayLocalDate, imagePathResolver, onClick = { onOpenItemEditor(item, brand) }, onStatus = { onSetItemStatus(item, it) }, enabled = !state.saving)
             }
         }
     }
@@ -223,17 +239,25 @@ fun CatalogScreen(
 }
 
 @Composable
-private fun CompactCatalogProductRow(item: CatalogItem, brand: Brand, resolver: ImagePathResolver, onClick: () -> Unit, onStatus: (ItemStatus) -> Unit, enabled: Boolean) {
+private fun CompactCatalogProductRow(item: CatalogItem, brand: Brand, today: String, resolver: ImagePathResolver, onClick: () -> Unit, onStatus: (ItemStatus) -> Unit, enabled: Boolean) {
     Row(Modifier.fillMaxWidth().testTag(com.niumi.coffeejournal.TestTags.CatalogProductRowPrefix + item.id).clickable(enabled = enabled, onClick = onClick).padding(vertical = 7.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         val bundled = BUNDLED_CHAIN_BRANDS.firstOrNull { it.brand.id == brand.id }
         Box(Modifier.size(48.dp).clip(RoundedCornerShape(CoffeeVisuals.cornerSmall)).background(CoffeeVisuals.white).testTag(com.niumi.coffeejournal.TestTags.CatalogProductImagePrefix + item.id)) {
             ResolvedLocalAssetImage(item.imageAssetId, brand.logoAssetId, resolver, "${item.name} 图片", ContentScale.Fit, Modifier.fillMaxSize().padding(4.dp), bundled?.let { painterResource(it.logoRes) })
         }
-        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) { Text(item.name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall); Text("${brand.name} · ${item.chainProductKind?.let(::publicKindLabel) ?: if (item.type == ItemType.PERSONAL_BEAN) item.status.beanStatusLabel() else "待分类"}", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, color = CoffeeVisuals.secondaryText, style = MaterialTheme.typography.bodySmall) }
+        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) { Text(item.name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall); Text("${brand.name} · ${item.chainProductKind?.let(::publicKindLabel) ?: if (item.type == ItemType.PERSONAL_BEAN) item.status.beanStatusLabel() else "待分类"}", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, color = CoffeeVisuals.secondaryText, style = MaterialTheme.typography.bodySmall); if (item.type == ItemType.PERSONAL_BEAN && item.status in listOf(ItemStatus.ACTIVE, ItemStatus.NEEDS_IMAGE, ItemStatus.RESTING)) Text(restingDays(item.roastDate, today)?.let { "${it}天" } ?: "待补充烘焙日期", color = CoffeeVisuals.secondaryText, style = MaterialTheme.typography.bodySmall) }
         if (item.type == ItemType.PERSONAL_BEAN) {
-            TextButton(onClick = { onStatus(if (item.status == ItemStatus.ACTIVE) ItemStatus.DISCONTINUED else ItemStatus.ARCHIVED) }, enabled = enabled) { Text(if (item.status == ItemStatus.ACTIVE) "喝完" else "归档") }
+            TextButton(onClick = { onStatus(when (item.status) { ItemStatus.RESTING, ItemStatus.DISCONTINUED -> ItemStatus.ACTIVE; else -> ItemStatus.DISCONTINUED }) }, enabled = enabled) { Text(if (item.status == ItemStatus.RESTING || item.status == ItemStatus.DISCONTINUED) "开始喝" else "喝完") }
         }
     }
+}
+
+private fun personalBeanStatusText(item: CatalogItem, today: String): String = if (item.status != ItemStatus.RESTING) item.status.beanStatusLabel() else restingDays(item.roastDate, today)?.let { "养豆中 · ${it}天" } ?: "养豆中 · 待补充烘焙日期"
+
+internal fun restingDays(roastDate: String?, today: String): Int? {
+    if (!isValidRestingRoastDate(roastDate, today)) return null
+    fun day(date: String): Long { val (year, month, value) = date.split('-').map(String::toInt); return java.util.GregorianCalendar(java.util.TimeZone.getTimeZone("UTC")).apply { isLenient = false; clear(); set(year, month - 1, value); timeInMillis }.timeInMillis / 86_400_000L }
+    return (day(today) - day(roastDate!!)).toInt()
 }
 
 @Composable
@@ -402,10 +426,10 @@ private fun ItemEditorDialog(
     ) {
         Field(draft.name, { v -> onUpdateDraft { it.copy(name = v) } }, "名称", enabled = !saving)
         Field(draft.origin.orEmpty(), { v -> onUpdateDraft { it.copy(origin = v) } }, "产地（可选）", enabled = !saving)
-        Field(draft.processing.orEmpty(), { v -> onUpdateDraft { it.copy(processing = v) } }, "处理法（可选）", enabled = !saving)
-        Field(draft.roastLevel.orEmpty(), { v -> onUpdateDraft { it.copy(roastLevel = v) } }, "烘焙度（可选）", enabled = !saving)
+        EditableSuggestionField(draft.processing.orEmpty(), { v -> onUpdateDraft { it.copy(processing = v) } }, "处理法（可选）", listOf("水洗", "日晒", "蜜处理", "湿刨", "厌氧发酵", "二氧化碳浸渍"), !saving)
+        EditableSuggestionField(draft.roastLevel.orEmpty(), { v -> onUpdateDraft { it.copy(roastLevel = v) } }, "烘焙度（可选）", listOf("极浅烘焙", "浅烘焙", "中浅烘焙", "中度烘焙", "中深烘焙", "深烘焙", "极深烘焙"), !saving)
         Field(draft.flavorNotes.orEmpty(), { v -> onUpdateDraft { it.copy(flavorNotes = v) } }, "风味描述（可选）", enabled = !saving)
-        Field(draft.brewMethod.orEmpty(), { v -> onUpdateDraft { it.copy(brewMethod = v) } }, "默认冲煮方式（可选）", enabled = !saving)
+        if (type == ItemType.CHAIN_PRODUCT) Field(draft.brewMethod.orEmpty(), { v -> onUpdateDraft { it.copy(brewMethod = v) } }, "默认冲煮方式（可选）", enabled = !saving)
         if (type == ItemType.CHAIN_PRODUCT) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("咖啡类型")
@@ -428,8 +452,8 @@ private fun ItemEditorDialog(
             }
         } else {
             Field(draft.officialDescription.orEmpty(), { v -> onUpdateDraft { it.copy(officialDescription = v) } }, "备注（可选）", enabled = !saving)
-            Field(draft.purchaseDate.orEmpty(), { v -> onUpdateDraft { it.copy(purchaseDate = v) } }, "购买日期 YYYY-MM-DD（可选）", enabled = !saving)
-            Field(draft.roastDate.orEmpty(), { v -> onUpdateDraft { it.copy(roastDate = v) } }, "烘焙日期 YYYY-MM-DD（可选）", enabled = !saving)
+            DateField(draft.purchaseDate, "购买日期（可选）", "购买", !saving) { onUpdateDraft { draft -> draft.copy(purchaseDate = it) } }
+            DateField(draft.roastDate, "烘焙日期（可选）", "烘焙", !saving) { onUpdateDraft { draft -> draft.copy(roastDate = it) } }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CatalogViewModel.BEAN_FILTERS.forEach { value ->
                     FilterChip(draft.status == value, { onUpdateDraft { it.copy(status = value) } }, label = { Text(value.beanStatusLabel()) }, enabled = !saving)
@@ -490,10 +514,21 @@ private fun Field(value: String, onChange: (String) -> Unit, label: String, enab
     )
 }
 
+@Composable private fun EditableSuggestionField(value: String, onChange: (String) -> Unit, label: String, suggestions: List<String>, enabled: Boolean) {
+    var expanded by remember { mutableStateOf(false) }
+    Box { OutlinedTextField(value, onChange, label = { Text(label) }, enabled = enabled, singleLine = true, modifier = Modifier.fillMaxWidth(), trailingIcon = { TextButton(onClick = { expanded = true }, enabled = enabled, modifier = Modifier.semantics { contentDescription = "展开${label.removeSuffix("（可选）")}选项" }) { Text("⌄") } }); DropdownMenu(expanded, { expanded = false }) { suggestions.forEach { suggestion -> DropdownMenuItem({ Text(suggestion) }, { onChange(suggestion); expanded = false }) } } }
+}
+
+@Composable private fun DateField(value: String?, label: String, kind: String, enabled: Boolean, onChange: (String?) -> Unit) {
+    val context = LocalContext.current
+    Column { Text(label); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { TextButton(enabled = enabled, modifier = Modifier.weight(1f), onClick = { val c = java.util.Calendar.getInstance(); value?.split('-')?.mapNotNull(String::toIntOrNull)?.takeIf { it.size == 3 }?.let { (y, m, d) -> c.set(y, m - 1, d) }; DatePickerDialog(context, { _, y, m, d -> onChange(String.format(Locale.ROOT, "%04d-%02d-%02d", y, m + 1, d)) }, c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH), c.get(java.util.Calendar.DAY_OF_MONTH)).show() }) { Text(value ?: "选择${kind}日期") }; if (value != null) TextButton(enabled = enabled, modifier = Modifier.semantics { contentDescription = "清除${kind}日期" }, onClick = { onChange(null) }) { Text("清除") } } }
+}
+
 
 private fun statusLabel(status: ItemStatus): String = when (status) {
     ItemStatus.ACTIVE -> "在售"
     ItemStatus.NEEDS_IMAGE -> "待补充图片"
     ItemStatus.DISCONTINUED -> "已下架"
     ItemStatus.ARCHIVED -> "归档"
+    ItemStatus.RESTING -> "养豆中"
 }

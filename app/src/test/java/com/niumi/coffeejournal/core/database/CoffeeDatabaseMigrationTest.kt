@@ -13,6 +13,29 @@ import org.robolectric.RuntimeEnvironment
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class CoffeeDatabaseMigrationTest {
+    @Test fun `migration 4 to 5 changes archived personal beans to discontinued only`() {
+        val database = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(RuntimeEnvironment.getApplication())
+                .name(null).callback(object : SupportSQLiteOpenHelper.Callback(4) {
+                    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) = Unit
+                    override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                }).build(),
+        ).writableDatabase
+        database.execSQL("CREATE TABLE catalog_items (id TEXT PRIMARY KEY NOT NULL, type TEXT NOT NULL, status TEXT NOT NULL)")
+        database.execSQL("INSERT INTO catalog_items VALUES ('bean', 'PERSONAL_BEAN', 'ARCHIVED')")
+        database.execSQL("INSERT INTO catalog_items VALUES ('chain', 'CHAIN_PRODUCT', 'ARCHIVED')")
+        database.execSQL("INSERT INTO catalog_items VALUES ('active', 'PERSONAL_BEAN', 'ACTIVE')")
+
+        CoffeeDatabase.MIGRATION_4_5.migrate(database)
+
+        database.query("SELECT id,status FROM catalog_items ORDER BY id").use { cursor ->
+            cursor.moveToFirst(); assertEquals("ACTIVE", cursor.getString(1))
+            cursor.moveToNext(); assertEquals("DISCONTINUED", cursor.getString(1))
+            cursor.moveToNext(); assertEquals("ARCHIVED", cursor.getString(1))
+        }
+        database.query("PRAGMA user_version").use { it.moveToFirst(); assertEquals(5, it.getInt(0)) }
+        database.close()
+    }
     @Test fun `migration 3 to 4 snapshots coffee type from active catalog or legacy names`() {
         val database = FrameworkSQLiteOpenHelperFactory().create(
             SupportSQLiteOpenHelper.Configuration.builder(RuntimeEnvironment.getApplication())

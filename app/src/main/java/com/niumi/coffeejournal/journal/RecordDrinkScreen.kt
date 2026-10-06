@@ -1,6 +1,7 @@
 package com.niumi.coffeejournal.journal
 
 import android.app.DatePickerDialog
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.text.KeyboardOptions
@@ -76,6 +77,7 @@ fun RecordDrinkScreen(
     val hasDraft = state.selectedItemId != null || state.invalidItem || state.editingRecordId != null
     val context = LocalContext.current
     var confirmDiscard by remember { mutableStateOf(false) }
+    BackHandler(enabled = !confirmDiscard) { if (!editorBusy) onBack() }
     val selectedTime = Calendar.getInstance().apply { timeInMillis = state.consumedAtEpochMillis }
     Column(
         modifier = Modifier.fillMaxSize().scrapbookPaper().testTag(TestTags.RecordEditorScroll)
