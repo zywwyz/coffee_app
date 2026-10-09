@@ -3,6 +3,8 @@ package com.niumi.coffeejournal.journal
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.CatalogItem
 import com.niumi.coffeejournal.core.model.DrinkRecord
+import com.niumi.coffeejournal.core.model.PersonalProductType
+import com.niumi.coffeejournal.core.model.PriceMode
 import com.niumi.coffeejournal.core.model.ItemType
 import java.math.BigDecimal
 import java.util.Calendar
@@ -45,6 +47,12 @@ data class RecordEditorUi(
     val attachingImage: Boolean = false,
     val saving: Boolean = false,
     val errorMessage: String? = null,
+    val personalProductType: PersonalProductType = PersonalProductType.BEANS,
+    val priceMode: PriceMode = PriceMode.MANUAL,
+    val consumedWeightInput: String = "",
+    val consumedCountInput: String = "",
+    val quantityValid: Boolean = true,
+    val autoPriceMessage: String? = null,
 )
 
 data class JournalUiState(
@@ -150,5 +158,14 @@ fun projectMonth(
             brandName = latest?.snapshot?.brandName,
             drinkCount = dayRecords.size,
         )
+    }
+}
+
+internal fun personalRecordDetail(record: DrinkRecord): String? {
+    if (record.itemType != ItemType.PERSONAL_BEAN) return record.brewMethod
+    return if (record.personalProductType == PersonalProductType.DRIP_BAG) {
+        listOfNotNull("挂耳咖啡", record.consumedCount?.let { "${it}包" }).joinToString(" · ")
+    } else {
+        listOfNotNull("咖啡豆", record.brewMethod?.takeIf(String::isNotBlank), record.consumedWeightMg?.let { "${com.niumi.coffeejournal.core.model.formatMilligrams(it)}克" }).joinToString(" · ")
     }
 }

@@ -8,6 +8,8 @@
 
 ## 当前开发阶段
 
+1.2 本轮新增：个人产品咖啡豆/挂耳、采购总价和克重/包数，用量自动费用（可手动覆盖、恢复自动），当次计价基数及用量快照；历史详情改为190dp完整大图卡片。交付分支 `codex/personal-coffee-cost`。
+
 个人豆管理改进已完成：处理法/烘焙度下拉、日期日历选择、养豆中与天数、已喝完平均评分排序；用户已确认旧归档并入已喝完。豆库图片是否自动同步到历史记录仍待用户决定，保留快照机制；1.1 新增当天详情逐条显示实拍图与手动换图，保留评分/价格。
 
 上一轮轻量画布豆库与总结已在 main 发布（5e4539a），日历保留 A 风格。人工上传照片与离线原则不变。
@@ -15,7 +17,7 @@
 ## 技术栈与架构
 
 - Kotlin、Jetpack Compose、Material 3；ViewModel + StateFlow；Room / SQLite；本地 Bitmap 缩略图加载。
-- Room 数据库为 v5，包含 v1→v2→v3→v4→v5 迁移；schema 已导出。
+- Room 数据库为 v6，包含 v1→v2→v3→v4→v5→v6 迁移；schema 已导出。
 - `journal`：记录、草稿、日历显示模式、详情与不可变快照。
 - `catalog`：12 个内置 Logo、连锁品牌/产品的手动 CRUD、个人豆库。
 - `core/image`：本地原始图片字节、引用、产品图→Logo→占位图回退及变更协调。
@@ -28,9 +30,9 @@
 - App 与首 Tab 为“咖啡日历”，无全局顶栏；底部根 Tab 为咖啡日历、豆库、总结。
 - 月历“品牌／咖啡”显示模式持久化；记录以本地中午的 date-only 语义保存，图片导入缩略图上限为 512px，并按三级回退。
 - 12 个预置连锁品牌 Logo，横向品牌筛选与 48dp 小缩略图产品列表；用户可以本地手动维护连锁品牌、产品和产品实拍图。
-- 手动新增/编辑/删除自定义连锁品牌与 Logo；手动新增/编辑/删除产品名称、黑咖/果咖/奶咖分类和可选实拍图。个人豆在统计中固定归类为“手冲”。
-- `DrinkSnapshot` 固化 `CoffeeType`：历史记录不受目录后续编辑影响；新建个人豆记录写入 `HAND_BREW`。
-- 备份数据库版本为 v5（ZIP manifest formatVersion 仍为1）：接受旧v1–v4；v1–v3派生历史CoffeeType，v4–v5严格校验快照类型。v4→v5升级及旧备份恢复仅将个人豆ARCHIVED改为DISCONTINUED，链产品状态、图片与记录不变；恢复保持staging校验与原子替换。RESTING仅v5个人豆可用，日期必须严格有效；恢复不按当前时间拒绝未来日期，避免设备时区或时钟变化破坏合法旧备份。
+- 手动新增/编辑/删除自定义连锁品牌与 Logo；手动新增/编辑/删除产品名称、黑咖/果咖/奶咖分类和可选实拍图。新个人记录按手冲、意式、挂耳分类，旧记录保留原分类。
+- `DrinkSnapshot` 固化 `CoffeeType`：历史记录不受目录后续编辑影响；新建个人记录写入 `HAND_BREW` / `ESPRESSO` / `DRIP_BAG`。
+- 备份数据库版本为 v6（ZIP manifest formatVersion 仍为1）：接受旧v1–v5；v1–v3派生历史CoffeeType，v4–v5严格校验旧快照类型，v6增加意式/挂耳与计价域校验。v4→v5升级及旧备份恢复仅将个人豆ARCHIVED改为DISCONTINUED，链产品状态、图片与记录不变；恢复保持staging校验与原子替换。RESTING仅v5个人豆可用，日期必须严格有效；恢复不按当前时间拒绝未来日期，避免设备时区或时钟变化破坏合法旧备份。
 - 总结支持月度/年度切换：习惯摘要含上期杯数差（月度同日比较、年度同期间比较，年份 1 无基线）；月度与年度均刻意不显示趋势卡；咖啡类型与品牌占比横条（黑咖/果咖/奶咖/手冲；Top 4 品牌+其他）、Top 3，以及最好/最差记录行与 40dp 历史图片回退。横条同时展示杯数和百分比，并提供完整的无障碍描述。
 - MANNER 使用用户确认来源图生成透明 512px 打包 Logo，并保留来源与输出哈希审计；所有内置品牌 Logo 随包提供。
 - minSdk 23；统计日期相关实现兼容 API 23。
@@ -46,7 +48,7 @@
 
 记录：`JournalViewModel` 持久化草稿 → `JournalRepository` Room 事务写入记录和目录/图片/咖啡类型快照 → 日历及总结 Flow 自动刷新。目录更新不得改写历史快照；显式更换产品产生新快照，当天详情换图仅更新该条记录的图片、更新时间和 revision，不更改其他字段或清理编辑草稿。
 
-目录：当前类型的各品牌产品通过只读 Flow 聚合，支持按产品名/品牌名搜索和品牌筛选，切换连锁/个人豆时重置筛选；用户在本地选择 Logo/整张实拍图并手动维护。连锁产品仅有黑咖、果咖、奶咖三类；无图回退到品牌 Logo。个人豆记录快照归类为手冲。图片只通过系统 picker 获得单文件授权，原字节保存。
+目录：当前类型的各品牌产品通过只读 Flow 聚合，支持按产品名/品牌名搜索和品牌筛选，切换连锁/个人豆时重置筛选；用户在本地选择 Logo/整张实拍图并手动维护。连锁产品仅有黑咖、果咖、奶咖三类；无图回退到品牌 Logo。个人记录按当次饮用方式保存手冲/意式/挂耳类型快照。图片只通过系统 picker 获得单文件授权，原字节保存。
 
 恢复：备份先在 staging 进行格式、数据库和图片校验，再通过图片协调锁和单一 Room 事务替换数据；失败或取消保持当前数据。ZIP 不加密，卸载或清除数据前必须导出。
 
@@ -57,7 +59,7 @@
 
 ## 重要文件
 
-- `app/src/main/java/com/niumi/coffeejournal/core/database/CoffeeDatabase.kt` — Room v5 与迁移。
+- `app/src/main/java/com/niumi/coffeejournal/core/database/CoffeeDatabase.kt` — Room v6 与迁移。
 - `app/src/main/java/com/niumi/coffeejournal/catalog/BundledBrandCatalog.kt` — 12 个内置品牌 Logo。
 - `app/src/main/java/com/niumi/coffeejournal/catalog` — 手动连锁目录与个人豆库。
 - `app/src/main/java/com/niumi/coffeejournal/journal` — 记录、草稿、日历与显示偏好。
@@ -106,4 +108,20 @@ export GRADLE_USER_HOME="$PWD/.worktrees/codex-coffee-journal/.gradle"
 - `testDebugUnitTest lintDebug assembleDebug --offline --no-daemon`：PASS，418 tests，0 failures/errors/skips；lint 0 errors、8 warnings；critical reviewer PASS；`git diff --check` PASS。
 - 安装包：`build/deliverables/v1.1.1/coffee-journal-1.1.1-debug.apk`，versionCode=3，包名与签名保持同1.1，支持覆盖升级；尚未真机安装，本轮未提交或推送。
 
-最后更新：2026-09-25
+## 1.2 计价与兼容约定
+
+- 采购价用整数分，克重用整数毫克（输入最多3位小数），包数为正整数；BigDecimal只在最终金额舍入到分。缺基数不伪造金额，溢出提示并禁止AUTO保存，可改手动恢复。
+- 新个人draft默认AUTO；手动输入切MANUAL，随后改用量保持手动金额；恢复AUTO重新按保存的基数计算。新建豆默认手冲，挂耳默认1包。切换产品清不适用用量；同产品重选保留草稿/历史基数。
+- catalog/draft/record分别持久个人类型、采购基数；draft/record额外保留用量与priceMode。已有记录编辑不读取后改目录价格；旧记录MANUAL原价/分类保持。
+- v5→v6增加字段：旧个人类型BEANS，采购/用量为空，旧draft/record MANUAL。备份接受v1–v5默认补齐；v6检验类型、正数量、互斥单位、AUTO金额和方式分类一致，并在恢复事务copy后复验。旧MANUAL允许历史自由输入方式。
+- 当天详情：大图Fit卡片、评分费用分栏、方式与克数/包数、备注及换图/编辑/删除；多记录滚动与大字体操作换行。原生图卡预览通过，Dialog通过普通Compose交互测试。
+
+1.2 最终验证（2026-10-10）：
+
+- `testDebugUnitTest lintDebug assembleDebug --offline --no-daemon`：PASS，437 tests，0 failures/errors/skips；lint 0 errors、8 warnings。
+- critical reviewer：PASS，无剩余 Critical/High/Medium；`git diff --check`：PASS。覆盖计价精度、手动覆盖与恢复自动、草稿持久化、旧历史保留、v5迁移及v6备份校验、详情大字体多记录交互和编辑退出后新增回归。
+- 详情图卡原生渲染已检查；预览：`build/deliverables/v1.2/day-photo-detail-card.png`。未做真机安装。
+- APK：`build/deliverables/v1.2/coffee-journal-1.2-debug.apk`，versionName=1.2、versionCode=4；包名不变，签名验证通过且证书与1.1.1一致，满足覆盖升级条件。SHA256见同目录 `SHA256SUMS`。
+- 本轮功能代码单独提交至 `codex/personal-coffee-cost`；用户现有 AGENTS.md 与 .codex 配置改动不纳入本次功能提交。
+
+最后更新：2026-10-10

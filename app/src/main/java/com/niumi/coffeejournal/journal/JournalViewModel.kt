@@ -6,6 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.niumi.coffeejournal.catalog.CatalogRepository
 import com.niumi.coffeejournal.core.image.ImagePathResolver
 import com.niumi.coffeejournal.core.model.BrandType
+import com.niumi.coffeejournal.core.model.PersonalProductType
+import com.niumi.coffeejournal.core.model.PriceMode
+import com.niumi.coffeejournal.core.model.parseGramsToMilligrams
+import com.niumi.coffeejournal.core.model.parsePositiveCount
+import com.niumi.coffeejournal.core.model.formatMilligrams
+import com.niumi.coffeejournal.core.model.recalculatePersonalPrice
 import com.niumi.coffeejournal.core.model.DrinkDraft
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.ItemType
@@ -163,6 +169,10 @@ class JournalViewModel(
                             note = draft.note,
                             consumedAtEpochMillis = draft.consumedAtEpochMillis,
                             editingRecordId = draft.editingRecordId,
+                            personalProductType = draft.personalProductType, priceMode = draft.priceMode,
+                            consumedWeightInput = draft.consumedWeightMg?.let(::formatMilligrams).orEmpty(),
+                            consumedCountInput = draft.consumedCount?.toString().orEmpty(),
+                            quantityValid = true, autoPriceMessage = draft.autoPriceMessage(),
                             invalidItem = false,
                             needsImagePrompt = item.status == ItemStatus.NEEDS_IMAGE || item.imageAssetId == null,
                             selecting = false,
@@ -200,12 +210,41 @@ class JournalViewModel(
         val fen = input.takeIf { it.isNotBlank() }?.let(::parseYuanToFen)
         val valid = input.isBlank() || fen != null
         mutableState.value = mutableState.value.copy(
-            editor = mutableState.value.editor.copy(priceInput = input, priceValid = valid, actualPriceFen = fen),
+            editor = mutableState.value.editor.copy(priceInput = input, priceValid = valid, actualPriceFen = fen, priceMode = PriceMode.MANUAL),
         )
-        if (valid) editDraft(updateEditor = false) { it.copy(actualPriceFen = fen) }
+        editDraft(updateEditor = false) { it.copy(actualPriceFen = if (valid) fen else it.actualPriceFen, priceMode = PriceMode.MANUAL) }
     }
 
-    fun setBrewMethod(value: String) = editDraft { it.copy(brewMethod = value.takeUnless(String::isBlank)) }
+    fun setBrewMethod(value: String) {
+        val draft = currentDraft ?: return
+        if (draft.itemType == ItemType.PERSONAL_BEAN && draft.personalProductType == PersonalProductType.BEANS && value !in listOf("手冲", "意式")) return
+        editDraft { it.copy(brewMethod = value.takeUnless(String::isBlank)) }
+    }
+
+    fun setConsumedWeightInput(input: String) = setQuantityInput(input, true)
+    fun setConsumedCountInput(input: String) = setQuantityInput(input, false)
+
+    private fun setQuantityInput(input: String, weight: Boolean) {
+        val editor = mutableState.value.editor
+        val draft = currentDraft ?: return
+        if (editor.saving || editor.selecting || editor.attachingImage || draft.itemType != ItemType.PERSONAL_BEAN) return
+        if (weight != (draft.personalProductType == PersonalProductType.BEANS)) return
+        val value = if (weight) parseGramsToMilligrams(input) else parsePositiveCount(input)
+        val valid = (weight && input.isBlank()) || value != null
+        mutableState.value = mutableState.value.copy(editor = editor.copy(
+            consumedWeightInput = if (weight) input else editor.consumedWeightInput,
+            consumedCountInput = if (!weight) input else editor.consumedCountInput,
+            quantityValid = valid,
+        ))
+        if (valid) editDraft { if (weight) it.copy(consumedWeightMg = value) else it.copy(consumedCount = value) }
+    }
+
+    fun restoreAutomaticPrice() {
+        val editor = mutableState.value.editor
+        if (!editor.quantityValid) return
+        mutableState.value = mutableState.value.copy(editor = editor.copy(priceValid = true))
+        editDraft { it.copy(priceMode = PriceMode.AUTO) }
+    }
     fun setNote(value: String) = editDraft { it.copy(note = value) }
     fun setConsumedAt(epochMillis: Long) {
         val reading = clock.read()
@@ -355,7 +394,7 @@ class JournalViewModel(
             check(associated.imageAssetId == assetId) { "Catalog image association was not persisted" }
             check(mutableState.value.editor.selectedItemId == selectedItemId) { "Catalog selection changed" }
             val updatedDraft = currentDraft?.let { draft ->
-                if (actualPriceFen == null) draft else draft.copy(actualPriceFen = actualPriceFen)
+                if (actualPriceFen == null) draft else draft.copy(actualPriceFen = actualPriceFen, priceMode = PriceMode.MANUAL)
             }
             if (updatedDraft != null) {
                 currentDraft = updatedDraft
@@ -391,7 +430,7 @@ class JournalViewModel(
     fun save() {
         val editor = mutableState.value.editor
         val draft = currentDraft ?: return
-        if (editor.saving || editor.selecting || editor.attachingImage || !editor.priceValid) return
+        if (editor.saving || editor.selecting || editor.attachingImage || !editor.priceValid || !editor.quantityValid || (editor.priceMode == PriceMode.AUTO && editor.autoPriceMessage == "金额超出支持范围，请改用手动金额")) return
         mutableState.value = mutableState.value.copy(editor = editor.copy(saving = true, errorMessage = null))
         scope.launch {
             try {
@@ -422,13 +461,16 @@ class JournalViewModel(
         transform: (DrinkDraft) -> DrinkDraft,
     ) {
         if (mutableState.value.editor.saving || mutableState.value.editor.selecting || mutableState.value.editor.attachingImage) return
-        val updated = currentDraft?.let(transform) ?: return
+        val updated = currentDraft?.let(transform)?.recalculatePersonalPrice() ?: return
         currentDraft = updated
         if (updateEditor) {
             mutableState.value = mutableState.value.copy(
                 editor = mutableState.value.editor.copy(
                     ratingHalfStars = updated.ratingHalfStars,
                     actualPriceFen = updated.actualPriceFen,
+                    priceMode = updated.priceMode,
+                    priceInput = if (mutableState.value.editor.priceValid) updated.actualPriceFen?.let(::formatFenInput).orEmpty() else mutableState.value.editor.priceInput,
+                    autoPriceMessage = updated.autoPriceMessage(),
                     brewMethod = updated.brewMethod.orEmpty(),
                     note = updated.note,
                     consumedAtEpochMillis = updated.consumedAtEpochMillis,
@@ -528,6 +570,10 @@ class JournalViewModel(
                 note = draft.note,
                 consumedAtEpochMillis = draft.consumedAtEpochMillis,
                 editingRecordId = draft.editingRecordId,
+                personalProductType = draft.personalProductType, priceMode = draft.priceMode,
+                consumedWeightInput = draft.consumedWeightMg?.let(::formatMilligrams).orEmpty(),
+                consumedCountInput = draft.consumedCount?.toString().orEmpty(),
+                quantityValid = true, autoPriceMessage = draft.autoPriceMessage(),
                 invalidItem = item == null,
                 selecting = false,
                 needsImagePrompt = item?.let { it.status == ItemStatus.NEEDS_IMAGE || it.imageAssetId == null } == true,
@@ -614,3 +660,13 @@ private suspend fun <T> resultOrNullPreservingCancellation(block: suspend () -> 
 
 private fun formatFenInput(fen: Long): String =
     "${fen / 100}.${(fen % 100).toString().padStart(2, '0')}"
+
+private fun DrinkDraft.autoPriceMessage(): String? {
+    if (itemType != ItemType.PERSONAL_BEAN) return null
+    val missing = purchasePriceFen == null || if (personalProductType == PersonalProductType.BEANS) packageWeightMg == null || consumedWeightMg == null else packageCount == null || consumedCount == null
+    return when {
+        missing -> "采购价格、规格或用量未完整，可手动填写本次金额"
+        copy(priceMode = PriceMode.AUTO).recalculatePersonalPrice().actualPriceFen == null -> "金额超出支持范围，请改用手动金额"
+        else -> "按购买价格和本次用量自动计算"
+    }
+}

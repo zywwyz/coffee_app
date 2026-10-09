@@ -145,6 +145,9 @@ fun JournalFeature(
             onItemSelect = { journalViewModel.selectItem(state.editor.sourceType, it) },
             onRatingChange = journalViewModel::setRating,
             onPriceChange = journalViewModel::setPriceInput,
+            onConsumedWeightChange = journalViewModel::setConsumedWeightInput,
+            onConsumedCountChange = journalViewModel::setConsumedCountInput,
+            onRestoreAutomaticPrice = journalViewModel::restoreAutomaticPrice,
             onBrewMethodChange = journalViewModel::setBrewMethod,
             onNoteChange = journalViewModel::setNote,
             onConsumedAtChange = journalViewModel::setConsumedAt,
@@ -269,7 +272,7 @@ fun JournalScreen(
     }
 
     if (state.selectedDate != null) {
-        DayDetailDialog(
+        DayPhotoDetailDialog(
             localDate = state.selectedDate,
             records = state.selectedDayRecords,
             onDismiss = { onDayClick(null) },
@@ -277,6 +280,7 @@ fun JournalScreen(
             onDelete = onDeleteRecord,
             onChangePhoto = onChangeRecordPhoto,
             imagePathResolver = imagePathResolver,
+            recordDetailText = ::personalRecordDetail,
         )
     }
 }
@@ -539,79 +543,5 @@ private fun RecentDrinkNote(
             record.note?.takeIf { it.isNotBlank() }?.let { Text(it, color = CoffeeVisuals.secondaryText, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
         }
     }
-    }
-}
-
-@Composable
-private fun DayDetailDialog(
-    localDate: String,
-    records: List<DrinkRecord>,
-    onDismiss: () -> Unit,
-    onEdit: (String) -> Unit,
-    onDelete: (String) -> Unit,
-    onChangePhoto: (DrinkRecord) -> Unit,
-    imagePathResolver: ImagePathResolver,
-) {
-    var deleteCandidate by remember { mutableStateOf<DrinkRecord?>(null) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(localDate) },
-        text = {
-            Column(
-                modifier = Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                if (records.isEmpty()) Text("当天没有咖啡记录")
-                records.forEach { record ->
-                    Column {
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            ResolvedLocalAssetImage(
-                                primaryAssetId = record.snapshot.imageAssetId,
-                                fallbackAssetId = record.snapshot.brandLogoAssetId,
-                                resolver = imagePathResolver,
-                                contentDescription = "当天实拍图 ${record.snapshot.itemName}",
-                                contentScale = CompleteImageContentScale,
-                                modifier = Modifier.size(92.dp).clip(RoundedCornerShape(CoffeeVisuals.cornerSmall))
-                                    .background(CoffeeVisuals.white),
-                                fallbackPainter = bundledBrandLogoRes(record.snapshot.brandName)?.let { painterResource(it) },
-                            )
-                            Column(Modifier.weight(1f)) {
-                                Text("${record.snapshot.brandName} · ${record.snapshot.itemName}", fontWeight = FontWeight.Bold)
-                                Text(
-                                    listOfNotNull(
-                                        record.brewMethod,
-                                        record.ratingHalfStars?.let { "${it / 2.0} 星" },
-                                        record.actualPriceFen?.let { "¥${it / 100}.${(it % 100).toString().padStart(2, '0')}" },
-                                    ).joinToString(" · "),
-                                )
-                                record.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                            }
-                        }
-                        Row {
-                            TextButton(onClick = { onChangePhoto(record) }) {
-                                Text(if (record.snapshot.imageAssetId == null) "添加图片" else "更换图片")
-                            }
-                            TextButton(onClick = { onEdit(record.id) }) { Text("编辑") }
-                            TextButton(onClick = { deleteCandidate = record }) { Text("删除") }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
-    )
-    deleteCandidate?.let { record ->
-        AlertDialog(
-            onDismissRequest = { deleteCandidate = null },
-            title = { Text("删除这条记录？") },
-            text = { Text("${record.snapshot.brandName} · ${record.snapshot.itemName} 将从日历和总结中移除，产品图片不会被删除。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    onDelete(record.id)
-                    deleteCandidate = null
-                }) { Text("确认删除") }
-            },
-            dismissButton = { TextButton(onClick = { deleteCandidate = null }) { Text("取消") } },
-        )
     }
 }

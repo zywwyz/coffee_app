@@ -81,6 +81,10 @@ data class CatalogItemEntity(
     val specificationDescription: String? = null,
     val imageSourceUrl: String? = null,
     val chainProductKind: String? = null,
+    @ColumnInfo(defaultValue = "'BEANS'") val personalProductType: String = "BEANS",
+    val purchasePriceFen: Long? = null,
+    val packageWeightMg: Long? = null,
+    val packageCount: Long? = null,
 ) {
     init {
         require(informationCompleteness in 0..100) {
@@ -135,6 +139,13 @@ data class DrinkRecordEntity(
     @ColumnInfo(defaultValue = "1") val createdAtEpochMillis: Long = occurredAtEpochMillis,
     @ColumnInfo(defaultValue = "1") val updatedAtEpochMillis: Long = occurredAtEpochMillis,
     @ColumnInfo(defaultValue = "0") val revision: Int = 0,
+    @ColumnInfo(defaultValue = "'BEANS'") val personalProductType: String = "BEANS",
+    val purchasePriceFen: Long? = null,
+    val packageWeightMg: Long? = null,
+    val packageCount: Long? = null,
+    val consumedWeightMg: Long? = null,
+    val consumedCount: Long? = null,
+    @ColumnInfo(defaultValue = "'MANUAL'") val priceMode: String = "MANUAL",
 ) {
     init {
         require(occurredAtEpochMillis >= 0 && createdAtEpochMillis >= 0 && updatedAtEpochMillis >= 0)
@@ -183,6 +194,13 @@ data class DraftRecordEntity(
     @ColumnInfo(defaultValue = "1") val consumedAtEpochMillis: Long = updatedAtEpochMillis,
     val editingRecordId: String? = null,
     val expectedRecordRevision: Int? = null,
+    @ColumnInfo(defaultValue = "'BEANS'") val personalProductType: String = "BEANS",
+    val purchasePriceFen: Long? = null,
+    val packageWeightMg: Long? = null,
+    val packageCount: Long? = null,
+    val consumedWeightMg: Long? = null,
+    val consumedCount: Long? = null,
+    @ColumnInfo(defaultValue = "'MANUAL'") val priceMode: String = "MANUAL",
 ) {
     init {
         require(consumedAtEpochMillis > 0)

@@ -10,6 +10,11 @@ import com.niumi.coffeejournal.core.model.CatalogItem
 import com.niumi.coffeejournal.core.model.ChainProductKind
 import com.niumi.coffeejournal.core.model.ItemStatus
 import com.niumi.coffeejournal.core.model.ItemType
+import com.niumi.coffeejournal.core.model.PersonalProductType
+import com.niumi.coffeejournal.core.model.formatMilligrams
+import com.niumi.coffeejournal.core.model.parseGramsToMilligrams
+import com.niumi.coffeejournal.core.model.parsePositiveCount
+import com.niumi.coffeejournal.journal.parseYuanToFen
 import com.niumi.coffeejournal.core.model.MaintenanceMode
 import com.niumi.coffeejournal.journal.Clock
 import com.niumi.coffeejournal.journal.SystemClock
@@ -64,6 +69,12 @@ data class ItemEditor(
     val specificationDescription: String? = null,
     val assetLeaseId: String? = null,
     val chainProductKind: ChainProductKind? = null,
+    val personalProductType: PersonalProductType = PersonalProductType.BEANS,
+    val purchasePriceFen: Long? = null,
+    val packageWeightMg: Long? = null,
+    val packageCount: Long? = null,
+    val purchasePriceInput: String = purchasePriceFen?.let { "${it / 100}.${(it % 100).toString().padStart(2, '0')}" }.orEmpty(),
+    val specificationInput: String = if (personalProductType == PersonalProductType.BEANS) packageWeightMg?.let(::formatMilligrams).orEmpty() else packageCount?.toString().orEmpty(),
 )
 
 data class CatalogUiState(
@@ -120,6 +131,7 @@ sealed interface CatalogEditorSession {
             initial?.caffeineMg, initial?.officialDescription, initial?.purchaseDate, initial?.roastDate,
             initial?.sourceUrl, initial?.id, initial?.category, initial?.specificationDescription, leaseId,
             initial?.chainProductKind,
+            initial?.personalProductType ?: PersonalProductType.BEANS, initial?.purchasePriceFen, initial?.packageWeightMg, initial?.packageCount,
         ),
         val caffeineInput: String = initial?.caffeineMg?.toString().orEmpty(),
     ) : CatalogEditorSession {
@@ -224,6 +236,9 @@ class CatalogViewModel(
     fun saveItem(editor: ItemEditor) = saveAction {
         val name = editor.name.trim()
         if (name.isEmpty()) throw InvalidCatalogNameException(editor.name)
+        val price = editor.purchasePriceInput.takeIf { it.isNotBlank() }?.let(::parseYuanToFen)
+        val spec = editor.specificationInput.takeIf { it.isNotBlank() }?.let { if (editor.personalProductType == PersonalProductType.BEANS) parseGramsToMilligrams(it) else parsePositiveCount(it) }
+        require(editor.type != ItemType.PERSONAL_BEAN || ((editor.purchasePriceInput.isBlank() || price != null) && (editor.specificationInput.isBlank() || spec != null))) { "采购价格或规格无效" }
         val existing = editor.id?.let { repository.getItem(it) }
         validateItemStatus(editor.type, editor.status, editor.roastDate, clock.read().localDate)
         val item = CatalogItem(
@@ -247,6 +262,10 @@ class CatalogViewModel(
             } else null,
             imageSourceUrl = existing?.imageSourceUrl,
             chainProductKind = if (editor.type == ItemType.CHAIN_PRODUCT) editor.chainProductKind else null,
+            personalProductType = if (editor.type == ItemType.PERSONAL_BEAN) editor.personalProductType else PersonalProductType.BEANS,
+            purchasePriceFen = if (editor.type == ItemType.PERSONAL_BEAN) price else null,
+            packageWeightMg = if (editor.type == ItemType.PERSONAL_BEAN && editor.personalProductType == PersonalProductType.BEANS) spec else null,
+            packageCount = if (editor.type == ItemType.PERSONAL_BEAN && editor.personalProductType == PersonalProductType.DRIP_BAG) spec else null,
         )
         beginAssetCommit(editor.assetLeaseId, editor.imageAssetId)
         try {

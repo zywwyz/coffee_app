@@ -40,12 +40,12 @@ import java.util.TimeZone
 
 class JournalRepositoryTest {
     @Test fun `new personal bean drink does not inherit an old catalog default brew`() = runBlocking {
-        val bean = item().copy(type = ItemType.PERSONAL_BEAN, chainProductKind = null, brewMethod = "手冲")
+        val bean = item().copy(type = ItemType.PERSONAL_BEAN, chainProductKind = null, brewMethod = "旧默认冲煮")
         val catalog = FakeCatalogRepository(bean, null)
         val repository = DefaultJournalRepository(catalog, FakeDrinkStore(), FixedClock())
         val draft = repository.newDraft(ItemType.PERSONAL_BEAN, bean.id)
-        assertNull(draft.brewMethod)
-        assertEquals("手冲", catalog.getItem(bean.id).brewMethod)
+        assertEquals("手冲", draft.brewMethod)
+        assertEquals("旧默认冲煮", catalog.getItem(bean.id).brewMethod)
     }
 
     @Test

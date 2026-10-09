@@ -666,9 +666,9 @@ class JournalScreenRobolectricTest {
             }
         }
 
-        compose.onNodeWithText("编辑").performClick()
+        compose.onNodeWithText("编辑").performScrollTo().performClick()
         compose.runOnIdle { assertEquals("r", edited) }
-        compose.onNodeWithText("删除").performClick()
+        compose.onNodeWithText("删除").performScrollTo().performClick()
         compose.runOnIdle { assertNull(deleted) }
         compose.onNodeWithText("确认删除").performClick()
         compose.runOnIdle { assertEquals("r", deleted) }
@@ -694,9 +694,10 @@ class JournalScreenRobolectricTest {
         }
 
         compose.onNodeWithContentDescription("当天实拍图 产品").assertIsDisplayed()
-        compose.onNodeWithText("更换图片").performClick()
+        compose.onNodeWithText("更换图片").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(record, selected) }
-        compose.onNodeWithText("4.0 星 · ¥12.80").assertIsDisplayed()
+        compose.onNodeWithText("4.0 星").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("¥12.80").performScrollTo().assertIsDisplayed()
     }
 
     @Test

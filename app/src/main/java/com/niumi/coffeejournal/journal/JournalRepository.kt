@@ -12,6 +12,9 @@ import com.niumi.coffeejournal.core.model.DrinkRecord
 import com.niumi.coffeejournal.core.model.DrinkSnapshot
 import com.niumi.coffeejournal.core.model.CoffeeType
 import com.niumi.coffeejournal.core.model.ItemType
+import com.niumi.coffeejournal.core.model.PersonalProductType
+import com.niumi.coffeejournal.core.model.PriceMode
+import com.niumi.coffeejournal.core.model.recalculatePersonalPrice
 import java.util.GregorianCalendar
 import java.util.Locale
 import java.util.TimeZone
@@ -96,6 +99,14 @@ class RoomDrinkStore(
             consumedAtEpochMillis = record.occurredAtEpochMillis,
             editingRecordId = record.id,
             expectedRecordRevision = record.revision,
+            personalProductType = record.personalProductType,
+            purchasePriceFen = record.purchasePriceFen,
+            packageWeightMg = record.packageWeightMg,
+            packageCount = record.packageCount,
+            consumedWeightMg = record.consumedWeightMg,
+            consumedCount = record.consumedCount,
+            priceMode = record.priceMode,
+
         )
         database.draftDao().upsert(draft.toEntity(clock.read().epochMillis))
         draft
@@ -148,6 +159,14 @@ class RoomDrinkStore(
             snapshotCoffeeType = record.snapshot.coffeeType.name,
             updatedAtEpochMillis = record.updatedAtEpochMillis,
             newRevision = record.revision,
+            personalProductType = record.personalProductType.name,
+            purchasePriceFen = record.purchasePriceFen,
+            packageWeightMg = record.packageWeightMg,
+            packageCount = record.packageCount,
+            consumedWeightMg = record.consumedWeightMg,
+            consumedCount = record.consumedCount,
+            priceMode = record.priceMode.name,
+
         ) == 1
         if (changed) database.draftDao().deleteIfRevision(CURRENT_DRAFT_ID, draftRevisionId)
         changed
@@ -212,6 +231,14 @@ class RoomDrinkStore(
         consumedAtEpochMillis = consumedAtEpochMillis.takeIf { it > 0 } ?: updatedAtEpochMillis,
         editingRecordId = editingRecordId,
         expectedRecordRevision = expectedRecordRevision,
+        personalProductType = personalProductType.name,
+        purchasePriceFen = purchasePriceFen,
+        packageWeightMg = packageWeightMg,
+        packageCount = packageCount,
+        consumedWeightMg = consumedWeightMg,
+        consumedCount = consumedCount,
+        priceMode = priceMode.name,
+
     )
 
     private fun DraftRecordEntity.toDomain() = DrinkDraft(
@@ -226,6 +253,14 @@ class RoomDrinkStore(
         consumedAtEpochMillis = consumedAtEpochMillis,
         editingRecordId = editingRecordId,
         expectedRecordRevision = expectedRecordRevision,
+        personalProductType = enumValue("DraftRecordEntity.personalProductType", personalProductType),
+        purchasePriceFen = purchasePriceFen,
+        packageWeightMg = packageWeightMg,
+        packageCount = packageCount,
+        consumedWeightMg = consumedWeightMg,
+        consumedCount = consumedCount,
+        priceMode = enumValue("DraftRecordEntity.priceMode", priceMode),
+
     )
 
 }
@@ -252,22 +287,38 @@ class DefaultJournalRepository(
             revisionId = UUID.randomUUID().toString(),
             itemType = item.type,
             sourceItemId = item.id,
-            brewMethod = item.brewMethod.takeUnless { item.type == ItemType.PERSONAL_BEAN },
+            brewMethod = if (item.type == ItemType.PERSONAL_BEAN) { if (item.personalProductType == PersonalProductType.BEANS) "手冲" else null } else item.brewMethod,
             ratingHalfStars = null,
-            actualPriceFen = catalogRepository.lastPriceFen(item.id),
+            actualPriceFen = if (type == ItemType.PERSONAL_BEAN) null else catalogRepository.lastPriceFen(item.id),
             note = "",
             consumedAtEpochMillis = clock.read().let { reading -> localNoonEpoch(reading.localDate) },
+            personalProductType = item.personalProductType,
+            purchasePriceFen = item.purchasePriceFen,
+            packageWeightMg = item.packageWeightMg,
+            packageCount = item.packageCount,
+            consumedCount = if (type == ItemType.PERSONAL_BEAN && item.personalProductType == PersonalProductType.DRIP_BAG) 1 else null,
+            priceMode = if (type == ItemType.PERSONAL_BEAN) PriceMode.AUTO else PriceMode.MANUAL,
+
         )
-        drinkStore.startDraft(draft)
-        return draft
+        val calculated = draft.recalculatePersonalPrice()
+        drinkStore.startDraft(calculated)
+        return calculated
     }
 
     override suspend fun replaceDraftForItem(current: DrinkDraft, type: ItemType, itemId: String): DrinkDraft {
         val item = catalogRepository.getItem(itemId)
         require(item.type == type) { "Catalog item '$itemId' has type ${item.type}, not $type" }
-        val replacement = current.copy(
+        if (current.itemType == type && current.sourceItemId == itemId) return current
+        val replacement = if (current.itemType == ItemType.CHAIN_PRODUCT && type == ItemType.CHAIN_PRODUCT) current.copy(revisionId = UUID.randomUUID().toString(), sourceItemId = itemId) else current.copy(
             revisionId = UUID.randomUUID().toString(), itemType = type, sourceItemId = itemId,
-        )
+            personalProductType = item.personalProductType,
+            purchasePriceFen = item.purchasePriceFen, packageWeightMg = item.packageWeightMg, packageCount = item.packageCount,
+            consumedWeightMg = null,
+            consumedCount = if (type == ItemType.PERSONAL_BEAN && item.personalProductType == PersonalProductType.DRIP_BAG) 1 else null,
+            brewMethod = if (type == ItemType.PERSONAL_BEAN) { if (item.personalProductType == PersonalProductType.BEANS) "手冲" else null } else item.brewMethod,
+            actualPriceFen = if (type == ItemType.PERSONAL_BEAN) null else catalogRepository.lastPriceFen(item.id),
+            priceMode = if (type == ItemType.PERSONAL_BEAN) PriceMode.AUTO else PriceMode.MANUAL,
+        ).recalculatePersonalPrice()
         if (!drinkStore.replaceDraft(current.revisionId, replacement)) throw DraftConflictException()
         return replacement
     }
@@ -284,6 +335,12 @@ class DefaultJournalRepository(
     }
 
     override suspend fun save(draft: DrinkDraft): String {
+        if (draft.itemType == ItemType.PERSONAL_BEAN) {
+            require(if (draft.personalProductType == PersonalProductType.BEANS) draft.packageCount == null && draft.consumedCount == null else draft.packageWeightMg == null && draft.consumedWeightMg == null)
+            if (draft.personalProductType == PersonalProductType.BEANS && draft.priceMode == PriceMode.AUTO) require(draft.brewMethod in listOf("手冲", "意式"))
+            val complete = draft.purchasePriceFen != null && (if (draft.personalProductType == PersonalProductType.BEANS) draft.packageWeightMg != null && draft.consumedWeightMg != null else draft.packageCount != null && draft.consumedCount != null)
+            require(draft.priceMode != PriceMode.AUTO || !complete || draft.recalculatePersonalPrice().actualPriceFen != null) { "Calculated amount exceeds supported range" }
+        }
         val reading = clock.read()
         val consumedAt = draft.consumedAtEpochMillis.takeIf { it > 0 }
             ?: localNoonEpoch(reading.localDate)
@@ -296,7 +353,9 @@ class DefaultJournalRepository(
         val item = if (existing == null || productChanged) catalogRepository.getItem(draft.sourceItemId) else null
         val brand = item?.let { catalogRepository.getBrand(it.brandId) }
         val snapshot = when {
-            existing != null && !productChanged -> existing.snapshot
+            existing != null && !productChanged -> existing.snapshot.let { original ->
+                if (draft.itemType == ItemType.PERSONAL_BEAN && (draft.priceMode == PriceMode.AUTO || draft.consumedWeightMg != null || draft.consumedCount != null || draft.brewMethod != existing.brewMethod)) original.copy(coffeeType = draft.personalCoffeeType()) else original
+            }
             else -> DrinkSnapshot(
                 brandName = requireNotNull(brand).name,
                 itemName = requireNotNull(item).name,
@@ -306,7 +365,7 @@ class DefaultJournalRepository(
                 brandLogoAssetId = brand.logoAssetId,
                 roastLevel = item.roastLevel,
                 flavorNotes = item.flavorNotes,
-                coffeeType = item.coffeeTypeForSnapshot(),
+                coffeeType = if (draft.itemType == ItemType.PERSONAL_BEAN) draft.personalCoffeeType() else item.coffeeTypeForSnapshot(),
             )
         }
         val id = existing?.id ?: UUID.randomUUID().toString()
@@ -321,12 +380,20 @@ class DefaultJournalRepository(
             sourceItemId = item?.id ?: requireNotNull(existing).sourceItemId,
             brewMethod = draft.brewMethod,
             ratingHalfStars = draft.ratingHalfStars,
-            actualPriceFen = draft.actualPriceFen,
+            actualPriceFen = draft.recalculatePersonalPrice().actualPriceFen,
             note = draft.note.takeUnless(String::isBlank),
             snapshot = snapshot,
             createdAtEpochMillis = existing?.createdAtEpochMillis ?: reading.epochMillis,
             updatedAtEpochMillis = updatedAt,
             revision = existing?.revision?.let { Math.incrementExact(it) } ?: 0,
+            personalProductType = draft.personalProductType,
+            purchasePriceFen = draft.purchasePriceFen,
+            packageWeightMg = draft.packageWeightMg,
+            packageCount = draft.packageCount,
+            consumedWeightMg = draft.consumedWeightMg,
+            consumedCount = draft.consumedCount,
+            priceMode = draft.priceMode,
+
         )
         if (existing == null) {
             drinkStore.saveRecordAndClearDraft(record, draft.revisionId)
@@ -418,6 +485,13 @@ private fun DrinkRecordEntity.toDomain() = DrinkRecord(
     createdAtEpochMillis = createdAtEpochMillis,
     updatedAtEpochMillis = updatedAtEpochMillis,
     revision = revision,
+    personalProductType = enumValue("DrinkRecordEntity.personalProductType", personalProductType),
+    purchasePriceFen = purchasePriceFen,
+    packageWeightMg = packageWeightMg,
+    packageCount = packageCount,
+    consumedWeightMg = consumedWeightMg,
+    consumedCount = consumedCount,
+    priceMode = enumValue("DrinkRecordEntity.priceMode", priceMode),
 )
 
 private fun DrinkRecord.toEntity() = DrinkRecordEntity(
@@ -442,6 +516,13 @@ private fun DrinkRecord.toEntity() = DrinkRecordEntity(
     createdAtEpochMillis = createdAtEpochMillis,
     updatedAtEpochMillis = updatedAtEpochMillis,
     revision = revision,
+    personalProductType = personalProductType.name,
+    purchasePriceFen = purchasePriceFen,
+    packageWeightMg = packageWeightMg,
+    packageCount = packageCount,
+    consumedWeightMg = consumedWeightMg,
+    consumedCount = consumedCount,
+    priceMode = priceMode.name,
 )
 
 private inline fun <reified T : Enum<T>> enumValue(field: String, value: String): T =
@@ -460,4 +541,10 @@ private fun com.niumi.coffeejournal.core.model.CatalogItem.coffeeTypeForSnapshot
         com.niumi.coffeejournal.core.model.ChainProductKind.PENDING, null ->
             throw IllegalArgumentException("Cannot save CHAIN_PRODUCT with PENDING coffee type")
     }
+}
+
+private fun DrinkDraft.personalCoffeeType(): CoffeeType = when {
+    personalProductType == PersonalProductType.DRIP_BAG -> CoffeeType.DRIP_BAG
+    brewMethod == "意式" -> CoffeeType.ESPRESSO
+    else -> CoffeeType.HAND_BREW
 }

@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import com.niumi.coffeejournal.core.model.Brand
 import com.niumi.coffeejournal.core.model.CatalogItem
+import com.niumi.coffeejournal.core.model.PersonalProductType
+import com.niumi.coffeejournal.core.model.PriceMode
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.TestTags
 import com.niumi.coffeejournal.ui.CoffeeVisuals
@@ -72,6 +74,9 @@ fun RecordDrinkScreen(
     onSelectImage: () -> Unit,
     onSkipImage: () -> Unit,
     onAddProduct: () -> Unit = {},
+    onConsumedWeightChange: (String) -> Unit = {},
+    onConsumedCountChange: (String) -> Unit = {},
+    onRestoreAutomaticPrice: () -> Unit = {},
 ) {
     val editorBusy = state.saving || state.selecting || state.attachingImage
     val hasDraft = state.selectedItemId != null || state.invalidItem || state.editingRecordId != null
@@ -146,17 +151,34 @@ fun RecordDrinkScreen(
             }
             }
         }
+        if (state.sourceType == ItemType.PERSONAL_BEAN && hasDraft) {
+            EditorSection("usage") {
+                Text(if (state.personalProductType == PersonalProductType.BEANS) "咖啡豆用量" else "挂耳咖啡用量", style = MaterialTheme.typography.titleMedium)
+                if (state.personalProductType == PersonalProductType.BEANS) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("手冲", "意式").forEach { method -> FilterChip(state.brewMethod == method, { onBrewMethodChange(method) }, label = { Text(method) }, enabled = !editorBusy) }
+                    }
+                    OutlinedTextField(state.consumedWeightInput, onConsumedWeightChange, label = { Text("本次用豆（克，可选）") }, modifier = Modifier.fillMaxWidth(), isError = !state.quantityValid, supportingText = { if (!state.quantityValid) Text("请输入正数，最多三位小数") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), enabled = !editorBusy)
+                } else {
+                    OutlinedTextField(state.consumedCountInput, onConsumedCountChange, label = { Text("本次饮用（包）") }, modifier = Modifier.fillMaxWidth(), isError = !state.quantityValid, supportingText = { if (!state.quantityValid) Text("请输入正整数包数") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), enabled = !editorBusy)
+                }
+            }
+        }
         OutlinedTextField(
             value = state.priceInput,
             onValueChange = onPriceChange,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("实际支付（元）") },
+            label = { Text(if (state.sourceType == ItemType.PERSONAL_BEAN) "本次费用（元）" else "实际支付（元）") },
             isError = !state.priceValid,
             supportingText = { if (!state.priceValid) Text("请输入最多两位小数的非负金额") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             enabled = !editorBusy,
         )
-        OutlinedTextField(
+        if (state.sourceType == ItemType.PERSONAL_BEAN && hasDraft) {
+            Text(if (state.priceMode == PriceMode.MANUAL) "已手动填写，本次用量变化不会覆盖金额" else state.autoPriceMessage.orEmpty(), color = CoffeeVisuals.secondaryText)
+            if (state.priceMode == PriceMode.MANUAL) TextButton(onClick = onRestoreAutomaticPrice, enabled = !editorBusy && state.quantityValid) { Text("恢复自动计算") }
+        }
+        if (state.sourceType == ItemType.CHAIN_PRODUCT) OutlinedTextField(
             value = state.brewMethod,
             onValueChange = onBrewMethodChange,
             modifier = Modifier.fillMaxWidth(),
@@ -181,7 +203,7 @@ fun RecordDrinkScreen(
         }
         Button(
             onClick = onSave,
-            enabled = state.selectedItemId != null && state.priceValid && !editorBusy,
+            enabled = state.selectedItemId != null && state.priceValid && state.quantityValid && !(state.priceMode == PriceMode.AUTO && state.autoPriceMessage == "金额超出支持范围，请改用手动金额") && !editorBusy,
             modifier = Modifier.fillMaxWidth().testTag(TestTags.ConfirmSave)
                 .semantics { this[RecordSaveContainerColor] = CoffeeVisuals.forest },
             colors = ButtonDefaults.buttonColors(containerColor = CoffeeVisuals.forest, contentColor = CoffeeVisuals.white),

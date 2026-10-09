@@ -10,6 +10,9 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.room.Room
@@ -80,6 +83,8 @@ class JournalFeatureEditorRegressionTest {
             CoffeeTheme { JournalFeature(journal, catalog, { null }, clock = clock) }
         }
         compose.onNodeWithTag(TestTags.CalendarDayPrefix + "2026-08-05").performClick()
+        compose.onNodeWithText("编辑").performScrollTo()
+        compose.waitForIdle()
         compose.onNodeWithText("编辑").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithText("修改记录").fetchSemanticsNodes().isNotEmpty() }
         if (systemBack) {
@@ -95,18 +100,24 @@ class JournalFeatureEditorRegressionTest {
         assertEquals(original, runBlocking { journal.get(original.id) })
         compose.onNodeWithText("记录一杯").performClick()
         compose.onNodeWithText("选择品牌").assertIsDisplayed()
-        compose.onNodeWithText("测试品牌").performClick()
-        compose.onNodeWithText("测试咖啡").performClick()
+        compose.onNodeWithText("测试品牌").assertIsEnabled().performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("测试咖啡").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("测试咖啡").assertIsEnabled().performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.waitForIdle()
-        compose.waitUntil(10_000) { runBlocking { journal.currentDraft()?.sourceItemId == "item" } }
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag(TestTags.ConfirmSave).fetchSemanticsNodes().any {
+                !it.config.contains(SemanticsProperties.Disabled)
+            }
+        }
+        assertEquals("item", runBlocking { journal.currentDraft()?.sourceItemId })
         compose.waitForIdle()
         compose.onNodeWithTag(TestTags.ConfirmSave).performScrollTo()
         compose.waitForIdle()
-        compose.onNodeWithTag(TestTags.ConfirmSave).assertIsEnabled().performClick()
+        compose.onNodeWithTag(TestTags.ConfirmSave).assertIsEnabled().performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.waitForIdle()
 
         compose.waitUntil(10_000) {
-            runBlocking { journal.observeRange("2026-08-05", "2026-08-05").first().size == 2 }
+            compose.onAllNodesWithTag(TestTags.RecordButton).fetchSemanticsNodes().isNotEmpty()
         }
         val records = runBlocking { journal.observeRange("2026-08-05", "2026-08-05").first() }
         assertEquals(2, records.size)

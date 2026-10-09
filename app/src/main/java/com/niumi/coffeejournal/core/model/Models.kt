@@ -45,7 +45,7 @@ enum class ItemType {
 enum class ChainProductKind { BLACK, FRUIT, MILK, PENDING }
 
 @Serializable
-enum class CoffeeType { BLACK, FRUIT, MILK, HAND_BREW }
+enum class CoffeeType { BLACK, FRUIT, MILK, HAND_BREW, ESPRESSO, DRIP_BAG }
 
 fun legacyChainProductKind(name: String, category: String?): ChainProductKind {
     val normalized = "$name ${category.orEmpty()}".lowercase()
@@ -56,6 +56,12 @@ fun legacyChainProductKind(name: String, category: String?): ChainProductKind {
         else -> ChainProductKind.PENDING
     }
 }
+
+@Serializable
+enum class PersonalProductType { BEANS, DRIP_BAG }
+
+@Serializable
+enum class PriceMode { AUTO, MANUAL }
 
 @Serializable
 enum class ItemStatus {
@@ -100,6 +106,13 @@ data class DrinkRecord(
     val createdAtEpochMillis: Long = occurredAtEpochMillis,
     val updatedAtEpochMillis: Long = occurredAtEpochMillis,
     val revision: Int = 0,
+    val personalProductType: PersonalProductType = PersonalProductType.BEANS,
+    val purchasePriceFen: Long? = null,
+    val packageWeightMg: Long? = null,
+    val packageCount: Long? = null,
+    val consumedWeightMg: Long? = null,
+    val consumedCount: Long? = null,
+    val priceMode: PriceMode = PriceMode.MANUAL,
 ) {
     init {
         require(occurredAtEpochMillis >= 0) { "Drink time cannot be negative" }
@@ -107,6 +120,7 @@ data class DrinkRecord(
         require(revision >= 0) { "Revision cannot be negative" }
         ratingHalfStars?.let(::Rating)
         actualPriceFen?.let(::Money)
+        validatePersonalAmounts(purchasePriceFen, packageWeightMg, packageCount, consumedWeightMg, consumedCount)
     }
 }
 
@@ -142,8 +156,13 @@ data class CatalogItem(
     val specificationDescription: String? = null,
     val imageSourceUrl: String? = null,
     val chainProductKind: ChainProductKind? = null,
+    val personalProductType: PersonalProductType = PersonalProductType.BEANS,
+    val purchasePriceFen: Long? = null,
+    val packageWeightMg: Long? = null,
+    val packageCount: Long? = null,
 ) {
     init {
+        validatePersonalAmounts(purchasePriceFen, packageWeightMg, packageCount)
         require(informationCompleteness in 0..100) {
             "Information completeness must be between 0 and 100"
         }
@@ -161,6 +180,13 @@ data class DrinkDraft(
     val consumedAtEpochMillis: Long = 0,
     val editingRecordId: String? = null,
     val expectedRecordRevision: Int? = null,
+    val personalProductType: PersonalProductType = PersonalProductType.BEANS,
+    val purchasePriceFen: Long? = null,
+    val packageWeightMg: Long? = null,
+    val packageCount: Long? = null,
+    val consumedWeightMg: Long? = null,
+    val consumedCount: Long? = null,
+    val priceMode: PriceMode = PriceMode.MANUAL,
 ) {
     init {
         require(revisionId.isNotBlank()) { "Draft revision id cannot be blank" }
@@ -171,5 +197,6 @@ data class DrinkDraft(
         expectedRecordRevision?.let { require(it >= 0) { "Expected revision cannot be negative" } }
         ratingHalfStars?.let(::Rating)
         actualPriceFen?.let(::Money)
+        validatePersonalAmounts(purchasePriceFen, packageWeightMg, packageCount, consumedWeightMg, consumedCount)
     }
 }

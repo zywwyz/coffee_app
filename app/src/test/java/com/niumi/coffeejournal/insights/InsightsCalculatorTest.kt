@@ -67,7 +67,7 @@ class InsightsCalculatorTest {
     }
     @Test fun `coffee type shares cover all four types and brands retain top four plus other`() {
         val records = listOf(r("1","2026-01-01",type=CoffeeType.BLACK,brand="A"),r("2","2026-01-02",type=CoffeeType.FRUIT,brand="B"),r("3","2026-01-03",type=CoffeeType.MILK,brand="C"),r("4","2026-01-04",type=CoffeeType.HAND_BREW,brand="D"),r("5","2026-01-05",brand="E"))
-        val p=InsightsCalculator.period(records); assertEquals(4,p.coffeeTypeShares.size); assertEquals(listOf("A","B","C","D","OTHER"),p.brandShares.map { it.key })
+        val p=InsightsCalculator.period(records); assertEquals(6,p.coffeeTypeShares.size); assertEquals(listOf("A","B","C","D","OTHER"),p.brandShares.map { it.key })
     }
     @Test fun `rankings use newest then stable keys and limit three`() {
         val p=InsightsCalculator.period(listOf(r("z","2026-01-01",brand="B",item="same",at=1),r("a","2026-01-01",brand="A",item="same",at=2),r("c","2026-01-01",brand="C"),r("d","2026-01-01",brand="D")))

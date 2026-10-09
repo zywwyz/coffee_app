@@ -72,6 +72,10 @@ import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.CatalogItem
 import com.niumi.coffeejournal.core.model.ChainProductKind
 import com.niumi.coffeejournal.core.model.ItemStatus
+import com.niumi.coffeejournal.core.model.PersonalProductType
+import com.niumi.coffeejournal.core.model.parseGramsToMilligrams
+import com.niumi.coffeejournal.core.model.parsePositiveCount
+import com.niumi.coffeejournal.journal.parseYuanToFen
 import com.niumi.coffeejournal.core.model.ItemType
 import com.niumi.coffeejournal.core.image.ImportedAssetSelection
 import com.niumi.coffeejournal.core.image.ImagePathResolver
@@ -409,12 +413,19 @@ private fun ItemEditorDialog(
     val brand = session.brand
     val leaseId = session.leaseId
     val draft = session.draft
+    var costError by remember(initial) { mutableStateOf<String?>(null) }
     var caffeineError by remember(initial) { mutableStateOf<String?>(null) }
     val type = if (brand.type == BrandType.CHAIN) ItemType.CHAIN_PRODUCT else ItemType.PERSONAL_BEAN
     EditorDialog(
         title = if (initial == null) "新增${if (type == ItemType.PERSONAL_BEAN) "豆子" else "产品"}" else "编辑条目",
         saving = saving, onDismiss = onDismiss,
         onSave = {
+            if (type == ItemType.PERSONAL_BEAN) {
+                val priceValid = draft.purchasePriceInput.isBlank() || parseYuanToFen(draft.purchasePriceInput) != null
+                val specValid = draft.specificationInput.isBlank() || (if (draft.personalProductType == PersonalProductType.BEANS) parseGramsToMilligrams(draft.specificationInput) else parsePositiveCount(draft.specificationInput)) != null
+                if (!priceValid || !specValid) { costError = "请输入有效购买价格与正数规格，包数须为整数"; return@EditorDialog }
+                costError = null
+            }
             val caffeineResult = validateCaffeineInput(session.caffeineInput)
             if (caffeineResult is CaffeineInput.Invalid) {
                 caffeineError = "请输入非负的有效咖啡因数值"
@@ -424,6 +435,18 @@ private fun ItemEditorDialog(
             onSave(draft.copy(caffeineMg = (caffeineResult as CaffeineInput.Valid).milligrams))
         },
     ) {
+        if (type == ItemType.PERSONAL_BEAN) {
+            Text("产品类型")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PersonalProductType.entries.forEach { value ->
+                    FilterChip(draft.personalProductType == value, { onUpdateDraft { if (it.personalProductType == value) it else it.copy(personalProductType = value, specificationInput = "", packageWeightMg = null, packageCount = null) }; costError = null }, label = { Text(if (value == PersonalProductType.BEANS) "咖啡豆" else "挂耳咖啡") }, enabled = !saving)
+                }
+            }
+            Field(draft.purchasePriceInput, { value -> onUpdateDraft { it.copy(purchasePriceInput = value) }; costError = null }, "购买总价（元，可选）", enabled = !saving, keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
+            Field(draft.specificationInput, { value -> onUpdateDraft { it.copy(specificationInput = value) }; costError = null }, if (draft.personalProductType == PersonalProductType.BEANS) "购买总克重（克，可选）" else "购买总包数（包，可选）", enabled = !saving, keyboardType = if (draft.personalProductType == PersonalProductType.BEANS) androidx.compose.ui.text.input.KeyboardType.Decimal else androidx.compose.ui.text.input.KeyboardType.Number)
+            Text(if (draft.personalProductType == PersonalProductType.BEANS) "克重最多三位小数，按本次用豆量计价" else "包数填写正整数，按本次包数计价", style = MaterialTheme.typography.bodySmall)
+            costError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
         Field(draft.name, { v -> onUpdateDraft { it.copy(name = v) } }, "名称", enabled = !saving)
         Field(draft.origin.orEmpty(), { v -> onUpdateDraft { it.copy(origin = v) } }, "产地（可选）", enabled = !saving)
         EditableSuggestionField(draft.processing.orEmpty(), { v -> onUpdateDraft { it.copy(processing = v) } }, "处理法（可选）", listOf("水洗", "日晒", "蜜处理", "湿刨", "厌氧发酵", "二氧化碳浸渍"), !saving)
@@ -507,10 +530,11 @@ private fun EditorDialog(
 }
 
 @Composable
-private fun Field(value: String, onChange: (String) -> Unit, label: String, enabled: Boolean = true) {
+private fun Field(value: String, onChange: (String) -> Unit, label: String, enabled: Boolean = true, keyboardType: androidx.compose.ui.text.input.KeyboardType = androidx.compose.ui.text.input.KeyboardType.Text) {
     OutlinedTextField(
         value, onChange, label = { Text(label) }, enabled = enabled,
         singleLine = true, modifier = Modifier.fillMaxWidth(),
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = keyboardType),
     )
 }
 

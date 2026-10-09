@@ -5,6 +5,8 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.Scaffold
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.runtime.CompositionLocalProvider
@@ -302,6 +304,32 @@ class CalendarPreviewRenderTest {
                 }
             }
         }
+    }
+
+    @Test
+    fun `renders photo first day record card`() {
+        val image = previewProductImage()
+        val record = previewRecord("2026-10-07", "MANNER", 0).copy(
+            ratingHalfStars = 9, actualPriceFen = 600, note = "明亮的酸甜感，尾段干净。",
+        )
+        compose.setContent {
+            CoffeeTheme {
+                androidx.compose.foundation.layout.Column(
+                    androidx.compose.ui.Modifier.fillMaxSize().background(com.niumi.coffeejournal.ui.CoffeeVisuals.cream).padding(24.dp),
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp),
+                ) {
+                    androidx.compose.material3.Text("2026年10月7日", style = androidx.compose.material3.MaterialTheme.typography.headlineSmall)
+                    androidx.compose.material3.Text("当天 1 杯", color = com.niumi.coffeejournal.ui.CoffeeVisuals.secondaryText)
+                    com.niumi.coffeejournal.journal.DayPhotoRecordCard(record, {}, {}, {}, { image.absolutePath }, "手冲 · 15g")
+                }
+            }
+        }
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("day-photo-image-${record.id}", useUnmergedTree = true).fetchSemanticsNodes().any {
+                runCatching { it.config[SemanticsProperties.StateDescription] }.getOrNull() == "主图片已加载"
+            }
+        }
+        capture("day-photo-detail-card.png")
     }
 
     private fun renderPreview(fileName: String, state: JournalUiState, fullMonth: Boolean = true) {

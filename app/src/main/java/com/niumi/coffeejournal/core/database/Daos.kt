@@ -147,6 +147,14 @@ interface DrinkDao {
           snapshotBrandLogoAssetId=:snapshotBrandLogoAssetId,
           snapshotRoastLevel=:snapshotRoastLevel, snapshotFlavorNotes=:snapshotFlavorNotes,
           snapshotCoffeeType=:snapshotCoffeeType,
+          personalProductType=:personalProductType,
+          purchasePriceFen=:purchasePriceFen,
+          packageWeightMg=:packageWeightMg,
+          packageCount=:packageCount,
+          consumedWeightMg=:consumedWeightMg,
+          consumedCount=:consumedCount,
+          priceMode=:priceMode,
+
           updatedAtEpochMillis=:updatedAtEpochMillis, revision=:newRevision
         WHERE id=:id AND revision=:expectedRevision
         """,
@@ -173,6 +181,13 @@ interface DrinkDao {
         snapshotCoffeeType: String,
         updatedAtEpochMillis: Long,
         newRevision: Int,
+        personalProductType: String = "BEANS",
+        purchasePriceFen: Long? = null,
+        packageWeightMg: Long? = null,
+        packageCount: Long? = null,
+        consumedWeightMg: Long? = null,
+        consumedCount: Long? = null,
+        priceMode: String = "MANUAL",
     ): Int
 
     @Query(

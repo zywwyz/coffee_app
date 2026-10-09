@@ -1,5 +1,8 @@
 package com.niumi.coffeejournal.backup
 
+import com.niumi.coffeejournal.core.model.PersonalProductType
+import com.niumi.coffeejournal.core.model.personalCoffeeCost
+
 import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
@@ -167,6 +170,7 @@ class LocalBackupManager(
                     openBackupDatabase(backup.decoded.databaseFile).use { copyAll(it, active, backup.manifest.schemaVersion, localPaths, check, onRestoreRowCopied) }
                     validateCatalogDomains(active)
                     validateRestoredDrinkCoffeeTypes(active)
+                    validatePersonalCostDomains({ sql -> active.query(sql) }, check)
                     checkForeignKeys(active)
                     withContext(operationContext) { beforeRestoreCommit() }
                     check()
@@ -289,7 +293,35 @@ class LocalBackupManager(
             if (exists(db, "SELECT 1 FROM draft_records WHERE consumedAtEpochMillis<=0 OR (editingRecordId IS NULL)!=(expectedRecordRevision IS NULL) OR expectedRecordRevision<0 LIMIT 1")) throw BackupValidationException("草稿时间或编辑版本无效")
         }
         if (databaseVersion(db) >= 3) validateCatalogDomains(db)
-        if (databaseVersion(db) >= 4 && exists(db, "SELECT 1 FROM drink_records WHERE snapshotCoffeeType NOT IN ('BLACK','FRUIT','MILK','HAND_BREW') OR (itemType='PERSONAL_BEAN' AND snapshotCoffeeType!='HAND_BREW') OR (itemType='CHAIN_PRODUCT' AND snapshotCoffeeType='HAND_BREW') LIMIT 1")) throw BackupValidationException("记录咖啡类型字段无效")
+        if (databaseVersion(db) >= 6) validatePersonalCostDomains(db, check)
+        if (databaseVersion(db) >= 4 && exists(db, "SELECT 1 FROM drink_records WHERE ${if (databaseVersion(db) >= 6) CURRENT_COFFEE_TYPE_INVALID else LEGACY_COFFEE_TYPE_INVALID} LIMIT 1")) throw BackupValidationException("记录咖啡类型字段无效")
+    }
+
+    private fun validatePersonalCostDomains(db: SQLiteDatabase, check: () -> Unit) = validatePersonalCostDomains({ sql -> db.rawQuery(sql, null) }, check)
+
+    private fun validatePersonalCostDomains(query: (String) -> Cursor, check: () -> Unit) {
+        fun invalid(sql: String): Boolean = query(sql).use { it.moveToFirst() }
+        listOf("catalog_items", "drink_records", "draft_records").forEach { table ->
+            val itemType = if (table == "catalog_items") "type" else "itemType"
+            val hasUsage = table != "catalog_items"
+            val amounts = listOf("purchasePriceFen", "packageWeightMg", "packageCount") + if (hasUsage) listOf("consumedWeightMg", "consumedCount", "actualPriceFen") else emptyList()
+            val invalidAmount = amounts.joinToString(" OR ") { column -> "$column IS NOT NULL AND (typeof($column)!='integer' OR $column${if (column.contains("Price")) "<0" else "<=0"})" }
+            val usageInvalid = if (hasUsage) " OR priceMode NOT IN ('AUTO','MANUAL') OR (personalProductType='BEANS' AND consumedCount IS NOT NULL) OR (personalProductType='DRIP_BAG' AND consumedWeightMg IS NOT NULL) OR ($itemType='CHAIN_PRODUCT' AND (priceMode!='MANUAL' OR consumedWeightMg IS NOT NULL OR consumedCount IS NOT NULL))" else ""
+            if (invalid("SELECT 1 FROM $table WHERE personalProductType NOT IN ('BEANS','DRIP_BAG') OR $invalidAmount OR (personalProductType='BEANS' AND packageCount IS NOT NULL) OR (personalProductType='DRIP_BAG' AND packageWeightMg IS NOT NULL) OR ($itemType='CHAIN_PRODUCT' AND (personalProductType!='BEANS' OR purchasePriceFen IS NOT NULL OR packageWeightMg IS NOT NULL OR packageCount IS NOT NULL)) $usageInvalid LIMIT 1")) throw BackupValidationException("采购规格或用量字段无效")
+            if (hasUsage && invalid("SELECT 1 FROM $table WHERE itemType='PERSONAL_BEAN' AND personalProductType='BEANS' AND priceMode='AUTO' AND (brewMethod IS NULL OR brewMethod NOT IN ('手冲','意式')) LIMIT 1")) throw BackupValidationException("自动计价冲煮方式无效")
+            if (hasUsage) query("SELECT personalProductType,purchasePriceFen,packageWeightMg,packageCount,consumedWeightMg,consumedCount,actualPriceFen FROM $table WHERE priceMode='AUTO'").use { cursor ->
+                while (cursor.moveToNext()) {
+                    check()
+                    val type = PersonalProductType.valueOf(cursor.getString(0))
+                    fun amount(index: Int): Long? = if (cursor.isNull(index)) null else cursor.getLong(index)
+                    val calculated = personalCoffeeCost(type, amount(1), amount(2), amount(3), amount(4), amount(5))
+                    val complete = amount(1) != null && (if (type == PersonalProductType.BEANS) amount(2) != null && amount(4) != null else amount(3) != null && amount(5) != null)
+                    if ((complete && calculated == null) || amount(6) != calculated) throw BackupValidationException("自动金额与规格不一致")
+                }
+            }
+        }
+        if (invalid("SELECT 1 FROM drink_records WHERE itemType='PERSONAL_BEAN' AND personalProductType='BEANS' AND priceMode='AUTO' AND ((brewMethod='手冲' AND snapshotCoffeeType!='HAND_BREW') OR (brewMethod='意式' AND snapshotCoffeeType!='ESPRESSO')) LIMIT 1")) throw BackupValidationException("冲煮方式与统计分类不一致")
+        if (invalid("SELECT 1 FROM drink_records WHERE itemType='PERSONAL_BEAN' AND ((personalProductType='DRIP_BAG' AND snapshotCoffeeType!='DRIP_BAG') OR (personalProductType='BEANS' AND snapshotCoffeeType='DRIP_BAG')) LIMIT 1")) throw BackupValidationException("记录类型与规格不一致")
     }
 
     private fun isCanonicalDate(value: String): Boolean {
@@ -309,7 +341,7 @@ class LocalBackupManager(
         }
     }
     private fun validateRestoredDrinkCoffeeTypes(db: SupportSQLiteDatabase) {
-        db.query("SELECT 1 FROM drink_records WHERE snapshotCoffeeType NOT IN ('BLACK','FRUIT','MILK','HAND_BREW') OR (itemType='PERSONAL_BEAN' AND snapshotCoffeeType!='HAND_BREW') OR (itemType='CHAIN_PRODUCT' AND snapshotCoffeeType='HAND_BREW') LIMIT 1").use {
+        db.query("SELECT 1 FROM drink_records WHERE $CURRENT_COFFEE_TYPE_INVALID LIMIT 1").use {
             if (it.moveToFirst()) throw BackupValidationException("记录咖啡类型字段无效")
         }
     }
@@ -387,6 +419,11 @@ class LocalBackupManager(
                 values.putNull("editingRecordId")
                 values.putNull("expectedRecordRevision")
             }
+            if (table == "draft_records" && !values.containsKey("personalProductType")) {
+                values.put("personalProductType", "BEANS")
+                values.put("priceMode", "MANUAL")
+                PERSONAL_RECORD_COLUMNS.filterNot { it in setOf("personalProductType", "priceMode") }.forEach(values::putNull)
+            }
             if(destination.insert(table, android.database.sqlite.SQLiteDatabase.CONFLICT_ABORT, values)<0) throw BackupValidationException("写入 $table 失败")
             onCopied()
         }
@@ -399,7 +436,9 @@ class LocalBackupManager(
             while (cursor.moveToNext()) {
                 check()
                 val values = CATALOG_ITEM_COLUMNS.map { column ->
-                    if (column == "status" && sourceVersion < 5 && cursor.getString(cursor.getColumnIndexOrThrow("type")) == "PERSONAL_BEAN" && cursor.getString(cursor.getColumnIndexOrThrow("status")) == "ARCHIVED") {
+                    if (sourceVersion < 6 && column in PERSONAL_BASE_COLUMNS) {
+                        if (column == "personalProductType") "BEANS" else null
+                    } else if (column == "status" && sourceVersion < 5 && cursor.getString(cursor.getColumnIndexOrThrow("type")) == "PERSONAL_BEAN" && cursor.getString(cursor.getColumnIndexOrThrow("status")) == "ARCHIVED") {
                         "DISCONTINUED"
                     } else if (column == "chainProductKind" && sourceVersion < 3) {
                         if (cursor.getString(cursor.getColumnIndexOrThrow("type")) == "CHAIN_PRODUCT") legacyChainProductKind(cursor.getString(cursor.getColumnIndexOrThrow("name")), cursor.getString(cursor.getColumnIndexOrThrow("category"))).name else null
@@ -418,10 +457,11 @@ class LocalBackupManager(
                 check()
                 val values = ContentValues(DRINK_RECORD_COLUMNS.size)
                 DRINK_RECORD_COLUMNS.forEach { column ->
-                    when (column) {
-                        "snapshotCoffeeType" -> values.put(column, if (sourceVersion >= 4) cursor.getString(cursor.getColumnIndexOrThrow(column)) else legacySnapshotCoffeeType(cursor, catalogKinds))
-                        "createdAtEpochMillis", "updatedAtEpochMillis" -> values.put(column, if (sourceVersion >= 2) cursor.getLong(cursor.getColumnIndexOrThrow(column)) else cursor.getLong(cursor.getColumnIndexOrThrow("occurredAtEpochMillis")))
-                        "revision" -> values.put(column, if (sourceVersion >= 2) cursor.getLong(cursor.getColumnIndexOrThrow(column)) else 0L)
+                    when {
+                        sourceVersion < 6 && column in PERSONAL_RECORD_COLUMNS -> if (column == "personalProductType") values.put(column, "BEANS") else if (column == "priceMode") values.put(column, "MANUAL") else values.putNull(column)
+                        column == "snapshotCoffeeType" -> values.put(column, if (sourceVersion >= 4) cursor.getString(cursor.getColumnIndexOrThrow(column)) else legacySnapshotCoffeeType(cursor, catalogKinds))
+                        column in listOf("createdAtEpochMillis", "updatedAtEpochMillis") -> values.put(column, if (sourceVersion >= 2) cursor.getLong(cursor.getColumnIndexOrThrow(column)) else cursor.getLong(cursor.getColumnIndexOrThrow("occurredAtEpochMillis")))
+                        column == "revision" -> values.put(column, if (sourceVersion >= 2) cursor.getLong(cursor.getColumnIndexOrThrow(column)) else 0L)
                         else -> putCursorValue(values, column, cursor, cursor.getColumnIndexOrThrow(column))
                     }
                 }
@@ -491,15 +531,20 @@ class LocalBackupManager(
         private val TABLES=listOf("image_assets","brands","catalog_items","drink_records","catalog_updates","draft_records")
         private const val ROOM_MASTER_TABLE = "room_master_table"
         private const val ANDROID_METADATA_TABLE = "android_metadata"
-        private val CATALOG_ITEM_COLUMNS = listOf("id", "brandId", "type", "name", "normalizedName", "imageAssetId", "origin", "processing", "roastLevel", "flavorNotes", "brewMethod", "status", "caffeineMg", "officialDescription", "purchaseDate", "roastDate", "sourceUrl", "sourceFetchedAt", "informationCompleteness", "category", "specificationDescription", "imageSourceUrl", "chainProductKind")
-        private val DRINK_RECORD_COLUMNS = listOf("id", "occurredAtEpochMillis", "localDate", "itemType", "sourceItemId", "brewMethod", "ratingHalfStars", "actualPriceFen", "note", "snapshotBrandName", "snapshotItemName", "snapshotOrigin", "snapshotProcessing", "snapshotImageAssetId", "snapshotBrandLogoAssetId", "snapshotRoastLevel", "snapshotFlavorNotes", "snapshotCoffeeType", "createdAtEpochMillis", "updatedAtEpochMillis", "revision")
+        private const val LEGACY_COFFEE_TYPE_INVALID = "snapshotCoffeeType NOT IN ('BLACK','FRUIT','MILK','HAND_BREW') OR (itemType='PERSONAL_BEAN' AND snapshotCoffeeType!='HAND_BREW') OR (itemType='CHAIN_PRODUCT' AND snapshotCoffeeType='HAND_BREW')"
+        private const val CURRENT_COFFEE_TYPE_INVALID = "snapshotCoffeeType NOT IN ('BLACK','FRUIT','MILK','HAND_BREW','ESPRESSO','DRIP_BAG') OR (itemType='PERSONAL_BEAN' AND snapshotCoffeeType NOT IN ('HAND_BREW','ESPRESSO','DRIP_BAG')) OR (itemType='CHAIN_PRODUCT' AND snapshotCoffeeType NOT IN ('BLACK','FRUIT','MILK'))"
+        private val PERSONAL_BASE_COLUMNS = setOf("personalProductType", "purchasePriceFen", "packageWeightMg", "packageCount")
+        private val PERSONAL_RECORD_COLUMNS = PERSONAL_BASE_COLUMNS + setOf("consumedWeightMg", "consumedCount", "priceMode")
+        private val CATALOG_ITEM_COLUMNS = listOf("id", "brandId", "type", "name", "normalizedName", "imageAssetId", "origin", "processing", "roastLevel", "flavorNotes", "brewMethod", "status", "caffeineMg", "officialDescription", "purchaseDate", "roastDate", "sourceUrl", "sourceFetchedAt", "informationCompleteness", "category", "specificationDescription", "imageSourceUrl", "chainProductKind") + PERSONAL_BASE_COLUMNS
+        private val DRINK_RECORD_COLUMNS = listOf("id", "occurredAtEpochMillis", "localDate", "itemType", "sourceItemId", "brewMethod", "ratingHalfStars", "actualPriceFen", "note", "snapshotBrandName", "snapshotItemName", "snapshotOrigin", "snapshotProcessing", "snapshotImageAssetId", "snapshotBrandLogoAssetId", "snapshotRoastLevel", "snapshotFlavorNotes", "snapshotCoffeeType", "createdAtEpochMillis", "updatedAtEpochMillis", "revision") + PERSONAL_RECORD_COLUMNS
         private val ADDED_COLUMNS = mapOf(
             2 to mapOf(
-                "drink_records" to setOf("createdAtEpochMillis", "updatedAtEpochMillis", "revision"),
+                "drink_records" to setOf("createdAtEpochMillis", "updatedAtEpochMillis", "revision") + PERSONAL_RECORD_COLUMNS,
                 "draft_records" to setOf("consumedAtEpochMillis", "editingRecordId", "expectedRecordRevision"),
             ),
             3 to mapOf("catalog_items" to setOf("chainProductKind")),
             4 to mapOf("drink_records" to setOf("snapshotCoffeeType")),
+            6 to mapOf("catalog_items" to PERSONAL_BASE_COLUMNS, "drink_records" to PERSONAL_RECORD_COLUMNS, "draft_records" to PERSONAL_RECORD_COLUMNS),
         )
         private const val MAX_ARCHIVE_BYTES=512L*1024*1024; private const val MAX_IMAGE_BYTES=20L*1024*1024
     }

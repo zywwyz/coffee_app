@@ -10,6 +10,7 @@ import com.niumi.coffeejournal.core.database.DataIntegrityException
 import com.niumi.coffeejournal.core.database.DrinkDao
 import com.niumi.coffeejournal.core.database.PersonalBeanRatingRow
 import com.niumi.coffeejournal.core.model.Brand
+import com.niumi.coffeejournal.core.model.PersonalProductType
 import com.niumi.coffeejournal.core.model.BrandType
 import com.niumi.coffeejournal.core.model.CatalogItem
 import com.niumi.coffeejournal.core.model.ChainProductKind
@@ -279,6 +280,10 @@ private fun CatalogItemEntity.toDomain() = CatalogItem(
     category = category,
     specificationDescription = specificationDescription,
     imageSourceUrl = imageSourceUrl,
+    personalProductType = enumValue("CatalogItemEntity.personalProductType", personalProductType),
+    purchasePriceFen = purchasePriceFen,
+    packageWeightMg = packageWeightMg,
+    packageCount = packageCount,
     chainProductKind = chainProductKind?.let { enumValue<ChainProductKind>("CatalogItemEntity.chainProductKind", it) },
 ).also { item ->
     require((item.type == ItemType.CHAIN_PRODUCT) == (item.chainProductKind != null)) {
@@ -310,6 +315,11 @@ private fun CatalogItem.toEntity() = CatalogItemEntity(
     specificationDescription = specificationDescription,
     imageSourceUrl = imageSourceUrl,
     chainProductKind = chainProductKind?.name,
+    personalProductType = personalProductType.name,
+    purchasePriceFen = purchasePriceFen,
+    packageWeightMg = packageWeightMg,
+    packageCount = packageCount,
+
 )
 
 private inline fun <reified T : Enum<T>> enumValue(field: String, value: String): T =

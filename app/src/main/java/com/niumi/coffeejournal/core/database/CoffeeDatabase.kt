@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CatalogUpdateEntity::class,
         DraftRecordEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class CoffeeDatabase : RoomDatabase() {
@@ -40,7 +40,7 @@ abstract class CoffeeDatabase : RoomDatabase() {
                 context.applicationContext,
                 CoffeeDatabase::class.java,
                 DATABASE_NAME,
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build()
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(database: SupportSQLiteDatabase) {
@@ -87,6 +87,23 @@ abstract class CoffeeDatabase : RoomDatabase() {
                       ELSE 'BLACK' END
                 """.trimIndent())
                 database.execSQL("PRAGMA user_version = 4")
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                listOf("catalog_items", "drink_records", "draft_records").forEach { table ->
+                    database.execSQL("ALTER TABLE $table ADD COLUMN personalProductType TEXT NOT NULL DEFAULT 'BEANS'")
+                    database.execSQL("ALTER TABLE $table ADD COLUMN purchasePriceFen INTEGER")
+                    database.execSQL("ALTER TABLE $table ADD COLUMN packageWeightMg INTEGER")
+                    database.execSQL("ALTER TABLE $table ADD COLUMN packageCount INTEGER")
+                }
+                listOf("drink_records", "draft_records").forEach { table ->
+                    database.execSQL("ALTER TABLE $table ADD COLUMN consumedWeightMg INTEGER")
+                    database.execSQL("ALTER TABLE $table ADD COLUMN consumedCount INTEGER")
+                    database.execSQL("ALTER TABLE $table ADD COLUMN priceMode TEXT NOT NULL DEFAULT 'MANUAL'")
+                }
+                database.execSQL("PRAGMA user_version = 6")
             }
         }
 

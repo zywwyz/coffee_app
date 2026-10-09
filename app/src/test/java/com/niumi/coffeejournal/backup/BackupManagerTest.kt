@@ -51,6 +51,66 @@ class BackupManagerTest {
 
     @After fun tearDown() { database.close() }
 
+    @Test fun `v6 personal product cost fields round trip including manual draft`() = runBlocking {
+        database.brandDao().upsert(BrandEntity("brand", "ROASTER", "烘焙商", "烘焙商", null, "MANUAL_ONLY", null))
+        database.catalogItemDao().upsert(CatalogItemEntity("bag", "brand", "PERSONAL_BEAN", "挂耳", "挂耳", status = "ACTIVE", personalProductType = "DRIP_BAG", purchasePriceFen = 1000, packageCount = 3))
+        val record = DrinkRecordEntity("record", 1, "2026-10-01", "PERSONAL_BEAN", "bag", actualPriceFen = 667, snapshotBrandName = "烘焙商", snapshotItemName = "挂耳", snapshotCoffeeType = "DRIP_BAG", personalProductType = "DRIP_BAG", purchasePriceFen = 1000, packageCount = 3, consumedCount = 2, priceMode = "AUTO")
+        database.drinkDao().insert(record)
+        val draft = DraftRecordEntity("current", "draft", "PERSONAL_BEAN", "bag", null, 8, 700, "手动调价", 1, personalProductType = "DRIP_BAG", purchasePriceFen = 1000, packageCount = 3, consumedCount = 2, priceMode = "MANUAL")
+        database.draftDao().upsert(draft)
+        val archive = File(context.cacheDir, "personal-v6-${System.nanoTime()}.zip")
+        manager.export(Uri.fromFile(archive))
+        val validated = manager.validate(Uri.fromFile(archive))
+        assertEquals(6, validated.manifest.schemaVersion)
+        database.openHelper.writableDatabase.execSQL("DELETE FROM drink_records")
+        database.openHelper.writableDatabase.execSQL("DELETE FROM draft_records")
+        manager.restore(validated)
+        assertEquals(record, database.drinkDao().get("record"))
+        assertEquals(draft, database.draftDao().get("current"))
+        assertEquals(3L, database.catalogItemDao().get("bag")?.packageCount)
+    }
+
+    @Test fun `real v5 archive restores old manual prices and empty purchase bases`() = runBlocking {
+        database.brandDao().upsert(BrandEntity("brand", "ROASTER", "烘焙商", "烘焙商", null, "MANUAL_ONLY", null))
+        database.catalogItemDao().upsert(CatalogItemEntity("bean", "brand", "PERSONAL_BEAN", "豆", "豆", status = "ACTIVE"))
+        database.drinkDao().insert(DrinkRecordEntity("record", 1, "2026-10-01", "PERSONAL_BEAN", "bean", actualPriceFen = 1234, snapshotBrandName = "烘焙商", snapshotItemName = "豆", snapshotCoffeeType = "HAND_BREW"))
+        database.draftDao().upsert(DraftRecordEntity("current", "draft", "PERSONAL_BEAN", "bean", null, 8, 987, "草稿", 1))
+        val archive = File(context.cacheDir, "old-base-${System.nanoTime()}.zip")
+        manager.export(Uri.fromFile(archive))
+        val decoded = SafeBackupArchiveCodec().decode(archive, File(context.cacheDir, "old-base-unpack-${System.nanoTime()}"))
+        SQLiteDatabase.openDatabase(decoded.databaseFile.path, null, SQLiteDatabase.OPEN_READWRITE).use {
+            it.removeV6Columns(); it.execSQL("UPDATE room_master_table SET identity_hash='43a8d014125551ba31cfb63ccb7a166d' WHERE id=42"); it.execSQL("PRAGMA user_version=5")
+        }
+        val v5 = File(context.cacheDir, "old-v5-${System.nanoTime()}.zip")
+        SafeBackupArchiveCodec().encode(v5, decoded.databaseFile, emptyList(), decoded.manifest.counts, 5, 1)
+        manager.restore(manager.validate(Uri.fromFile(v5)))
+        assertEquals(1234L, database.drinkDao().get("record")?.actualPriceFen)
+        assertEquals("MANUAL", database.drinkDao().get("record")?.priceMode)
+        assertNull(database.drinkDao().get("record")?.purchasePriceFen)
+        assertEquals(987L, database.draftDao().get("current")?.actualPriceFen)
+        assertEquals("BEANS", database.catalogItemDao().get("bean")?.personalProductType)
+    }
+
+    @Test fun `v6 rejects mixed unit fractional count invalid mode inconsistent automatic amount`() = runBlocking {
+        listOf(
+            "wrong-unit" to "UPDATE catalog_items SET packageCount=10 WHERE id='bean'",
+            "fractional-count" to "UPDATE catalog_items SET personalProductType='DRIP_BAG',packageCount=1.5 WHERE id='bean'",
+            "negative-price" to "UPDATE catalog_items SET purchasePriceFen=-1 WHERE id='bean'",
+            "wrong-mode" to "UPDATE drink_records SET priceMode='WRONG' WHERE id='record'",
+            "auto-null-brew" to "UPDATE drink_records SET priceMode='AUTO' WHERE id='record'",
+            "auto-wrong-type" to "UPDATE drink_records SET priceMode='AUTO',brewMethod='意式' WHERE id='record'",
+            "auto-draft-null-brew" to "INSERT INTO draft_records (id,revisionId,itemType,sourceItemId,note,updatedAtEpochMillis,priceMode) VALUES ('current','draft','PERSONAL_BEAN','bean','草稿',1,'AUTO')",
+            "wrong-auto" to "UPDATE drink_records SET priceMode='AUTO',purchasePriceFen=10000,packageWeightMg=250000,consumedWeightMg=15000,actualPriceFen=601 WHERE id='record'",
+        ).forEach { (name, mutation) ->
+            assertRejectedWithoutWrites(name, manifestCounts = BackupCounts(1, 1, 1, 0, 0, if (name.startsWith("auto-draft")) 1 else 0)) {
+                execSQL("INSERT INTO brands (id,type,name,normalizedName,maintenanceMode) VALUES ('brand','ROASTER','烘焙商','烘焙商','MANUAL_ONLY')")
+                execSQL("INSERT INTO catalog_items (id,brandId,type,name,normalizedName,status) VALUES ('bean','brand','PERSONAL_BEAN','豆','豆','ACTIVE')")
+                execSQL("INSERT INTO drink_records (id,occurredAtEpochMillis,localDate,itemType,sourceItemId,snapshotBrandName,snapshotItemName,snapshotCoffeeType) VALUES ('record',1,'2026-10-01','PERSONAL_BEAN','bean','烘焙商','豆','HAND_BREW')")
+                execSQL(mutation)
+            }
+        }
+    }
+
     @Test fun `v4 archived personal bean restores discontinued while chain archive and record image remain`() = runBlocking {
         val image = File(context.filesDir, "images/legacy.png").also { writeTestPng(it, 0xff00ff00.toInt()) }
         val imageHash = sha256(image)
@@ -62,7 +122,7 @@ class BackupManagerTest {
         val archive = File(context.cacheDir, "legacy-${System.nanoTime()}.zip")
         manager.export(Uri.fromFile(archive))
         val decoded = SafeBackupArchiveCodec().decode(archive, File(context.cacheDir, "legacy-unpack-${System.nanoTime()}"))
-        SQLiteDatabase.openDatabase(decoded.databaseFile.path, null, SQLiteDatabase.OPEN_READWRITE).use { it.execSQL("UPDATE catalog_items SET status='ARCHIVED' WHERE id='bean'"); it.execSQL("PRAGMA user_version=4") }
+        SQLiteDatabase.openDatabase(decoded.databaseFile.path, null, SQLiteDatabase.OPEN_READWRITE).use { it.removeV6Columns(); it.execSQL("UPDATE room_master_table SET identity_hash='43a8d014125551ba31cfb63ccb7a166d' WHERE id=42"); it.execSQL("UPDATE catalog_items SET status='ARCHIVED' WHERE id='bean'"); it.execSQL("PRAGMA user_version=4") }
         val v4 = File(context.cacheDir, "legacy-v4-${System.nanoTime()}.zip")
         SafeBackupArchiveCodec().encode(v4, decoded.databaseFile, decoded.images, decoded.manifest.counts, 4, 1)
         database.openHelper.writableDatabase.execSQL("DELETE FROM drink_records"); database.openHelper.writableDatabase.execSQL("DELETE FROM catalog_items")
@@ -143,12 +203,13 @@ class BackupManagerTest {
         fresh.close()
         val file = context.getDatabasePath(name)
         SQLiteDatabase.openDatabase(file.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { legacy ->
+            legacy.removeV6Columns()
             legacy.execSQL("ALTER TABLE drink_records DROP COLUMN snapshotCoffeeType")
             legacy.execSQL("UPDATE room_master_table SET identity_hash='f93d8a13b1b47c68acba071ab2cf88cf' WHERE id=42")
             legacy.execSQL("PRAGMA user_version=3")
         }
         val migrated = Room.databaseBuilder(context, CoffeeDatabase::class.java, name)
-            .addMigrations(CoffeeDatabase.MIGRATION_3_4, CoffeeDatabase.MIGRATION_4_5)
+            .addMigrations(CoffeeDatabase.MIGRATION_3_4, CoffeeDatabase.MIGRATION_4_5, CoffeeDatabase.MIGRATION_5_6)
             .allowMainThreadQueries()
             .build()
         try {
@@ -272,6 +333,7 @@ class BackupManagerTest {
             manifestVersion = 3,
             expectedMessage = "数据库 drink_records columns 不匹配",
         ) {
+            removeV6Columns()
             execSQL("PRAGMA user_version=3")
             execSQL("UPDATE room_master_table SET identity_hash='f93d8a13b1b47c68acba071ab2cf88cf' WHERE id=42")
         }
@@ -420,6 +482,7 @@ class BackupManagerTest {
             source.close()
             val sourceFile = context.getDatabasePath(sourceName)
             SQLiteDatabase.openDatabase(sourceFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use {
+                it.removeV6Columns()
                 it.execSQL("ALTER TABLE drink_records DROP COLUMN snapshotCoffeeType")
                 it.execSQL("UPDATE room_master_table SET identity_hash='f93d8a13b1b47c68acba071ab2cf88cf' WHERE id=42")
                 it.execSQL("PRAGMA user_version=3")
@@ -654,7 +717,7 @@ class BackupManagerTest {
     }
     private suspend fun assertRejectedWithoutWrites(
         name: String,
-        manifestVersion: Int = 5,
+        manifestVersion: Int = 6,
         manifestCounts: BackupCounts? = null,
         expectedMessage: String? = null,
         mutate: SQLiteDatabase.() -> Unit,
@@ -678,12 +741,19 @@ class BackupManagerTest {
             imageBytes.forEach { (file, bytes) -> assertArrayEquals(bytes, File(context.filesDir, "images/$file").readBytes()) }
         } finally { source.close() }
     }
+    private fun SQLiteDatabase.removeV6Columns() {
+        listOf("catalog_items", "drink_records", "draft_records").forEach { table ->
+            val columns = listOf("personalProductType", "purchasePriceFen", "packageWeightMg", "packageCount") + if (table != "catalog_items") listOf("consumedWeightMg", "consumedCount", "priceMode") else emptyList()
+            columns.forEach { execSQL("ALTER TABLE $table DROP COLUMN $it") }
+        }
+    }
     private fun SQLiteDatabase.rebuildUpdates(columns: String) {
         execSQL("ALTER TABLE catalog_updates RENAME TO updates_old")
         execSQL("CREATE TABLE catalog_updates ($columns)")
         execSQL("DROP TABLE updates_old")
     }
     private fun SQLiteDatabase.rebuildAsSchemaV1() {
+        removeV6Columns()
         execSQL("PRAGMA foreign_keys=OFF")
         execSQL("ALTER TABLE drink_records RENAME TO drink_records_v2")
         // Copied from app/schemas/.../CoffeeDatabase/1.json to make this a real v1 schema.
@@ -703,6 +773,7 @@ class BackupManagerTest {
         execSQL("PRAGMA foreign_keys=ON")
     }
     private fun SQLiteDatabase.rebuildAsSchemaV2() {
+        removeV6Columns()
         execSQL("ALTER TABLE catalog_items DROP COLUMN chainProductKind")
         execSQL("ALTER TABLE drink_records DROP COLUMN snapshotCoffeeType")
         execSQL("UPDATE room_master_table SET identity_hash='e34586f75354c95386a2ba92f7121b27' WHERE id=42")
